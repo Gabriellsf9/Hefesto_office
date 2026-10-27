@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bot, Building2, Copy, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Volume2 } from "lucide-react";
-import type { EstadoWhatsapp, RoomId, StatusResponse } from "@empresa/shared";
+import { Bot, Building2, Copy, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import type { EstadoTelegram, EstadoWhatsapp, RoomId, StatusResponse } from "@empresa/shared";
 import { rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
@@ -17,7 +17,7 @@ import { definirTema, useTema, type Tema } from "../shell/tema.ts";
 
 // Configurações (DESIGN-INTERFACE.md §6.9): tudo o que estava no menu ⋯, organizado por seção.
 
-type Secao = "geral" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "backup" | "sobre";
+type Secao = "geral" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
 const SECOES: { id: Secao; rotulo: string; icone: typeof Info }[] = [
   { id: "geral", rotulo: "Geral", icone: KeyRound },
   { id: "voz", rotulo: "Voz e sons", icone: Volume2 },
@@ -25,6 +25,7 @@ const SECOES: { id: Secao; rotulo: string; icone: typeof Info }[] = [
   { id: "permissoes", rotulo: "Permissões dos agentes", icone: ShieldCheck },
   { id: "conectores", rotulo: "Conectores", icone: Plug },
   { id: "whatsapp", rotulo: "WhatsApp", icone: MessageCircle },
+  { id: "celular", rotulo: "Celular (Telegram)", icone: Smartphone },
   { id: "backup", rotulo: "Backup", icone: DatabaseBackup },
   { id: "sobre", rotulo: "Sobre e atalhos", icone: Info },
 ];
@@ -48,6 +49,7 @@ export default function PaginaConfiguracoes() {
           {secao === "permissoes" && <Permissoes />}
           {secao === "conectores" && <ConteudoConectores />}
           {secao === "whatsapp" && <ConfigWhatsapp />}
+          {secao === "celular" && <ConfigTelegram />}
           {secao === "backup" && <Backup />}
           {secao === "sobre" && <Sobre />}
         </div>
@@ -326,6 +328,70 @@ function Copiavel({ rotulo, valor }: { rotulo: string; valor: string }) {
         <Copy className="size-3.5" />
       </button>
     </div>
+  );
+}
+
+/* ---------- Celular (Telegram) ---------- */
+
+function ConfigTelegram() {
+  const e = useStore((s) => s.telegram);
+  const [token, setToken] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  if (!e) return null;
+  const salvar = async (d: Record<string, unknown>, msg?: string) => {
+    setOcupado(true);
+    try {
+      useStore.setState({ telegram: await api<EstadoTelegram>("/api/telegram", "PUT", d) });
+      setToken("");
+      if (msg) avisar(msg);
+    } catch (err) {
+      avisarErro(err);
+    } finally {
+      setOcupado(false);
+    }
+  };
+  const n = e.notificar;
+  return (
+    <>
+      <Bloco
+        titulo={<span className="flex items-center gap-2">Aprovar pelo celular <Etiqueta tom={e.chatId && e.ativo && e.status === "conectado" ? "sucesso" : e.status === "erro" ? "perigo" : "neutro"}>{e.chatId && e.ativo ? (e.status === "erro" ? "erro" : "pareado") : e.ativo ? "esperando pareamento" : "desligado"}</Etiqueta></span>}
+        descricao="Um bot do Telegram avisa o que espera você, com botões para aprovar ou devolver, e o que você escrever a ele vai para a Helena. O Mac só faz chamadas de saída: nada fica exposto na internet."
+      >
+        {e.erro && <p className="rounded-ctl bg-warning-soft px-3 py-2 text-pequeno text-warning-fg">{e.erro}</p>}
+        <ol className="list-decimal space-y-1 pl-5 text-pequeno text-fg-2">
+          <li>No Telegram, abra o <b className="font-semibold text-fg">@BotFather</b>, envie /newbot e escolha um nome.</li>
+          <li>Cole abaixo o token que ele mandar e ligue.</li>
+          <li>Abra o seu bot{e.bot ? <> (<a className="text-accent-fg underline" href={`https://t.me/${e.bot}`} target="_blank" rel="noreferrer">t.me/{e.bot}</a>)</> : ""} e envie <code className="rounded bg-sunken px-1 font-mono">/parear {e.codigo ?? "código"}</code>.</li>
+        </ol>
+        <div className="flex items-end gap-2">
+          <div className="flex-1"><CampoSegredo rotulo="Token do bot" configurado={e.temToken} valor={token} onChange={setToken} placeholder="123456789:AA…" /></div>
+          <Botao variante="principal" carregando={ocupado} disabled={!token.trim() && e.ativo} onClick={() => void salvar({ ...(token.trim() ? { token } : {}), ativo: true }, "Bot ligado")}>{e.ativo ? "Salvar" : "Salvar e ligar"}</Botao>
+        </div>
+        {e.chatId ? (
+          <div className="flex items-center gap-3 rounded-ctl bg-success-soft px-3 py-2.5 text-pequeno text-success-fg">
+            <span className="flex-1">Pareado com {e.nomeChat ?? "o seu Telegram"}{e.bot ? ` · @${e.bot}` : ""}</span>
+            <Botao tamanho="p" onClick={() => void api("/api/telegram/teste", "POST").then(() => avisar("Mensagem de teste enviada")).catch(avisarErro)}>Enviar teste</Botao>
+            <Botao tamanho="p" variante="discreto" onClick={() => void api<EstadoTelegram>("/api/telegram/desparear", "POST").then((r) => useStore.setState({ telegram: r }))}>Desparear</Botao>
+          </div>
+        ) : e.ativo && e.codigo ? (
+          <div className="rounded-ctl bg-sunken px-3 py-3 text-center">
+            <div className="text-legenda text-fg-3">Envie ao bot</div>
+            <div className="tabular font-mono text-pagina font-semibold tracking-wider text-fg">/parear {e.codigo}</div>
+          </div>
+        ) : null}
+        <div className="flex gap-2">
+          {e.ativo && <Botao variante="discreto" onClick={() => void salvar({ ativo: false }, "Bot desligado")}>Desligar</Botao>}
+          {e.temToken && <Botao variante="perigo" onClick={async () => { if (await confirmar({ titulo: "Esquecer o token do bot?", confirmar: "Esquecer", perigo: true })) void api<EstadoTelegram>("/api/telegram/esquecer", "POST").then((r) => useStore.setState({ telegram: r })); }}>Esquecer token</Botao>}
+        </div>
+      </Bloco>
+      <Bloco titulo="O que avisar">
+        <Interruptor ativo={n.aprovacoes} onChange={(v) => void salvar({ notificar: { aprovacoes: v } })} rotulo="Entregas prontas para aprovar" descricao="Com os botões Aprovar e Devolver (você responde com o comentário)." />
+        <Interruptor ativo={n.perguntas} onChange={(v) => void salvar({ notificar: { perguntas: v } })} rotulo="Perguntas dos agentes" />
+        <Interruptor ativo={n.acoes} onChange={(v) => void salvar({ notificar: { acoes: v } })} rotulo="Ações fora da empresa" descricao="Conectores, terminal e controle do Mac, com Executar e Recusar." />
+        <Interruptor ativo={n.whatsapp} onChange={(v) => void salvar({ notificar: { whatsapp: v } })} rotulo="WhatsApp" descricao="Respostas da Lorena esperando o OK e clientes esperando você." />
+        <Interruptor ativo={n.incidentes} onChange={(v) => void salvar({ notificar: { incidentes: v } })} rotulo="Incidentes P0" />
+      </Bloco>
+    </>
   );
 }
 

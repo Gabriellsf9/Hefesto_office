@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EstadoWhatsapp, MensagemWhatsapp, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -97,6 +97,7 @@ interface Store {
   /** Menu Equipe do topo (abre também pelo painel da Diretoria no 3D). */
   equipeAberta: boolean;
   whatsapp: EstadoWhatsapp | null;
+  telegram: EstadoTelegram | null;
   contatosWa: Record<string, ContatoWhatsapp>;
   /** Mensagens das conversas já abertas (as outras a tela busca na API). */
   mensagensWa: Record<string, MensagemWhatsapp[]>;
@@ -189,6 +190,7 @@ export const useStore = create<Store>((set, get) => ({
   equipeAberta: false,
   rotinaAberta: false,
   whatsapp: null,
+  telegram: null,
   contatosWa: {},
   mensagensWa: {},
   setMensagensWa: (tel, m) => set((s) => ({ mensagensWa: { ...s.mensagensWa, [tel]: m } })),
@@ -222,11 +224,15 @@ export const useStore = create<Store>((set, get) => ({
           pedidosMcp: e.pedidosMcp,
           controle: Object.fromEntries(e.controle.map((c) => [c.cardId, c])),
           whatsapp: e.whatsapp,
+          telegram: e.telegram,
           contatosWa: Object.fromEntries(e.contatosWhatsapp.map((c) => [c.telefone, c])),
         });
         break;
       case "whatsapp":
         set({ whatsapp: e.estado });
+        break;
+      case "telegram":
+        set({ telegram: e.estado });
         break;
       case "whatsapp_contato":
         set((s) => ({ contatosWa: { ...s.contatosWa, [e.contato.telefone]: e.contato } }));
