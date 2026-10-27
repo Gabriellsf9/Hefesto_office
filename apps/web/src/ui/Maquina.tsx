@@ -97,17 +97,17 @@ export function FaixaControle() {
   const resta = Math.max(0, s.ate - agora);
   const mmss = `${Math.floor(resta / 60_000)}:${String(Math.floor((resta % 60_000) / 1000)).padStart(2, "0")}`;
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-2 z-[60] w-[min(760px,calc(100%-2rem))] -translate-x-1/2">
+    <div className="pointer-events-auto absolute left-1/2 top-3 z-[60] w-[min(760px,calc(100%-2rem))] -translate-x-1/2">
       <div className="flex items-center gap-2 rounded-2xl bg-danger px-3 py-2 text-pequeno text-white shadow-3 ring-2 ring-danger">
-        <span className="pulsar h-2.5 w-2.5 rounded-full bg-surface" />
+        <span className="pulsar h-2.5 w-2.5 rounded-full bg-white" />
         <span className="flex-1">
           <b>{a?.nome ?? s.agenteId}</b> está controlando o seu Mac (EMP-{s.cardId}) · resta {mmss}
           {ativas.length > 1 && ` · +${ativas.length - 1} sessão(ões)`}
         </span>
-        <button onClick={() => setVer(!ver)} className="rounded-lg bg-glass px-2.5 py-1 font-semibold hover:bg-glass">
+        <button onClick={() => setVer(!ver)} className="rounded-lg bg-white/20 px-2.5 py-1 font-semibold hover:bg-white/30">
           {ver ? "Esconder" : "Ver tela"}
         </button>
-        <button onClick={() => api("/api/maquina/parar", "POST")} className="rounded-lg bg-surface px-3 py-1 font-bold text-danger-fg">
+        <button onClick={() => api("/api/maquina/parar", "POST")} className="rounded-lg bg-white px-3 py-1 font-bold text-[#a12525]">
           PARAR
         </button>
       </div>

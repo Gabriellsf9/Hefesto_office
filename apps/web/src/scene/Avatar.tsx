@@ -85,7 +85,8 @@ export function AgentActor({ agent }: { agent: Agent }) {
         >
           <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: info.cor }} />
           {agent.nome}
-          <span className="ml-1 text-fg-3">· {!ativo && tempoLivre ? tempoLivre : agent.cargo}</span>
+          {/* Com a sala inteira em foco, só o nome (as etiquetas lado a lado não se sobrepõem); o cargo aparece no hover. */}
+          {(selecionado || hover) && <span className="ml-1 text-fg-3">· {!ativo && tempoLivre ? tempoLivre : agent.cargo}</span>}
         </div>
       </Html>
     </group>

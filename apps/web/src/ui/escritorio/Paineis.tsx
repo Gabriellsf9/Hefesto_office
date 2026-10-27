@@ -171,10 +171,10 @@ function VistaSala({ sala }: { sala: RoomId }) {
         ativa={aba}
         onChange={setAba}
         abas={[
-          { id: "agora", rotulo: "Agora", icone: Users },
-          { id: "cards", rotulo: "Cards", icone: KanbanSquare, contador: ativos.length },
-          { id: "entregas", rotulo: "Entregas", icone: FileCheck2, contador: entregues.length },
-          { id: "atividade", rotulo: "Atividade", icone: Activity },
+          { id: "agora", rotulo: "Agora" },
+          { id: "cards", rotulo: "Cards", contador: ativos.length },
+          { id: "entregas", rotulo: "Entregas", contador: entregues.length },
+          { id: "atividade", rotulo: "Atividade" },
         ]}
       />
       <div className="scroll-fino min-h-0 flex-1 overflow-y-auto p-2">

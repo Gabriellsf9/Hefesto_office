@@ -9,6 +9,7 @@ import { AreaTexto, Botao, CabecalhoPagina, Chip, Etiqueta, EstadoVazio, Janela,
 import { Avatarzinho, quando } from "../comum.tsx";
 import { IconeTipo, SeloPrioridade } from "../trabalho/cartao.tsx";
 import { usePendencias, type Pendencia } from "../shell/pendencias.ts";
+import { ConviteEntrevista } from "../Entrevista.tsx";
 
 // Caixa de entrada (DESIGN-INTERFACE.md §6.2): tudo que espera o CEO, com as ações ali mesmo.
 // Teclado: J/K movem, A aprova, D devolve/recusa, Enter abre.
@@ -97,6 +98,7 @@ export default function PaginaEntrada() {
         }
       />
 
+      <ConviteEntrevista />
       <div className="mb-4 flex flex-wrap gap-2">
         <Chip ativo={filtro === "tudo"} onClick={() => setFiltro("tudo")} contador={todas.length}>Tudo</Chip>
         {(Object.keys(ROTULO) as Pendencia["tipo"][]).map((t) => contagem(t) > 0 && (

@@ -23,7 +23,7 @@ export function ConviteEntrevista() {
   };
 
   return (
-    <div className="painel pointer-events-auto absolute left-1/2 top-24 flex w-[min(520px,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 p-3">
+    <div className="mb-4 flex items-center gap-3 rounded-panel bg-surface p-4 shadow-1">
       <Avatarzinho agent={helena} grande />
       <div className="min-w-0 flex-1">
         <div className="text-corpo font-semibold">A Helena quer conhecer a sua empresa</div>
@@ -33,7 +33,7 @@ export function ConviteEntrevista() {
             : "A entrevista está pausada. Continue de onde parou."}
         </div>
       </div>
-      <button onClick={comecar} className="shrink-0 rounded-xl bg-ink px-4 py-2 text-corpo font-semibold text-on-ink">
+      <button onClick={comecar} className="shrink-0 rounded-ctl bg-ink px-4 py-2 text-corpo font-medium text-on-ink hover:bg-ink-hover">
         {status === "nao-iniciado" ? "Começar entrevista" : "Continuar"}
       </button>
     </div>
@@ -67,7 +67,7 @@ export function PainelEntrevista() {
   };
 
   return (
-    <aside className="painel pointer-events-auto absolute bottom-4 right-4 top-24 flex w-[440px] flex-col overflow-hidden">
+    <aside className="painel anima-lado pointer-events-auto absolute bottom-24 right-3 top-3 flex w-[440px] max-w-[calc(100%-24px)] flex-col overflow-hidden">
       <div className="flex items-center gap-3 border-b border-line p-4">
         <Avatarzinho agent={helena} grande />
         <div className="min-w-0 flex-1">

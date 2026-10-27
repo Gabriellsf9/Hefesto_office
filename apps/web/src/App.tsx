@@ -4,7 +4,7 @@ import { useStore } from "./store.ts";
 import { useNav } from "./nav.ts";
 import { DetalheCard } from "./ui/trabalho/DetalheCard.tsx";
 import { NovoCard } from "./ui/board/NovoCard.tsx";
-import { ConviteEntrevista, PainelEntrevista } from "./ui/Entrevista.tsx";
+import { PainelEntrevista } from "./ui/Entrevista.tsx";
 import { Onboarding } from "./ui/Onboarding.tsx";
 import { useAvisoSonoro } from "./ui/useAvisoSonoro.ts";
 import { Minimapa } from "./ui/Minimapa.tsx";
@@ -78,7 +78,6 @@ export function App() {
           <div className="pointer-events-none absolute inset-0 z-[200]">
             <FaixaControle />
             <AvisoConquista />
-            <ConviteEntrevista />
             <PainelEntrevista />
           </div>
           <Dock />
