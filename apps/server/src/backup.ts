@@ -6,7 +6,7 @@ import { DATA_DIR } from "./paths.ts";
 import { ErroCard } from "./tarefas.ts";
 
 // Backup automático dos dados da empresa (cards, Livro, conhecimento, leads, chat, prints).
-// - Uma cópia por dia (e quando você pedir), numa pasta FORA do projeto: padrão ~/Documents/Empresa Completa/backups.
+// - Uma cópia por dia (e quando você pedir), numa pasta FORA do projeto: padrão ~/Documents/Hefesto/backups.
 //   Para proteger contra falha de disco, aponte para o iCloud Drive ou um disco externo.
 // - O banco é copiado com VACUUM INTO (cópia consistente mesmo com o servidor rodando).
 // - A chave mestra (master.key) NÃO vai junto: os segredos do backup continuam cifrados e ilegíveis
@@ -25,7 +25,7 @@ export interface EstadoBackup extends ConfigBackup {
   total: number;
 }
 
-const padrao = (): ConfigBackup => ({ ativo: true, pasta: join(homedir(), "Documents", "Empresa Completa", "backups"), manter: 14 });
+const padrao = (): ConfigBackup => ({ ativo: true, pasta: join(homedir(), "Documents", "Hefesto", "backups"), manter: 14 });
 let erro: string | null = null;
 
 export function configBackup(): ConfigBackup {

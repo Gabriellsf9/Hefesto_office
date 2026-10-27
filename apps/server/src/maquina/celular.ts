@@ -180,7 +180,7 @@ ${ate ? "var b = pt(TX, TY); for (var i = 1; i <= 10; i++) { ev($.kCGEventLeftMo
       .replace("FX", String(x / largura)).replace("FY", String(y / altura))
       .replace("TX", String((ate?.x ?? 0) / largura)).replace("TY", String((ate?.y ?? 0) / altura)),
   ).catch((e) => {
-    if (/not allowed|assistive|-1719|-25211/i.test(String(e))) throw new ErroEntrada("Para tocar no iOS, dê permissão de Acessibilidade ao programa que roda a Empresa Completa (Ajustes do Sistema → Privacidade e Segurança → Acessibilidade).");
+    if (/not allowed|assistive|-1719|-25211/i.test(String(e))) throw new ErroEntrada("Para tocar no iOS, dê permissão de Acessibilidade ao programa que roda o Hefesto (Ajustes do Sistema → Privacidade e Segurança → Acessibilidade).");
     throw e;
   });
 }

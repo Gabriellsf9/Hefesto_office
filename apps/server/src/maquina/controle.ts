@@ -68,7 +68,7 @@ registrarExecutor(ID_CONTROLE, async (args, p) => {
 function erroDePermissao(e: unknown): never {
   const msg = e instanceof Error ? e.message : String(e);
   if (/not allowed|assistive|1002|-1719|-25211|accessibility/i.test(msg)) {
-    throw new ErroEntrada("O macOS bloqueou o controle: dê permissão de Acessibilidade ao programa que roda a Empresa Completa (Ajustes do Sistema → Privacidade e Segurança → Acessibilidade).");
+    throw new ErroEntrada("O macOS bloqueou o controle: dê permissão de Acessibilidade ao programa que roda o Hefesto (Ajustes do Sistema → Privacidade e Segurança → Acessibilidade).");
   }
   throw new ErroEntrada(`Falhou: ${msg.split("\n")[0]}`);
 }
@@ -95,7 +95,7 @@ async function print(): Promise<{ base64: string; escala: number; buffer: Buffer
     return { base64: buffer.toString("base64"), escala: tela.w / larg, buffer };
   } catch (e) {
     if (/could not create image|not permitted|-3801/i.test(String(e))) {
-      throw new ErroEntrada("O macOS bloqueou o print: dê permissão de Gravação de Tela ao programa que roda a Empresa Completa (Ajustes do Sistema → Privacidade e Segurança → Gravação de Tela).");
+      throw new ErroEntrada("O macOS bloqueou o print: dê permissão de Gravação de Tela ao programa que roda o Hefesto (Ajustes do Sistema → Privacidade e Segurança → Gravação de Tela).");
     }
     throw e;
   } finally {

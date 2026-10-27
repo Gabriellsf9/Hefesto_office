@@ -111,10 +111,10 @@ export async function adicionarProjeto(caminhoBruto: string): Promise<Projeto> {
   } catch {
     throw new ErroCard("Pasta não encontrada.");
   }
-  // Pastas amplas demais ou a própria Empresa Completa não podem virar projeto.
+  // Pastas amplas demais ou o próprio Hefesto não podem virar projeto.
   const proibidas = [sep, homedir(), await realpath(ROOT), await realpath(DATA_DIR)];
   if (proibidas.includes(caminho)) throw new ErroCard("Escolha a pasta de um projeto específico, não uma pasta do sistema.");
-  if (caminho.startsWith(await realpath(ROOT) + sep)) throw new ErroCard("Essa pasta faz parte da própria Empresa Completa.");
+  if (caminho.startsWith(await realpath(ROOT) + sep)) throw new ErroCard("Essa pasta faz parte do próprio Hefesto.");
 
   const existente = db.prepare("SELECT * FROM projetos WHERE caminho = ?").get(caminho) as Linha | undefined;
   if (existente) {
@@ -136,7 +136,7 @@ export async function escolherPasta(): Promise<string | null> {
   try {
     const { stdout } = await exec(
       "osascript",
-      ["-e", 'POSIX path of (choose folder with prompt "Escolha a pasta do projeto para a Empresa Completa trabalhar")'],
+      ["-e", 'POSIX path of (choose folder with prompt "Escolha a pasta do projeto para o Hefesto trabalhar")'],
       { timeout: 5 * 60_000 },
     );
     return stdout.trim().replace(/\/$/, "") || null;

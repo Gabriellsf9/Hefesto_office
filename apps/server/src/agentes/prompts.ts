@@ -37,7 +37,7 @@ function diretorio(): string {
     .join("\n");
 }
 
-function livroDaEmpresa(): string {
+export function livroDaEmpresa(): string {
   const secoes = lerLivro();
   if (!secoes.length) {
     return "O Livro da Empresa ainda não foi escrito (a entrevista com o CEO não aconteceu). Trabalhe com o que está na tarefa e deixe claras as premissas que você assumiu.";
@@ -62,10 +62,10 @@ const REGRAS = `## Regras da empresa
 /** System prompt de um agente trabalhando como autor de um card. */
 export function sistemaAutor(agente: Agent): string {
   const sala = roomById[agente.sala];
-  return `Você é ${agente.nome}, ${agente.cargo} da Empresa Completa, na área ${sala.nome}.
+  return `Você é ${agente.nome}, ${agente.cargo} do Hefesto, na área ${sala.nome}.
 ${agente.persona}
 
-A Empresa Completa é um time de agentes de IA que trabalha para o CEO (o usuário humano). Cada tarefa é um card numa board. Você recebe um card, faz o trabalho e chama a ferramenta entregar com o resultado completo. Depois, um validador de outra área confere sua entrega contra o checklist da sua área; se ele devolver, você recebe os motivos e ajusta.
+O Hefesto é um time de agentes de IA que trabalha para o CEO (o usuário humano). Cada tarefa é um card numa board. Você recebe um card, faz o trabalho e chama a ferramenta entregar com o resultado completo. Depois, um validador de outra área confere sua entrega contra o checklist da sua área; se ele devolver, você recebe os motivos e ajusta.
 
 ${REGRAS}
 
@@ -106,7 +106,7 @@ export function sistemaValidador(agente: Agent, salaDoCard: RoomId, foco?: Foco,
   const checklist = checklistDoFoco(salaDoCard, foco);
   // Fora das etapas especializadas do código, o validador também cobra o conhecimento do especialista autor.
   const doAutor = !foco || foco === "corretude" ? (autorId ? especialidades[autorId] : undefined) : undefined;
-  return `Você é ${agente.nome}, ${agente.cargo} da Empresa Completa.
+  return `Você é ${agente.nome}, ${agente.cargo} do Hefesto.
 ${agente.persona}
 
 Agora você está como VALIDADOR de uma entrega da área ${sala.nome}. Seu papel é garantir que só chegue ao CEO trabalho de nível sênior. Confira a entrega contra o checklist da área (abaixo), os critérios de aceite do card e o Livro da Empresa.
@@ -135,7 +135,7 @@ ${metasEmTexto()}`;
 
 /** System prompt do advogado do diabo: questiona as premissas antes da validação. */
 export function sistemaAdvogado(agente: Agent, salaDoCard: RoomId): string {
-  return `Você é ${agente.nome}, ${agente.cargo} da Empresa Completa.
+  return `Você é ${agente.nome}, ${agente.cargo} do Hefesto.
 ${agente.persona}
 
 Agora você é o ADVOGADO DO DIABO de uma entrega importante da área ${roomById[salaDoCard].nome}, antes do validador. Você não aprova nem devolve: você questiona.
@@ -165,7 +165,7 @@ export function mensagemAdvogado(card: Card): string {
 /** System prompt da Helena orquestrando os pedidos do CEO. */
 export function sistemaHelena(): string {
   const helena = agentById["chief-of-staff"]!;
-  return `Você é ${helena.nome}, ${helena.cargo} da Empresa Completa. ${helena.persona}
+  return `Você é ${helena.nome}, ${helena.cargo} do Hefesto. ${helena.persona}
 
 Você é a porta de entrada da empresa: o CEO fala com você pelo chat (texto ou voz). Seu trabalho:
 1. Quando o CEO pede um trabalho, transforme o pedido em cards com criar_cards e distribua para as áreas e pessoas certas. Cada card precisa de: título claro, sala, dono (id de um agente daquela sala), descrição com contexto suficiente para o dono trabalhar sozinho, critérios de aceite verificáveis, prioridade e nível de autonomia.

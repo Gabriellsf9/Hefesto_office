@@ -11,7 +11,7 @@ import { DATA_DIR } from "../paths.ts";
 // 1. Sem shell: o comando é dividido em argumentos e roda com execFile (nada de ; && | > $()).
 // 2. Lista de programas permitidos (ferramentas de desenvolvimento; nada de rm, curl, ssh, sudo, osascript…).
 // 3. Sandbox do macOS (sandbox-exec): só grava na cópia isolada e em pastas temporárias e de cache;
-//    não lê chaves (~/.ssh, ~/.aws, chaveiro…) nem os dados da Empresa Completa; sem rede, exceto
+//    não lê chaves (~/.ssh, ~/.aws, chaveiro…) nem os dados do Hefesto; sem rede, exceto
 //    localhost e a instalação de dependências.
 // 4. Tempo máximo e saída limitada.
 
@@ -107,7 +107,7 @@ export function perfilSandbox(pasta: string, rede: boolean): string {
     `(allow file-write* ${graveis.map((p) => `(subpath "${esc(p)}")`).join(" ")})`,
     // Bloqueia o conteúdo (não os metadados: o node precisa consultar as pastas acima da cópia para resolver caminhos).
     `(deny file-read-data ${segredos.map((p) => `(subpath "${esc(p)}")`).join(" ")} ${arquivosSecretos.map((p) => `(literal "${esc(p)}")`).join(" ")})`,
-    // A cópia isolada fica dentro dos dados da Empresa Completa: libera só ela (a regra mais nova vale).
+    // A cópia isolada fica dentro dos dados do Hefesto: libera só ela (a regra mais nova vale).
     `(allow file-read-data (subpath "${esc(real(pasta))}"))`,
   ].join("");
 }

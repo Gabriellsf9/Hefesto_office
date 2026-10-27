@@ -95,8 +95,8 @@ export async function commitar(wt: Worktree, autorId: string, mensagem: string):
   const mudou = await g(wt.caminho, "status", "--porcelain");
   if (!mudou) return null;
   const a = agentById[autorId];
-  const nome = a ? `${a.nome} (${a.cargo})` : "Empresa Completa";
-  await git("git", ["-C", wt.caminho, "-c", `user.name=${nome}`, "-c", `user.email=${autorId}@empresa-completa.local`, "commit", "-q", "-m", mensagem], {
+  const nome = a ? `${a.nome} (${a.cargo})` : "Hefesto";
+  await git("git", ["-C", wt.caminho, "-c", `user.name=${nome}`, "-c", `user.email=${autorId}@hefesto.local`, "commit", "-q", "-m", mensagem], {
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
   });
   return g(wt.caminho, "rev-parse", "--short", "HEAD");
@@ -136,7 +136,7 @@ export async function mesclar(cardId: number): Promise<{ branchDestino: string; 
   const destino = await g(wt.repo, "rev-parse", "--abbrev-ref", "HEAD");
   if (destino === "HEAD") throw new ErroCard("O seu projeto está em detached HEAD. Mude para uma branch antes do merge.");
   try {
-    await git("git", ["-C", wt.repo, "-c", "user.name=Empresa Completa", "-c", "user.email=ceo@empresa-completa.local", "merge", "--no-ff", "-m", `${card.chave}: ${card.titulo} (Empresa Completa)`, wt.branch], {
+    await git("git", ["-C", wt.repo, "-c", "user.name=Hefesto", "-c", "user.email=ceo@hefesto.local", "merge", "--no-ff", "-m", `${card.chave}: ${card.titulo} (Hefesto)`, wt.branch], {
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
   } catch (e) {

@@ -308,7 +308,7 @@ async function reuniaoDeResumo(id: keyof typeof configResumo, atrasado: boolean)
     const r = await rodarAgente({
       client,
       modelo: cfg.modelo,
-      sistema: `Você é ${autor.nome}, ${autor.cargo} da Empresa Completa. ${autor.persona}
+      sistema: `Você é ${autor.nome}, ${autor.cargo} do Hefesto. ${autor.persona}
 Você conduz o ritual "${nome}" e escreve a ata para o CEO. Português do Brasil, direto, sem enrolação, sem inventar nada que não esteja nos dados. Use as chaves EMP-xx quando citar cards. Sem títulos; tópicos curtos são bem-vindos.`,
       mensagem: `## Metas do trimestre\n${metasEmTexto()}\n\n## Indicadores\n${indicadoresEmTexto()}\n\n## Situação agora\n${situacaoAtual()}\n\n## Atividade no período\n${atividade || "(nenhuma)"}\n\n${atrasado ? "Observação: este ritual está rodando atrasado (o computador estava desligado no horário).\n\n" : ""}${cfg.pedido}`,
       ferramentas: [],

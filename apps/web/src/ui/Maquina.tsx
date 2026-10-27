@@ -74,7 +74,7 @@ export function ConfigMaquina() {
         {salvo ? "Salvo ✓" : "Salvar liberados"}
       </button>
       <p className="text-[10px] text-black/45">
-        O macOS vai pedir Gravação de Tela e Acessibilidade para o programa que roda a Empresa Completa. Comandos que citam chaves, senhas ou tokens sempre pedem aprovação.
+        O macOS vai pedir Gravação de Tela e Acessibilidade para o programa que roda o Hefesto. Comandos que citam chaves, senhas ou tokens sempre pedem aprovação.
       </p>
     </div>
   );

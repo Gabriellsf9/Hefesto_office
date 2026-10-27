@@ -1,4 +1,4 @@
-# Plano — "Empresa Completa": escritório 3D de agentes de IA
+# Plano — "Hefesto": escritório 3D de agentes de IA
 
 > Status: **Fases 0 a 7 concluídas**, e o redesenho do escritório (etapas A–F) também. Testadas contra uma API simulada; falta a primeira rodada real com a sua chave. Todas as fases (0 a 7) concluídas, mais imagens no chat e o navegador dos agentes.
 
@@ -448,7 +448,7 @@ Você ──► Helena
 ### Estrutura de pastas
 
 ```
-empresa-completa/
+hefesto/
 ├─ apps/
 │  ├─ web/            # escritório 3D + painéis (React Three Fiber)
 │  └─ server/         # API, WebSocket, orquestrador, agentes
@@ -552,7 +552,7 @@ Polimento (7):
 - **Conquistas** (Rotina → Conquistas): 13 marcos calculados do que aconteceu de verdade (primeiro merge, primeira venda, semana sem bug, contas em dia…), com aviso na tela.
 - **Voz por agente**: no painel do agente, escolha a voz do Mac de cada um (ou deixe automática) e ouça.
 - **Qualidade automática do 3D**: se o FPS cai, a resolução baixa; se sobra folga, sobe.
-- **App desktop leve**: `pnpm app` gera "Empresa Completa.app" (sobe o servidor se preciso e abre numa janela própria do Chrome); `pnpm build` + `pnpm start` servem tudo em http://127.0.0.1:4317. App nativo com Tauri precisa do Rust (não instalado).
+- **App desktop leve**: `pnpm app` gera "Hefesto.app" (sobe o servidor se preciso e abre numa janela própria do Chrome); `pnpm build` + `pnpm start` servem tudo em http://127.0.0.1:4317. App nativo com Tauri precisa do Rust (não instalado).
 
 Imagens no chat:
 - Anexe (📎), cole (⌘V) ou arraste até 6 imagens por mensagem (PNG, JPG, WEBP, GIF; grandes são reduzidas a 1600 px). A Helena e quem você chamar pelo nome enxergam as imagens; os cards criados a partir da mensagem levam as imagens, e autor e validador também as veem.
@@ -595,7 +595,7 @@ Como funciona o marketing (5):
 Como funciona a fábrica de software (4):
 - Card de código (Desenvolvimento ou bug) num projeto com git ganha uma **cópia isolada** (git worktree em data/workspace) numa branch própria, como `empresa/emp-12-login`. A sua pasta não muda.
 - Os devs leem, escrevem e editam arquivos só dentro da cópia (nada de .git, .env ou chaves) e rodam testes, build e lint com rodar_comando.
-- **Sandbox dos comandos**: sem shell (nada de ; && | >), só programas de desenvolvimento (npm, pnpm, node, pytest, go, cargo, mvn, gradle, dotnet, php, bundle, flutter, make…), e o macOS (sandbox-exec) só deixa gravar na cópia e em pastas temporárias e de cache, não deixa ler ~/.ssh, ~/.aws, chaveiro, cookies nem os dados da Empresa Completa, e corta a internet (menos localhost e a instalação de dependências). Tempo máximo de 5 minutos.
+- **Sandbox dos comandos**: sem shell (nada de ; && | >), só programas de desenvolvimento (npm, pnpm, node, pytest, go, cargo, mvn, gradle, dotnet, php, bundle, flutter, make…), e o macOS (sandbox-exec) só deixa gravar na cópia e em pastas temporárias e de cache, não deixa ler ~/.ssh, ~/.aws, chaveiro, cookies nem os dados do Hefesto, e corta a internet (menos localhost e a instalação de dependências). Tempo máximo de 5 minutos.
 - Cada entrega vira um commit com o agente como autor; revisora, performance, segurança e QA recebem o diff, e quem tem terminal roda os testes antes de aprovar.
 - Depois da sua aprovação, o card mostra o diff e o botão **Fazer merge no projeto** (só com a sua pasta sem mudanças pendentes; conflito desfaz sozinho) ou **Descartar**.
 - **Prints e vídeo**: informe em Projeto o endereço onde o app roda (ex.: http://localhost:3000). O Hugo (treinamento) e o QA de tela usam o Google Chrome do Mac, com perfil temporário, só em endereços locais; as imagens aparecem dentro da entrega.

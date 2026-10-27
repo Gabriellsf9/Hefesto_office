@@ -96,7 +96,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
     }
     fecharTabela();
 
-    // Prints e vídeos feitos pelos agentes (só da própria Empresa Completa, nunca de sites externos).
+    // Prints e vídeos feitos pelos agentes (só do próprio Hefesto, nunca de sites externos).
     const midia = /^\s*!?\[([^\]]*)\]\((\/api\/midia\/(?:\d+\/[a-z0-9-]+|chat\/[a-f0-9-]{36})\.(png|jpg|webp|gif|webm))\)\s*$/.exec(linha);
     if (midia) {
       fecharParagrafo();

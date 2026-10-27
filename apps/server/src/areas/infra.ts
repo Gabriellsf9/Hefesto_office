@@ -69,7 +69,7 @@ export async function verificarSite(urlBruta: string): Promise<ResultadoSite> {
   if (SEM_REDE) return { ...base, erro: "sem rede (modo de teste)" };
   const inicio = Date.now();
   try {
-    const r = await fetch(u.href, { redirect: "follow", signal: AbortSignal.timeout(10_000), headers: { "user-agent": "EmpresaCompleta-Monitor/1.0" } });
+    const r = await fetch(u.href, { redirect: "follow", signal: AbortSignal.timeout(10_000), headers: { "user-agent": "Hefesto-Monitor/1.0" } });
     base.codigo = r.status;
     base.ms = Date.now() - inicio;
     base.urlFinal = r.url;

@@ -17,6 +17,11 @@ import { abrirAtendimento } from "./areas/atendimento.ts";
 import { calcularSimples } from "./areas/financas.ts";
 import { iniciarConquistas, listarConquistas } from "./conquistas.ts";
 import { definirConfigBackup, estadoBackup, fazerBackup, iniciarBackup } from "./backup.ts";
+import {
+  aprovarResposta, atualizarContato, configurarWhatsapp, descartarResposta, enviarModelo, enviarTexto, esquecerWhatsapp, estadoWhatsapp,
+  iniciarWhatsapp, listarContatos, listarMensagens, listarModelos, pararWhatsapp, testarConexao,
+} from "./whatsapp/whatsapp.ts";
+import "./whatsapp/agente.ts";
 import { presets } from "./mcp/catalogo.ts";
 import { atualizarServidor, concluirOauth, conectar, criarServidor, iniciarConectores, listarServidores, redirectOauth, removerServidor } from "./mcp/conectores.ts";
 import { aprovarPedido, listarPedidos, recusarPedido } from "./mcp/ferramentas.ts";
@@ -219,11 +224,11 @@ app.delete<{ Params: { id: string } }>("/api/mcp/:id", async (req) => {
 app.post<{ Params: { id: string } }>("/api/mcp/:id/conectar", async (req) => conectar(idDe(req.params.id)));
 app.get<{ Querystring: { code?: string; state?: string; error?: string } }>("/api/mcp/oauth/callback", async (req, reply) => {
   const pagina = (titulo: string, texto: string) =>
-    reply.header("content-type", "text/html; charset=utf-8").send(`<!doctype html><meta charset="utf-8"><title>${titulo}</title><body style="font-family:system-ui;padding:40px;color:#1f2430"><h2>${titulo}</h2><p>${texto}</p><p>Pode fechar esta aba e voltar para a Empresa Completa.</p></body>`);
+    reply.header("content-type", "text/html; charset=utf-8").send(`<!doctype html><meta charset="utf-8"><title>${titulo}</title><body style="font-family:system-ui;padding:40px;color:#1f2430"><h2>${titulo}</h2><p>${texto}</p><p>Pode fechar esta aba e voltar para o Hefesto.</p></body>`);
   if (req.query.error || !req.query.code || !req.query.state) return pagina("Autorização não concluída", "O acesso não foi autorizado.");
   try {
     const nome = await concluirOauth(req.query.state, req.query.code);
-    return pagina("Conectado ✓", `${nome.replace(/[<>&]/g, "")} está conectado à Empresa Completa.`);
+    return pagina("Conectado ✓", `${nome.replace(/[<>&]/g, "")} está conectado ao Hefesto.`);
   } catch (e) {
     return pagina("Não deu certo", (e instanceof Error ? e.message : String(e)).replace(/[<>&]/g, ""));
   }
@@ -244,6 +249,27 @@ app.post<{ Params: { id: string } }>("/api/maquina/parar/:id", async (req) => {
 });
 app.post<{ Params: { id: string } }>("/api/mcp/pedidos/:id/aprovar", async (req) => aprovarPedido(idDe(req.params.id)));
 app.post<{ Params: { id: string }; Body: { motivo?: string } }>("/api/mcp/pedidos/:id/recusar", async (req) => recusarPedido(idDe(req.params.id), req.body?.motivo ?? ""));
+app.get("/api/whatsapp", async () => estadoWhatsapp());
+app.put<{ Body: Record<string, unknown> }>("/api/whatsapp", async (req) => configurarWhatsapp(req.body ?? {}));
+app.post("/api/whatsapp/testar", async () => testarConexao());
+app.post("/api/whatsapp/esquecer", async () => esquecerWhatsapp());
+app.get("/api/whatsapp/modelos", async () => listarModelos());
+app.post<{ Body: Record<string, unknown> }>("/api/whatsapp/modelo", async (req) => enviarModelo(req.body ?? {}));
+app.get("/api/whatsapp/contatos", async () => listarContatos());
+const telDe = (t: string) => {
+  if (!/^\d{8,15}$/.test(t)) throw new ErroCard("Telefone inválido.", 400);
+  return t;
+};
+app.get<{ Params: { tel: string } }>("/api/whatsapp/contatos/:tel/mensagens", async (req) => listarMensagens(telDe(req.params.tel)));
+app.post<{ Params: { tel: string }; Body: { texto?: string } }>("/api/whatsapp/contatos/:tel/enviar", async (req) => enviarTexto(telDe(req.params.tel), String(req.body?.texto ?? ""), "voce"));
+app.patch<{ Params: { tel: string }; Body: { humano?: boolean; lido?: boolean; etapa?: string; nome?: string } }>("/api/whatsapp/contatos/:tel", async (req) => {
+  const b = req.body ?? {};
+  const etapas = ["novo", "duvida", "interessado", "negociando", "cliente", "perdido", "humano"] as const;
+  const etapa = etapas.find((x) => x === b.etapa);
+  return atualizarContato(telDe(req.params.tel), { humano: b.humano, lido: b.lido, nome: b.nome, ...(etapa ? { etapa } : {}), ...(b.humano === false ? { etapa: "duvida" as const } : {}) });
+});
+app.post<{ Params: { id: string }; Body: { texto?: string } }>("/api/whatsapp/mensagens/:id/aprovar", async (req) => aprovarResposta(idDe(req.params.id), req.body?.texto));
+app.post<{ Params: { id: string } }>("/api/whatsapp/mensagens/:id/descartar", async (req) => descartarResposta(idDe(req.params.id)));
 app.get("/api/backup", async () => estadoBackup());
 app.put<{ Body: { ativo?: boolean; pasta?: string; manter?: number } }>("/api/backup", async (req) => definirConfigBackup(req.body ?? {}));
 app.post("/api/backup/agora", async () => fazerBackup());
@@ -414,6 +440,8 @@ app.get("/ws", { websocket: true }, (socket) => {
     mcp: listarServidores(),
     pedidosMcp: listarPedidos(),
     controle: listarSessoesControle(),
+    whatsapp: estadoWhatsapp(),
+    contatosWhatsapp: listarContatos(),
   });
   const unsubscribe = subscribe(send);
   socket.on("close", unsubscribe);
@@ -449,5 +477,10 @@ iniciarMonitoramento();
 iniciarConquistas();
 iniciarConectores();
 iniciarBackup();
+iniciarWhatsapp();
+for (const sinal of ["SIGINT", "SIGTERM"] as const) process.once(sinal, () => {
+  pararWhatsapp();
+  process.exit(0);
+});
 iniciarRituais();
-console.log(`Servidor da Empresa Completa em http://127.0.0.1:${PORT}`);
+console.log(`Servidor do Hefesto em http://127.0.0.1:${PORT}`);

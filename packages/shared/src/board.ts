@@ -684,3 +684,69 @@ export interface SessaoControle {
   imagem: string | null;
   acoes: { ts: number; acao: string; detalhe: string; ok: boolean }[];
 }
+
+/* ---------- WhatsApp (API oficial da Meta) ---------- */
+
+/** aprovar: cada resposta da agente espera o seu OK; automatico: responde sozinha a quem escreveu (janela de 24 h). */
+export type ModoWhatsapp = "aprovar" | "automatico";
+
+export interface EstadoWhatsapp {
+  ativo: boolean;
+  modo: ModoWhatsapp;
+  phoneNumberId: string;
+  wabaId: string;
+  versao: string;
+  temToken: boolean;
+  temAppSecret: boolean;
+  verifyToken: string;
+  /** Endereço público (túnel ou fixo) que a Meta chama; null enquanto não há. */
+  urlPublica: string | null;
+  usarTunel: boolean;
+  /** Número e nome verificados, lidos da Meta no teste de conexão. */
+  numero: string | null;
+  nomeVerificado: string | null;
+  status: "desligado" | "conectando" | "conectado" | "erro";
+  erro: string | null;
+}
+
+export interface ContatoWhatsapp {
+  telefone: string;
+  nome: string;
+  /** Último contato do cliente: define a janela de 24 h para mensagens livres. */
+  ultimaEntrada: number | null;
+  ultimaMensagem: { texto: string; ts: number; direcao: "in" | "out" } | null;
+  naoLidas: number;
+  pendentes: number;
+  /** Você assumiu a conversa: a agente não responde. */
+  humano: boolean;
+  /** Pediu para não receber mais mensagens. */
+  bloqueado: boolean;
+  etapa: "novo" | "duvida" | "interessado" | "negociando" | "cliente" | "perdido" | "humano";
+  resumo: string;
+  leadCardId: number | null;
+}
+
+export type StatusMensagemWhatsapp = "recebida" | "pendente" | "enviando" | "enviada" | "entregue" | "lida" | "falhou" | "descartada";
+
+export interface MensagemWhatsapp {
+  id: number;
+  telefone: string;
+  direcao: "in" | "out";
+  tipo: string;
+  texto: string;
+  imagem: string | null;
+  status: StatusMensagemWhatsapp;
+  erro: string | null;
+  /** "cliente", "voce" ou o id da agente. */
+  autor: string;
+  ts: number;
+  modelo: string | null;
+}
+
+export interface ModeloWhatsapp {
+  nome: string;
+  idioma: string;
+  categoria: string;
+  texto: string;
+  variaveis: number;
+}

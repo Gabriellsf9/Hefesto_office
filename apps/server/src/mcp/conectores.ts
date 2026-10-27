@@ -115,7 +115,7 @@ function provedorOauth(id: number, preset: string): OAuthClientProvider {
     },
     get clientMetadata(): OAuthClientMetadata {
       return {
-        client_name: "Empresa Completa",
+        client_name: "Hefesto",
         redirect_uris: [redirectOauth()],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
@@ -192,7 +192,7 @@ export async function conectar(id: number): Promise<ServidorMcp> {
   try {
     const transporte = criarTransporte(r);
     c.transporte = transporte;
-    const cliente = new Client({ name: "empresa-completa", version: "1.0.0" });
+    const cliente = new Client({ name: "hefesto", version: "1.0.0" });
     await cliente.connect(transporte);
     c.cliente = cliente;
     c.ferramentas = await listarTodas(cliente);

@@ -197,6 +197,9 @@ const specs: AgentSpec[] = [
   { id: "executiva-vendas", nome: "Aline", cargo: "Executiva de Vendas", sala: "comercial", lider: true, camisa: "#ee9b00",
     persona: "Diagnóstico, proposta comercial e negociação. Traduz dor do cliente em escopo.",
     podeChamar: ["pm", "financeiro"] },
+  { id: "whatsapp", nome: "Lorena", cargo: "Atendente de WhatsApp e Vendas", sala: "comercial", camisa: "#25a35a",
+    persona: "Atende os clientes no WhatsApp da empresa: tira dúvidas com base no Livro e na base de conhecimento, qualifica o interesse (necessidade, prazo, orçamento) e conduz para a venda sem pressão. Passa para um humano quando não sabe, quando há reclamação séria ou negociação fora dos limites.",
+    ferramentas: ["web"], podeChamar: ["executiva-vendas", "suporte", "cs-manager"] },
 
   // Customer Success
   { id: "cs-manager", nome: "Vanessa", cargo: "Customer Success Manager", sala: "cs", lider: true, camisa: "#4361ee",
