@@ -563,6 +563,27 @@ Navegador dos agentes:
 - Sempre bloqueados: rede interna (roteador, intranet), arquivos do Mac (file://) e downloads. Conteúdo de página é tratado como dado, nunca como instrução.
 - Botão do globo no topo: assista ao vivo cada sessão (print a cada ação, endereço e histórico) e feche quando quiser.
 
+Interface redesenhada (27/10/2026, ver DESIGN-INTERFACE.md):
+- Barra lateral com 7 áreas (Escritório, Caixa de entrada, Trabalho, Clientes, Equipe, Empresa, Operação) e Configurações; cabeçalho com trilha, ⌘K (busca, comandos e memória) e o estado da equipe; chat no rodapé de todas as páginas.
+- Sistema de design próprio: tokens claro/escuro (automático pelo macOS), Inter local, ícones Lucide, kit de componentes (botões, campos, abas, gavetas, janelas, avisos, estados vazios), Esc e foco preso em todas as camadas, endereço por página e por card (voltar e recarregar funcionam).
+- O 3D pausa fora do Escritório; o menu ⋯ virou a página de Configurações; boas-vindas em 3 passos na primeira vez.
+
+WhatsApp (Lorena, agente de atendimento e vendas):
+- API oficial da Meta. Webhook num servidor separado (127.0.0.1:4318) que só tem essa rota e confere a assinatura X-Hub-Signature-256; túnel do Cloudflare expõe só ele e o endereço vai sozinho para a Meta (override na WABA).
+- Responde dúvidas com o Livro e o conhecimento, qualifica e conduz para a venda, nunca inventa preço, passa para você reclamações e negociações fora da regra (transferir_para_humano), abre chamado para o Suporte e registra a etapa no lead.
+- Modo "aprovar" (cada resposta espera o seu OK) ou "automático" (responde sozinha a quem escreveu, na janela de 24 h). Primeira mensagem da empresa só por modelo aprovado e com opt-in confirmado; "SAIR" põe o número na lista de não contatar.
+
+Arquivos, memória e prévia:
+- Anexe PDF, Word, Excel, PowerPoint e CSV no chat; os agentes leem (PDF como documento, Word pelo textutil, planilhas como tabela). Entregas em DOCX (textutil), PDF (Chrome sem janela), XLSX (ExcelJS) e CSV.
+- Memória da empresa: índice de texto completo (FTS5) de cards, entregas, debates, atas, conhecimento, Livro e chat; ferramenta buscar_na_memoria para todos os agentes e resultados no ⌘K.
+- Prévia do app por card: Node (dev/start), Django e Rails, numa porta livre, na mesma sandbox dos comandos (sem internet, sem ler segredos); para no merge, no descarte ou depois de 60 min sem uso. O navegador e os prints usam a prévia.
+
+Telegram (aprovar pelo celular):
+- Bot criado por você no @BotFather; long polling (nenhuma porta aberta); pareamento por código de 6 dígitos mostrado só na tela local; outros chats são ignorados.
+- Avisos de aprovação, perguntas, ações externas, WhatsApp e P0, com botões; devolver pede o comentário; o que você escreve vai para a Helena e a resposta volta.
+
+Backup: cópia diária (VACUUM INTO + prints) numa pasta fora do projeto, guardando as últimas 14; a chave mestra não vai junto. Repositório no GitHub (privado): Gabriellsf9/empresa-completa.
+
 Conectores MCP (Gmail, Agenda, Drive, GitHub, Stripe, Notion…):
 - ⋯ → Conectores: escolha um modelo pronto (endereços oficiais) ou um servidor MCP qualquer (comando local ou URL). Tokens ficam cifrados em data/; Google e Notion entram por OAuth com a sua conta.
 - Para cada ferramenta: **auto** (roda direto; padrão para as que o servidor marca como só leitura), **aprovar** (padrão para as demais) ou **bloqueada**. Você escolhe também quais salas usam cada conector.
