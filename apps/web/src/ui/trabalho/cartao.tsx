@@ -1,6 +1,6 @@
 import type { Card } from "@empresa/shared";
 import { colunaDe, prioridades, tiposCard } from "@empresa/shared";
-import { agentById, roomById } from "@empresa/org";
+import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { Bug, CalendarClock, CircleDot, Lock, RotateCcw, ShieldCheck } from "lucide-react";
 import { useStore } from "../../store.ts";
 import { Etiqueta, cx } from "../kit/index.ts";
@@ -93,7 +93,7 @@ export function LinhaCard({ card, acao, detalhe }: { card: Card; acao?: React.Re
           <span className="block truncate text-corpo text-fg">{card.titulo}</span>
           <span className="flex items-center gap-1.5 text-legenda text-fg-3">
             <IconeTipo tipo={card.tipo} />
-            <span className="tabular">{card.chave}</span>·<span className="truncate">{detalhe ?? `${roomById[card.sala].nome} · ${col?.nome ?? card.coluna}`}</span>·<span>{quando(card.atualizadoEm)}</span>
+            <span className="tabular">{card.chave}</span>·<span className="truncate">{detalhe ?? `${nomeDaSala(card.sala)} · ${col?.nome ?? card.coluna}`}</span>·<span>{quando(card.atualizadoEm)}</span>
           </span>
         </span>
         <SeloPrioridade p={card.prioridade} />

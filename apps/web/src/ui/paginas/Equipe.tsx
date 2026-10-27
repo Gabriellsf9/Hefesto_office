@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, BarChart3, Building2, Globe, LayoutGrid, MessageSquare, MonitorPlay, Search, Smartphone, Users } from "lucide-react";
 import { colunaDe, type Agent, type RoomId, type SessaoNavegador } from "@empresa/shared";
-import { agentById, agents, roomById, rooms } from "@empresa/org";
+import { agentById, agents, roomById, rooms, nomeDaSala } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
 import { navegar, useNav } from "../../nav.ts";
@@ -113,7 +113,7 @@ function Perfil({ agent }: { agent: Agent }) {
         <Avatarzinho agent={agent} tamanho={64} />
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-pagina font-semibold text-fg">{agent.nome}{agent.lider && <Etiqueta tom="alerta">líder</Etiqueta>}</h1>
-          <p className="text-corpo text-fg-2">{agent.cargo} · {roomById[agent.sala].nome}</p>
+          <p className="text-corpo text-fg-2">{agent.cargo} · {nomeDaSala(agent.sala)}</p>
           <p className="mt-1 flex items-center gap-1.5 text-pequeno font-medium" style={{ color: info.cor }}>
             <span className="size-2 rounded-full" style={{ background: info.cor }} /> {info.rotulo}{estado?.atividade ? ` · ${estado.atividade}` : ""}
           </p>
@@ -199,7 +199,7 @@ function Desempenho() {
         <tbody className="tabular divide-y divide-line">
           {linhas.map(({ a, d, taxa, medio }) => (
             <tr key={a.id} onClick={() => navegar("equipe", "agentes", a.id)} className="cursor-pointer hover:bg-hover">
-              <td className="px-4 py-2.5"><span className="flex items-center gap-2.5"><Avatarzinho agent={a} tamanho={26} /><span><span className="block font-medium text-fg">{a.nome}</span><span className="block text-legenda text-fg-3">{roomById[a.sala].nome}</span></span></span></td>
+              <td className="px-4 py-2.5"><span className="flex items-center gap-2.5"><Avatarzinho agent={a} tamanho={26} /><span><span className="block font-medium text-fg">{a.nome}</span><span className="block text-legenda text-fg-3">{nomeDaSala(a.sala)}</span></span></span></td>
               <td className="px-3 py-2.5 text-right text-fg">{d.concluidos}</td>
               <td className="px-3 py-2.5 text-right"><Etiqueta tom={!d.concluidos ? "neutro" : taxa >= 0.7 ? "sucesso" : taxa >= 0.4 ? "alerta" : "perigo"}>{d.concluidos ? `${Math.round(taxa * 100)}%` : "—"}</Etiqueta></td>
               <td className="px-3 py-2.5 text-right text-fg-2">{d.devolucoes}</td>

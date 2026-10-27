@@ -171,7 +171,7 @@ export function KanbanVivo({ w = 3.4 }: { w?: number }) {
     (ctx, cw, ch) => {
       ctx.fillStyle = "#fbfaf6";
       ctx.fillRect(0, 0, cw, ch);
-      const colunas = fluxos.software.colunas.filter((c) => !["seguranca", "bug"].includes(c.id)).slice(0, 7);
+      const colunas = (fluxos.software ?? Object.values(fluxos)[0]!).colunas.filter((c) => !["seguranca", "bug"].includes(c.id)).slice(0, 7);
       const larg = cw / colunas.length;
       const postIts = ["#ffd166", "#8ecae6", "#ffafcc", "#b9fbc0", "#cdb4db"];
       colunas.forEach((col, i) => {

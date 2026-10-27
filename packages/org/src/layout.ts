@@ -63,7 +63,7 @@ export const PORTA_SALA = 2.6;
 export const ESPESSURA_PAREDE = 0.16;
 const MIOLO = 74; // largura das fileiras (sem os corredores laterais)
 
-type Item = [RoomId | AreaComumId, number];
+export type Item = [RoomId | AreaComumId, number];
 const AREAS: Record<AreaComumId, { abertura: number; aberta: boolean }> = {
   atrio: { abertura: 0, aberta: true },
   copa: { abertura: 5, aberta: false },
@@ -72,23 +72,53 @@ const AREAS: Record<AreaComumId, { abertura: number; aberta: boolean }> = {
 };
 const ehArea = (id: string): id is AreaComumId => id in AREAS;
 
-const fileiras: { profundidade: number; itens: Item[] }[] = [
+/** Planta da sede (ajustada à mão). Escritórios novos usam a planta automática (plantaAutomatica). */
+export const FILEIRAS_SEDE: { profundidade: number; itens: Item[] }[] = [
   { profundidade: 10, itens: [["diretoria", 13], ["reuniao", 15], ["administrativo", 12], ["produto", 12], ["design", 12], ["arquitetura", 10]] },
   { profundidade: 11, itens: [["docs", 12], ["qa", 18], ["seguranca", 13], ["code-review", 13], ["desenvolvimento", 18]] },
   { profundidade: 11, itens: [["devops", 10], ["infraestrutura", 12], ["dados", 12], ["atrio", 16], ["copa", 11], ["lounge", 13]] },
   { profundidade: 11, itens: [["marketing", 24], ["comercial", 11], ["cs", 11], ["recepcao", 28]] },
 ];
 
-const PROFUNDIDADE_TOTAL = fileiras.reduce((s, f) => s + f.profundidade + CORREDOR, 0);
+/** Largura sugerida de uma sala pelo número de mesas. */
+const larguraPara = (membros: number) => Math.max(10, Math.min(26, 7 + Math.ceil(membros / 2) * 3.4));
 
-export const PREDIO = {
-  xMin: -MIOLO / 2 - LATERAL,
-  xMax: MIOLO / 2 + LATERAL,
-  zMin: -PROFUNDIDADE_TOTAL / 2,
-  zMax: PROFUNDIDADE_TOTAL / 2,
-};
+/**
+ * Planta automática para escritórios criados pelo CEO: as fileiras dele (ou uma sala atrás da outra),
+ * com a copa, o lounge e a recepção numa última fileira. A largura de cada sala acompanha as mesas.
+ */
+export function plantaAutomatica(fileirasSalas: RoomId[][], membrosDa: (sala: RoomId) => number): { profundidade: number; itens: Item[] }[] {
+  const out: { profundidade: number; itens: Item[] }[] = fileirasSalas
+    .filter((f) => f.length)
+    .map((f) => ({ profundidade: f.some((s) => membrosDa(s) > 6) ? 11 : 10, itens: f.map((s) => [s, larguraPara(membrosDa(s))] as Item) }));
+  out.push({ profundidade: 10, itens: [["copa", 11], ["atrio", 14], ["lounge", 13], ["recepcao", 20]] });
+  return out;
+}
 
-export const OFFICE_SIZE = { largura: PREDIO.xMax - PREDIO.xMin, profundidade: PROFUNDIDADE_TOTAL };
+/** Monta as fileiras em fileiras de no máximo ~74 m (para a planta automática quando o CEO não organizou). */
+export function distribuirEmFileiras(salas: RoomId[], membrosDa: (sala: RoomId) => number): RoomId[][] {
+  const fileiras: RoomId[][] = [];
+  let atual: RoomId[] = [];
+  let soma = 0;
+  for (const s of salas) {
+    const w = larguraPara(membrosDa(s));
+    if (atual.length && soma + w > 74) {
+      fileiras.push(atual);
+      atual = [];
+      soma = 0;
+    }
+    atual.push(s);
+    soma += w;
+  }
+  if (atual.length) fileiras.push(atual);
+  return fileiras;
+}
+
+let fileiras = FILEIRAS_SEDE;
+let miolo = MIOLO;
+
+export const PREDIO = { xMin: 0, xMax: 0, zMin: 0, zMax: 0 };
+export const OFFICE_SIZE = { largura: 0, profundidade: 0 };
 
 /* ---------- Salas, áreas comuns e corredores ---------- */
 
@@ -96,14 +126,31 @@ const salas: RoomRect[] = [];
 const areas: AreaRect[] = [];
 /** z do centro de cada corredor horizontal (o corredor fica ao sul de cada fileira). */
 export const corredoresZ: number[] = [];
+export const roomRects: RoomRect[] = salas;
+export const roomRectById: Record<RoomId, RoomRect> = {};
+export const areasComuns: AreaRect[] = areas;
+export const areaRectById = {} as Record<AreaComumId, AreaRect>;
+/** Entrada do prédio: na fachada sul, alinhada com a recepção. */
+export const ENTRADA = { x: 0, z: 0, largura: 4 };
 
-{
+const limpar = (o: Record<string, unknown>) => { for (const k of Object.keys(o)) delete o[k]; };
+
+function calcularSalas() {
+  // Escritórios pequenos ficam num prédio mais estreito (fileiras mais curtas que o miolo padrão).
+  const maiorFileira = Math.max(...fileiras.map((f) => f.itens.reduce((s, [, w]) => s + w, 0)));
+  miolo = fileiras === FILEIRAS_SEDE ? MIOLO : Math.max(44, Math.min(MIOLO, maiorFileira));
+  const profundidadeTotal = fileiras.reduce((s, f) => s + f.profundidade + CORREDOR, 0);
+  Object.assign(PREDIO, { xMin: -miolo / 2 - LATERAL, xMax: miolo / 2 + LATERAL, zMin: -profundidadeTotal / 2, zMax: profundidadeTotal / 2 });
+  Object.assign(OFFICE_SIZE, { largura: PREDIO.xMax - PREDIO.xMin, profundidade: profundidadeTotal });
+  salas.length = 0;
+  areas.length = 0;
+  corredoresZ.length = 0;
   let z = PREDIO.zMin;
   for (const f of fileiras) {
     const soma = f.itens.reduce((s, [, w]) => s + w, 0);
-    let x = -MIOLO / 2;
+    let x = -miolo / 2;
     for (const [id, peso] of f.itens) {
-      const largura = (peso / soma) * MIOLO;
+      const largura = (peso / soma) * miolo;
       const base = { x: x + largura / 2, z: z + f.profundidade / 2, largura, profundidade: f.profundidade };
       if (ehArea(id)) areas.push({ id, ...base, ...AREAS[id] });
       else salas.push({ id, ...base });
@@ -113,15 +160,12 @@ export const corredoresZ: number[] = [];
     corredoresZ.push(z + CORREDOR / 2);
     z += CORREDOR;
   }
+  limpar(roomRectById);
+  for (const r of salas) roomRectById[r.id] = r;
+  limpar(areaRectById);
+  for (const a of areas) areaRectById[a.id] = a;
+  Object.assign(ENTRADA, { x: areaRectById.recepcao.x, z: PREDIO.zMax });
 }
-
-export const roomRects: RoomRect[] = salas;
-export const roomRectById = Object.fromEntries(salas.map((r) => [r.id, r])) as Record<RoomId, RoomRect>;
-export const areasComuns: AreaRect[] = areas;
-export const areaRectById = Object.fromEntries(areas.map((a) => [a.id, a])) as Record<AreaComumId, AreaRect>;
-
-/** Entrada do prédio: na fachada sul, alinhada com a recepção. */
-export const ENTRADA = { x: areaRectById.recepcao.x, z: PREDIO.zMax, largura: 4 };
 
 /* ---------- Paredes (desenho e navegação usam a mesma lista) ---------- */
 
@@ -152,7 +196,7 @@ function montarParedes(): Parede[] {
   return out;
 }
 
-export const paredes: Parede[] = montarParedes();
+export const paredes: Parede[] = [];
 
 /* ---------- Mesas ---------- */
 
@@ -182,8 +226,25 @@ function montarMesas(): DeskSpot[] {
   return out;
 }
 
-export const deskSpots: DeskSpot[] = montarMesas();
-export const deskByAgent = Object.fromEntries(deskSpots.map((d) => [d.agenteId, d])) as Record<string, DeskSpot>;
+export const deskSpots: DeskSpot[] = [];
+export const deskByAgent: Record<string, DeskSpot> = {};
+
+/**
+ * Refaz a planta (salas, áreas, corredores, paredes e mesas) para o escritório ativo. Os objetos exportados
+ * são alterados no lugar: quem já os importou continua com a referência certa.
+ */
+export function recalcularPlanta(novas: { profundidade: number; itens: Item[] }[] = FILEIRAS_SEDE) {
+  fileiras = novas;
+  calcularSalas();
+  paredes.length = 0;
+  paredes.push(...montarParedes());
+  deskSpots.length = 0;
+  deskSpots.push(...montarMesas());
+  limpar(deskByAgent);
+  for (const d of deskSpots) deskByAgent[d.agenteId] = d;
+}
+
+recalcularPlanta();
 
 /** Tamanho da mesa de trabalho (para desenhar e para a navegação desviar). */
 export const MESA = { largura: 1.7, profundidade: 0.85 };

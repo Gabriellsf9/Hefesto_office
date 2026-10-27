@@ -128,9 +128,11 @@ function Corredores() {
   const xLateralLeste = PREDIO.xMax - 1.5;
   // Corredor 1: Produto → Design → Arquitetura (para o leste); desce pelo corredor lateral;
   // corredor 2: Desenvolvimento → Code Review → Segurança → QA → Docs (para o oeste).
-  const ida = setas(r.produto.x, xLateralLeste, corredoresZ[0]!, 1);
-  const descida = setasVerticais(xLateralLeste, corredoresZ[0]! + 2, corredoresZ[1]! - 2);
-  const volta = setas(xLateralLeste - 2.5, r.docs.x, corredoresZ[1]!, -1);
+  // As setas do fluxo do código só existem na planta da sede (Produto → … → Docs).
+  const comSetas = !!(r.produto && r.docs && corredoresZ.length > 2);
+  const ida = comSetas ? setas(r.produto!.x, xLateralLeste, corredoresZ[0]!, 1) : [];
+  const descida = comSetas ? setasVerticais(xLateralLeste, corredoresZ[0]! + 2, corredoresZ[1]! - 2) : [];
+  const volta = comSetas ? setas(xLateralLeste - 2.5, r.docs!.x, corredoresZ[1]!, -1) : [];
   return (
     <group>
       {corredoresZ.map((z) => (

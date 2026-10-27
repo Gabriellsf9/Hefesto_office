@@ -3,24 +3,10 @@
 export * from "./board.ts";
 import type { Ata, Card, Comentario, ConfigCritica, Conquista, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, Previa, MensagemWhatsapp, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, EstadoMotor, ItemConhecimento, Lead, Meta, Monitor, Peca, Projeto, RitualInfo } from "./board.ts";
 
-export type RoomId =
-  | "diretoria"
-  | "produto"
-  | "design"
-  | "arquitetura"
-  | "desenvolvimento"
-  | "code-review"
-  | "qa"
-  | "seguranca"
-  | "devops"
-  | "dados"
-  | "infraestrutura"
-  | "docs"
-  | "marketing"
-  | "comercial"
-  | "cs"
-  | "administrativo"
-  | "reuniao";
+/** Id de uma sala. As do escritório principal são fixas (diretoria, produto…); escritórios criados por você têm ids próprios. */
+export type RoomId = string;
+/** Salas do escritório principal (a sede). */
+export const SALAS_DA_SEDE = ["diretoria", "produto", "design", "arquitetura", "desenvolvimento", "code-review", "qa", "seguranca", "devops", "dados", "infraestrutura", "docs", "marketing", "comercial", "cs", "administrativo", "reuniao"] as const;
 
 export type ModelTier = "claude-opus-5-5" | "claude-sonnet-5-5" | "claude-haiku-5-5";
 
@@ -65,6 +51,10 @@ export interface Agent {
   /** Ids dos agentes ou salas que este agente costuma acionar. */
   podeChamar: string[];
   aparencia: { camisa: string; pele: string; cabelo: string };
+  /** Escritório do agente ("sede" é o principal). */
+  escritorio?: string;
+  /** "coordenador": recebe os pedidos do CEO no chat daquele escritório. */
+  papel?: "coordenador";
 }
 
 export type AgentStatus =

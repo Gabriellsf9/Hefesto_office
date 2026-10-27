@@ -1,27 +1,18 @@
-import type { Agent, AgentTool, ModelTier, RoomId } from "@empresa/shared";
+import type { Agent, AgentTool, AgenteDef, ModelTier, RoomId } from "@empresa/shared";
 
 const OPUS: ModelTier = "claude-opus-5-5";
 const SONNET: ModelTier = "claude-sonnet-5-5";
+void (null as unknown as RoomId);
 
 const peles = ["#f1c9a5", "#e0ac7e", "#c68a5d", "#8d5a3b", "#f5d6bd", "#a8714a"];
 const cabelos = ["#2b1d14", "#5a3a22", "#1a1a1a", "#a0672e", "#d9b26b", "#6b4a3a", "#3b2a20"];
 
-interface AgentSpec {
-  id: string;
-  nome: string;
-  cargo: string;
-  sala: RoomId;
-  modelo?: ModelTier;
-  lider?: boolean;
-  persona: string;
-  ferramentas?: AgentTool[];
-  podeChamar?: string[];
-  camisa: string;
-}
+type AgentSpec = AgenteDef;
 
-const specs: AgentSpec[] = [
+/** Equipe da sede (o escritório principal). */
+export const AGENTES_SEDE: AgentSpec[] = [
   // Diretoria
-  { id: "chief-of-staff", nome: "Helena", cargo: "Chief of Staff", sala: "diretoria", modelo: OPUS, lider: true, camisa: "#3d5a80",
+  { id: "chief-of-staff", nome: "Helena", cargo: "Chief of Staff", sala: "diretoria", modelo: OPUS, lider: true, papel: "coordenador", camisa: "#3d5a80",
     persona: "Braço direito do CEO. Transforma pedidos vagos em planos claros, distribui para as equipes certas, acompanha prazos e devolve resumos objetivos.",
     podeChamar: ["*"] },
   { id: "cto", nome: "Marcos", cargo: "CTO", sala: "diretoria", modelo: OPUS, camisa: "#293241",
@@ -230,23 +221,32 @@ const specs: AgentSpec[] = [
 // Todos são sêniores; cargos de liderança já dizem isso no próprio título.
 const jaIndicaSenioridade = /Sênior|Lead|Staff|Head|Chief|CTO|CMO|Arquiteto|Manager/;
 
-export const agents: Agent[] = specs.map((s, i) => ({
-  id: s.id,
-  nome: s.nome,
-  cargo: jaIndicaSenioridade.test(s.cargo) ? s.cargo : `${s.cargo} Sênior`,
-  sala: s.sala,
-  modelo: s.modelo ?? SONNET,
-  lider: s.lider ?? false,
-  persona: s.persona,
-  ferramentas: s.ferramentas ?? [],
-  podeChamar: s.podeChamar ?? [],
-  aparencia: {
-    camisa: s.camisa,
-    pele: peles[i % peles.length]!,
-    cabelo: cabelos[(i * 3) % cabelos.length]!,
-  },
-}));
+/** Agente completo a partir da definição (aparência estável pela posição na equipe). */
+export function montarAgente(s: AgentSpec, i: number, escritorio = "sede"): Agent {
+  return {
+    id: s.id,
+    nome: s.nome,
+    cargo: jaIndicaSenioridade.test(s.cargo) ? s.cargo : `${s.cargo} Sênior`,
+    sala: s.sala,
+    modelo: s.modelo ?? SONNET,
+    lider: s.lider ?? false,
+    persona: s.persona,
+    ferramentas: (s.ferramentas ?? []) as AgentTool[],
+    podeChamar: s.podeChamar ?? [],
+    aparencia: {
+      camisa: s.camisa,
+      pele: peles[i % peles.length]!,
+      cabelo: cabelos[(i * 3) % cabelos.length]!,
+    },
+    escritorio,
+    ...(s.papel ? { papel: s.papel } : {}),
+  };
+}
 
-export const agentById = Object.fromEntries(agents.map((a) => [a.id, a])) as Record<string, Agent>;
+/** Equipe do escritório ativo (o registro troca o conteúdo no lugar). */
+export const agents: Agent[] = AGENTES_SEDE.map((s, i) => montarAgente(s, i));
 
-export const agentsByRoom = (sala: RoomId) => agents.filter((a) => a.sala === sala);
+/** Todos os agentes de todos os escritórios registrados. */
+export const agentById: Record<string, Agent> = Object.fromEntries(agents.map((a) => [a.id, a]));
+
+export const agentsByRoom = (sala: RoomId) => Object.values(agentById).filter((a) => a.sala === sala);

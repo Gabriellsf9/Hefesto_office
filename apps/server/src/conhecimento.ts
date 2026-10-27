@@ -1,5 +1,5 @@
 import type { Card, ConfigCritica, ItemConhecimento, RoomId, TipoConhecimento } from "@empresa/shared";
-import { agentById, roomById } from "@empresa/org";
+import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { db, getSetting, setSetting } from "./db.ts";
 import { emit, postFeed } from "./bus.ts";
 import { clienteClaude } from "./custo.ts";
@@ -154,7 +154,7 @@ export async function extrairLicao(card: Card) {
     modelo: MODELO_LICOES,
     fallback: false,
     esforco: "low",
-    sistema: `Você registra as lições aprendidas da área ${roomById[card.sala].nome} do Hefesto. Português do Brasil.
+    sistema: `Você registra as lições aprendidas da área ${nomeDaSala(card.sala)} do Hefesto. Português do Brasil.
 A partir das devoluções e dos comentários do CEO num trabalho já concluído, escreva UMA lição geral que evite o mesmo problema nos próximos trabalhos da área: uma regra clara e acionável (2 a 5 tópicos curtos), sem citar este card, este cliente ou detalhes que só valem aqui.
 Se os comentários forem só gosto pessoal, detalhes pontuais ou não ensinarem nada reutilizável, chame nenhuma_licao.`,
     mensagem: `# ${card.chave} — ${card.titulo}\n\n## Descrição\n${card.descricao.slice(0, 4000) || "(sem descrição)"}\n\n## O que foi apontado\n${debate}\n\n## Versão final aprovada (trecho)\n${(final?.conteudo ?? "").slice(0, 4000)}`,

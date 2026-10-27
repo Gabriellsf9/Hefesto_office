@@ -3,7 +3,10 @@ import type { RoomId } from "./index.ts";
 // Backlog central e board estilo Jira (Fase 2b). Toda tarefa da empresa é um card;
 // cada área trabalha num fluxo (conjunto de colunas) que faz sentido para ela.
 
-export type FluxoId = "software" | "marketing" | "comercial" | "operacoes" | "geral";
+/** Id de um fluxo. Os da sede são software, marketing, comercial, operacoes e geral; escritórios novos têm ids próprios. */
+export type FluxoId = string;
+/** Comportamento base do fluxo (o que o sistema faz de especial nele: código, leads, peças…). */
+export type BaseFluxo = "software" | "marketing" | "comercial" | "operacoes" | "geral" | "conteudo" | "atendimento" | "pedidos" | "personalizado";
 
 /** Papel da coluna no fluxo: define regras (aprovação, bugs, conclusão). */
 export type TipoColuna = "fila" | "trabalho" | "validacao" | "bug" | "ceo" | "feito" | "perdido";
@@ -19,6 +22,8 @@ export interface Coluna {
 export interface Fluxo {
   id: FluxoId;
   nome: string;
+  /** Comportamento base (o dos fluxos da sede é o próprio id). */
+  base?: BaseFluxo;
   colunas: Coluna[];
   /** Para onde o card volta quando você devolve com comentário. */
   devolverPara: string;
@@ -26,6 +31,7 @@ export interface Fluxo {
   aprovarPara: string;
 }
 
+/** Todos os fluxos de todos os escritórios (o registro de escritórios acrescenta os novos). */
 export const fluxos: Record<FluxoId, Fluxo> = {
   software: {
     id: "software",
@@ -109,6 +115,7 @@ export const fluxos: Record<FluxoId, Fluxo> = {
 };
 
 /** Fluxo padrão de cada sala, usado ao criar cards. */
+/** Fluxo padrão de cada sala, de todos os escritórios (o registro acrescenta os novos). */
 export const fluxoDaSala: Record<RoomId, FluxoId> = {
   diretoria: "geral",
   produto: "software",
@@ -129,7 +136,12 @@ export const fluxoDaSala: Record<RoomId, FluxoId> = {
   reuniao: "geral",
 };
 
-export const colunaDe = (fluxo: FluxoId, coluna: string) => fluxos[fluxo].colunas.find((c) => c.id === coluna);
+/** Fluxo padrão de uma sala (ao criar cards). */
+export const fluxoPadrao = (sala: RoomId): FluxoId => fluxoDaSala[sala] ?? "geral";
+
+export const colunaDe = (fluxo: FluxoId, coluna: string) => fluxos[fluxo]?.colunas.find((c) => c.id === coluna);
+/** Comportamento base de um fluxo (software, comercial, marketing…). */
+export const baseDoFluxo = (fluxo: FluxoId): BaseFluxo => fluxos[fluxo]?.base ?? (fluxo as BaseFluxo);
 
 // Em que coluna da board de software cada sala trabalha e valida.
 const colunaSoftware: Partial<Record<RoomId, string>> = {
@@ -139,14 +151,16 @@ const colunaSoftware: Partial<Record<RoomId, string>> = {
 
 /** Onde um card novo entra para a equipe pegar sozinha: a primeira fila que não é o Backlog. */
 export function colunaDeEntrada(fluxo: FluxoId): string {
-  const cols = fluxos[fluxo].colunas;
+  const cols = fluxos[fluxo]!.colunas;
   return (cols.find((c) => c.tipo === "fila" && c.id !== "backlog") ?? cols[0]!).id;
 }
 
 /** Coluna onde a sala trabalha no fluxo. */
 export function colunaDeTrabalho(fluxo: FluxoId, sala: RoomId): string {
   if (fluxo === "software" && colunaSoftware[sala]) return colunaSoftware[sala];
-  return fluxos[fluxo].colunas.find((c) => c.tipo === "trabalho")!.id;
+  const cols = fluxos[fluxo]!.colunas;
+  // Em fluxos criados por você, a coluna de trabalho da sala (se houver) ou a primeira de trabalho.
+  return (cols.find((c) => c.tipo === "trabalho" && c.sala === sala) ?? cols.find((c) => c.tipo === "trabalho")!).id;
 }
 
 /**
@@ -170,7 +184,8 @@ export function etapaDoCodigo(card: Pick<Card, "fluxo" | "sala" | "validador">) 
 /** Coluna de validação da sala no fluxo, se houver; senão a validação é só um selo no card. */
 export function colunaDeValidacao(fluxo: FluxoId, sala: RoomId): string | null {
   if (fluxo === "software") return sala === "desenvolvimento" ? "code-review" : null;
-  return fluxos[fluxo].colunas.find((c) => c.tipo === "validacao")?.id ?? null;
+  const cols = fluxos[fluxo]!.colunas;
+  return (cols.find((c) => c.tipo === "validacao" && c.sala === sala) ?? cols.find((c) => c.tipo === "validacao"))?.id ?? null;
 }
 
 export type TipoCard = "epico" | "historia" | "tarefa" | "subtarefa" | "bug" | "lead" | "conteudo";
@@ -776,4 +791,84 @@ export interface ModeloWhatsapp {
   categoria: string;
   texto: string;
   variaveis: number;
+}
+
+/* ---------- Escritórios personalizáveis (DESIGN-ESCRITORIOS.md) ---------- */
+
+/** Sala de um escritório. */
+export interface SalaDef {
+  id: RoomId;
+  nome: string;
+  descricao: string;
+  cor: string;
+  /** Agente que valida as entregas desta sala (de outra sala), ou null (só você). */
+  validador: string | null;
+  /** Padrão de trabalho da sala (vira o playbook dos agentes dela). Vazio = o da sede, se houver, ou um padrão genérico. */
+  playbook?: string;
+}
+
+/** Agente de um escritório. */
+export interface AgenteDef {
+  id: string;
+  nome: string;
+  cargo: string;
+  sala: RoomId;
+  modelo?: "claude-opus-5-5" | "claude-sonnet-5-5" | "claude-haiku-5-5";
+  lider?: boolean;
+  persona: string;
+  ferramentas?: string[];
+  podeChamar?: string[];
+  camisa: string;
+  /** Papel especial: "coordenador" recebe os pedidos do CEO no chat e distribui os cards. */
+  papel?: "coordenador";
+}
+
+/** Planta: fileiras de salas (de cima para baixo); áreas comuns entram sozinhas. */
+export interface PlantaDef {
+  fileiras: RoomId[][];
+}
+
+export interface EscritorioDef {
+  id: string;
+  nome: string;
+  descricao: string;
+  /** Modelo de origem (software-house, startup, agencia…). */
+  modelo: string;
+  projetoId: number | null;
+  salas: SalaDef[];
+  agentes: AgenteDef[];
+  fluxos: Fluxo[];
+  /** Fluxo padrão de cada sala (ao criar cards). */
+  fluxoDaSala: Record<RoomId, FluxoId>;
+  planta: PlantaDef;
+  criadoEm: number;
+  atualizadoEm: number;
+}
+
+/** Resumo para listas e para o seletor. */
+export interface EscritorioResumo {
+  id: string;
+  nome: string;
+  descricao: string;
+  modelo: string;
+  projetoId: number | null;
+  salas: number;
+  agentes: number;
+  fluxos: number;
+}
+
+export interface ModeloEscritorio {
+  id: string;
+  nome: string;
+  descricao: string;
+  salas: number;
+  agentes: number;
+  fluxos: string[];
+}
+
+export interface ModeloFluxo {
+  id: string;
+  nome: string;
+  descricao: string;
+  fluxo: Fluxo;
 }

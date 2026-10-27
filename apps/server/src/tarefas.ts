@@ -1,8 +1,7 @@
 import {
   colunaDe, fluxoDaSala, fluxos, type Card, type CardEditavel, type Comentario, type Entrega, type FluxoId, type RoomId,
-  type TipoComentario,
-} from "@empresa/shared";
-import { agentById, roomById } from "@empresa/org";
+  type TipoComentario, fluxoPadrao } from "@empresa/shared";
+import { agentById, roomById, salaDe } from "@empresa/org";
 import { db, garantirColuna } from "./db.ts";
 import { emit, focus } from "./bus.ts";
 
@@ -166,13 +165,13 @@ export interface NovoCard extends CardEditavel {
 
 export function criarCard(dados: NovoCard, autor = "voce"): Card {
   validar(dados);
-  const fluxo = dados.fluxo ?? fluxoDaSala[dados.sala];
+  const fluxo = dados.fluxo ?? fluxoPadrao(dados.sala);
   if (!fluxos[fluxo]) throw new ErroCard("Fluxo inválido.");
-  const coluna = dados.coluna ?? fluxos[fluxo].colunas[0]!.id;
+  const coluna = dados.coluna ?? fluxos[fluxo]!.colunas[0]!.id;
   if (!colunaDe(fluxo, coluna)) throw new ErroCard("Coluna inválida para este fluxo.");
   const agora = Date.now();
   const sala = dados.sala;
-  const validador = dados.validador !== undefined ? dados.validador : roomById[sala].validador;
+  const validador = dados.validador !== undefined ? dados.validador : salaDe(sala).validador;
 
   const r = db.prepare(
     `INSERT INTO cards (fluxo, coluna, ordem, tipo, titulo, descricao, criterios, prioridade, nivel, sala, dono, validador,
@@ -266,7 +265,7 @@ export function aprovar(id: number, comentario?: string): Card {
   const card = lerCard(id);
   if (!exigeAprovacao(card)) throw new ErroCard("Este card não está aguardando a sua aprovação.");
   comentar(id, "voce", "aprovacao", comentario?.trim() || "Aprovado.");
-  const movido = mover(id, fluxos[card.fluxo].aprovarPara, "voce");
+  const movido = mover(id, fluxos[card.fluxo]!.aprovarPara, "voce");
   for (const fn of aoAprovar) fn(movido);
   return movido;
 }
@@ -283,7 +282,7 @@ export function devolver(id: number, comentario: string): Card {
   const card = lerCard(id);
   if (!exigeAprovacao(card)) throw new ErroCard("Este card não está aguardando a sua aprovação.");
   if (!comentario?.trim()) throw new ErroCard("Diga o que precisa mudar ao devolver.");
-  return registrarDevolucao(id, "voce", comentario.trim().slice(0, 5000), fluxos[card.fluxo].devolverPara);
+  return registrarDevolucao(id, "voce", comentario.trim().slice(0, 5000), fluxos[card.fluxo]!.devolverPara);
 }
 
 /* ---------- Bugs ---------- */

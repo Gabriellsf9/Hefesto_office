@@ -1,9 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   colunaDe, colunaDeEntrada, colunaDeTrabalho, colunaDeValidacao, etapaDoCodigo, etapasDoCodigo, fluxoDaSala, fluxos, prioridades, type Agent, type Card, type EstadoMotor,
-  type FluxoId, type RoomId, type TrabalhoEmAndamento,
-} from "@empresa/shared";
-import { agentById, roomById } from "@empresa/org";
+  type FluxoId, type RoomId, type TrabalhoEmAndamento, fluxoPadrao } from "@empresa/shared";
+import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude, custoHoje } from "../custo.ts";
 import { getSetting, setSetting } from "../db.ts";
@@ -98,7 +97,7 @@ function dependenciaOk(card: Card, porId: Map<number, Card>) {
  * (ex.: Comercial "Contatado", "Reunião") quem conduz é você.
  */
 function antesDoCeo(card: Card) {
-  const cols = fluxos[card.fluxo].colunas;
+  const cols = fluxos[card.fluxo]!.colunas;
   return cols.findIndex((c) => c.id === card.coluna) < cols.findIndex((c) => c.tipo === "ceo");
 }
 
@@ -295,7 +294,7 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
         const sala = texto(e, "sala", 40) as RoomId;
         if (!roomById[sala]) return { texto: `Sala inválida: ${sala}`, erro: true };
         const dono = typeof e.dono === "string" && agentById[e.dono]?.sala === sala ? e.dono : liderDe(sala);
-        const fluxo = fluxoDaSala[sala];
+        const fluxo = fluxoPadrao(sala);
         const novo = criarCard(
           {
             titulo: texto(e, "titulo", 200), descricao: texto(e, "descricao", 20_000), sala, fluxo, coluna: colunaDeEntrada(fluxo),
@@ -303,8 +302,8 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
           },
           agente.id,
         );
-        comentar(card.id, agente.id, "comentario", `Pedi para ${roomById[sala].nome}: ${novo.chave} — ${novo.titulo}`);
-        return { texto: `Card ${novo.chave} criado para ${roomById[sala].nome}.` };
+        comentar(card.id, agente.id, "comentario", `Pedi para ${nomeDaSala(sala)}: ${novo.chave} — ${novo.titulo}`);
+        return { texto: `Card ${novo.chave} criado para ${nomeDaSala(sala)}.` };
       },
     ),
   ];
@@ -565,7 +564,7 @@ ${c.patch.slice(0, 20_000)}
 /** Depois da validação: N0 conclui; o resto vai para a aprovação do CEO. */
 function finalizar(card: Card, quem: string) {
   if (card.nivel === "N0") {
-    const concluido = mover(card.id, fluxos[card.fluxo].aprovarPara, quem);
+    const concluido = mover(card.id, fluxos[card.fluxo]!.aprovarPara, quem);
     postFeed(card.sala, quem, `${card.chave} concluído (N0, não precisa do CEO)`);
     void extrairLicao(concluido).catch((e) => console.error("Falha ao extrair lição:", e));
   } else {

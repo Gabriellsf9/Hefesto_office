@@ -26,6 +26,7 @@ export const pois: Poi[] = poisAreas;
  */
 export const assentosReuniao: Poi[] = (() => {
   const { x, z, largura, profundidade } = mesaReuniao;
+  if (!largura) return [];
   const lugares = Math.max(2, Math.floor(largura / 1.3));
   const out: Poi[] = [];
   for (let i = 0; i < lugares; i++) {

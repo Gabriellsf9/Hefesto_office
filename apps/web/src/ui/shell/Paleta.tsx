@@ -4,7 +4,7 @@ import {
   ArrowRight, Brain, Building2, CornerDownLeft, FilePlus2, MessageCircle, Moon, Pause, Play, Search, Sparkles, Sun, Target, User, type LucideIcon,
 } from "lucide-react";
 import { create } from "zustand";
-import { agents, roomById } from "@empresa/org";
+import { agents, roomById, nomeDaSala, fluxosDe, escritorioAtivo } from "@empresa/org";
 import { fluxos, type FluxoId } from "@empresa/shared";
 import { navegar, useNav, type Area } from "../../nav.ts";
 import { useStore } from "../../store.ts";
@@ -33,7 +33,7 @@ const sem = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCas
 
 const PAGINAS: { area: Area; sub?: string; nome: string; termos?: string }[] = [
   ...ITENS_NAV.map((i) => ({ area: i.area, nome: i.nome })),
-  ...(Object.keys(fluxos) as FluxoId[]).map((f) => ({ area: "trabalho" as Area, sub: f, nome: `Board ${fluxos[f].nome}`, termos: "quadro kanban" })),
+  ...fluxosDe(escritorioAtivo()).map((x) => x.id).map((f) => ({ area: "trabalho" as Area, sub: f, nome: `Board ${fluxos[f]!.nome}`, termos: "quadro kanban" })),
   { area: "trabalho", sub: "marketing", nome: "Calendário editorial", termos: "posts conteúdo" },
   { area: "clientes", sub: "whatsapp", nome: "Conversas do WhatsApp", termos: "mensagens clientes lorena" },
   { area: "clientes", sub: "leads", nome: "Leads e prospecção", termos: "comercial vendas" },
@@ -127,13 +127,13 @@ export function Paleta() {
         ...Object.values(cards)
           .filter((c) => ok(c.chave, c.titulo))
           .slice(0, 8)
-          .map((c) => ({ id: `c-${c.id}`, grupo: "Cards", titulo: `${c.chave} · ${c.titulo}`, detalhe: roomById[c.sala].nome, icone: FilePlus2, fazer: () => useStore.getState().abrirCard(c.id) })),
+          .map((c) => ({ id: `c-${c.id}`, grupo: "Cards", titulo: `${c.chave} · ${c.titulo}`, detalhe: nomeDaSala(c.sala), icone: FilePlus2, fazer: () => useStore.getState().abrirCard(c.id) })),
       );
       r.push(
         ...agents
           .filter((a) => ok(a.nome, a.cargo))
           .slice(0, 6)
-          .map((a) => ({ id: `ag-${a.id}`, grupo: "Agentes", titulo: a.nome, detalhe: `${a.cargo} · ${roomById[a.sala].nome}`, icone: User, fazer: () => navegar("equipe", "agentes", a.id) })),
+          .map((a) => ({ id: `ag-${a.id}`, grupo: "Agentes", titulo: a.nome, detalhe: `${a.cargo} · ${nomeDaSala(a.sala)}`, icone: User, fazer: () => navegar("equipe", "agentes", a.id) })),
       );
       r.push(
         ...Object.values(leads)

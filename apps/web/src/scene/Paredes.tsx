@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Color, MeshStandardMaterial } from "three";
-import { ESPESSURA_PAREDE, paredes, roomById, type Parede } from "@empresa/org";
+import { ESPESSURA_PAREDE, paredes, roomById, type Parede, salaDe } from "@empresa/org";
 import type { RoomId } from "@empresa/shared";
 import { corDaArea } from "./areas.ts";
 import { sombrear } from "./textures.ts";
@@ -24,7 +24,7 @@ const rodape = new MeshStandardMaterial({ color: "#4a3f35" });
 const acabamento = new MeshStandardMaterial({ color: "#e2dccf" });
 
 const corDe = (sala?: Parede["sala"]) =>
-  !sala ? "#c9b8a6" : sala in roomById ? roomById[sala as RoomId].cor : corDaArea(sala as Parameters<typeof corDaArea>[0]);
+  !sala ? "#c9b8a6" : sala in roomById ? salaDe(sala as RoomId).cor : corDaArea(sala as Parameters<typeof corDaArea>[0]);
 
 export function Paredes() {
   return (

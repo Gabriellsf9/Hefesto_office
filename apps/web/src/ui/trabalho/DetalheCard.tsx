@@ -129,7 +129,7 @@ function Corpo({ card }: { card: Card }) {
 
 function Propriedades({ card, editar }: { card: Card; editar: (d: CardEditavel) => Promise<unknown> }) {
   const projetos = useStore((s) => s.projetos);
-  const fluxo = fluxos[card.fluxo];
+  const fluxo = fluxos[card.fluxo] ?? { colunas: [] };
   const coluna = colunaDe(card.fluxo, card.coluna);
   const mover = async (destinoId: string) => {
     const destino = colunaDe(card.fluxo, destinoId)!;

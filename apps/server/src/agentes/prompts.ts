@@ -1,5 +1,5 @@
 import { colunaDe, prioridades, secoesLivro, type Agent, type Card, type RoomId } from "@empresa/shared";
-import { agentById, agents, checklistPerformance, conhecimentoStacks, especialidades, playbookPadrao, playbooks, referencias, roomById, rooms, salasTecnicas } from "@empresa/org";
+import { agentById, agents, checklistPerformance, conhecimentoStacks, especialidades, playbookPadrao, playbooks, referencias, roomById, rooms, salasTecnicas, nomeDaSala, salaDe } from "@empresa/org";
 import { lerLivro } from "../livro.ts";
 import { conhecimentoDaSala } from "../conhecimento.ts";
 import { contextoDoLead } from "../prospeccao.ts";
@@ -16,7 +16,7 @@ import { lerCard, listarComentarios, listarEntregas, ultimaEntrega } from "../ta
 /** Conhecimento aprovado da casa para a área (padrões, guias, modelos e lições). */
 function blocoConhecimento(sala: RoomId): string {
   const c = conhecimentoDaSala(sala);
-  return c ? `\n\n## Conhecimento da casa: ${roomById[sala].nome}\nPadrões, guias, modelos e lições aprovados pelo CEO. Eles valem mais que o playbook genérico quando os dois divergirem.\n\n${c}` : "";
+  return c ? `\n\n## Conhecimento da casa: ${nomeDaSala(sala)}\nPadrões, guias, modelos e lições aprovados pelo CEO. Eles valem mais que o playbook genérico quando os dois divergirem.\n\n${c}` : "";
 }
 
 /** Playbook da área + as obras de referência que guiam o trabalho dela. */
@@ -61,7 +61,7 @@ const REGRAS = `## Regras da empresa
 
 /** System prompt de um agente trabalhando como autor de um card. */
 export function sistemaAutor(agente: Agent): string {
-  const sala = roomById[agente.sala];
+  const sala = salaDe(agente.sala);
   return `Você é ${agente.nome}, ${agente.cargo} do Hefesto, na área ${sala.nome}.
 ${agente.persona}
 
@@ -97,12 +97,12 @@ function checklistDoFoco(salaDoCard: RoomId, foco?: Foco): { titulo: string; tex
   if (foco === "performance") return { titulo: "Code Review · Performance e otimização", texto: `${playbookDe("code-review")}\n\n${checklistPerformance}` };
   if (foco === "seguranca") return { titulo: "Segurança · revisão de segurança do código", texto: playbookDe("seguranca") };
   if (foco === "qa") return { titulo: "QA", texto: playbookDe("qa") };
-  return { titulo: roomById[salaDoCard].nome, texto: playbookDe(salaDoCard) };
+  return { titulo: nomeDaSala(salaDoCard), texto: playbookDe(salaDoCard) };
 }
 
 /** System prompt de um agente validando a entrega de outra área. */
 export function sistemaValidador(agente: Agent, salaDoCard: RoomId, foco?: Foco, autorId?: string | null): string {
-  const sala = roomById[salaDoCard];
+  const sala = salaDe(salaDoCard);
   const checklist = checklistDoFoco(salaDoCard, foco);
   // Fora das etapas especializadas do código, o validador também cobra o conhecimento do especialista autor.
   const doAutor = !foco || foco === "corretude" ? (autorId ? especialidades[autorId] : undefined) : undefined;
@@ -138,7 +138,7 @@ export function sistemaAdvogado(agente: Agent, salaDoCard: RoomId): string {
   return `Você é ${agente.nome}, ${agente.cargo} do Hefesto.
 ${agente.persona}
 
-Agora você é o ADVOGADO DO DIABO de uma entrega importante da área ${roomById[salaDoCard].nome}, antes do validador. Você não aprova nem devolve: você questiona.
+Agora você é o ADVOGADO DO DIABO de uma entrega importante da área ${nomeDaSala(salaDoCard)}, antes do validador. Você não aprova nem devolve: você questiona.
 - Ataque as premissas, não o estilo. O que foi assumido sem evidência? O que acontece se a premissa estiver errada?
 - Procure o que pode dar errado: risco para o cliente, para o caixa, para a segurança, para a reputação, para o prazo.
 - Aponte alternativas que não foram consideradas e o custo de oportunidade.
@@ -197,7 +197,7 @@ function descreverCard(card: Card): string {
   const coluna = colunaDe(card.fluxo, card.coluna)?.nome ?? card.coluna;
   const prioridade = prioridades.find((p) => p.id === card.prioridade)!;
   return `# ${card.chave} — ${card.titulo}
-Tipo: ${card.tipo} · Área: ${roomById[card.sala].nome} · Coluna: ${coluna} · Prioridade: ${card.prioridade} (${prioridade.nome}) · Autonomia: ${card.nivel}
+Tipo: ${card.tipo} · Área: ${nomeDaSala(card.sala)} · Coluna: ${coluna} · Prioridade: ${card.prioridade} (${prioridade.nome}) · Autonomia: ${card.nivel}
 
 ## Descrição
 ${card.descricao || "(sem descrição)"}

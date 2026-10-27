@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Vector3 } from "three";
-import { areasComuns, deskSpots, PREDIO, roomById, roomRects } from "@empresa/org";
+import { areasComuns, deskSpots, PREDIO, roomById, roomRects, salaDe } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { statusInfo } from "../status.ts";
 import { usePaineis } from "../paineis.ts";
@@ -52,7 +52,7 @@ export function Minimapa() {
     }
     ctx.globalAlpha = 1;
     for (const r of roomRects) {
-      ctx.fillStyle = roomById[r.id].cor;
+      ctx.fillStyle = salaDe(r.id).cor;
       ctx.fillRect(px(r.x - r.largura / 2) + 0.5, pz(r.z - r.profundidade / 2) + 0.5, r.largura * ESCALA - 1, r.profundidade * ESCALA - 1);
     }
     return c;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Ata, ConfigCritica, Indicadores, Meta, ResultadoChave, RitualInfo } from "@empresa/shared";
-import { agentById, roomById, rooms } from "@empresa/org";
+import { agentById, roomById, rooms, nomeDaSala } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { api } from "../api.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -277,7 +277,7 @@ export function AbaIndicadores() {
           <tbody className="tabular-nums">
             {ativas.map((a) => (
               <tr key={a.sala} className="border-t border-line">
-                <td className="py-2 font-medium">{roomById[a.sala].nome}</td>
+                <td className="py-2 font-medium">{nomeDaSala(a.sala)}</td>
                 <td>{a.concluidos7d}</td>
                 <td>{a.emAndamento}</td>
                 <td className={a.aguardandoCeo ? "font-semibold text-danger-fg" : ""}>{a.aguardandoCeo}</td>

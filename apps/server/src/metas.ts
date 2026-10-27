@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { colunaDe, type Card, type IndicadorArea, type Indicadores, type Meta, type ResultadoChave, type RoomId } from "@empresa/shared";
-import { agentById, roomById, rooms } from "@empresa/org";
+import { agentById, roomById, rooms, nomeDaSala } from "@empresa/org";
 import { db } from "./db.ts";
 import { emit } from "./bus.ts";
 import { clienteClaude, custoHoje } from "./custo.ts";
@@ -89,7 +89,7 @@ export function metasEmTexto(): string {
       const krs = m.resultados
         .map((r) => {
           const pct = r.alvo ? Math.round((r.atual / r.alvo) * 100) : 0;
-          return `  - ${r.descricao}: ${r.atual}/${r.alvo} ${r.unidade} (${pct}%)${r.sala ? ` — ${roomById[r.sala].nome}` : ""}`;
+          return `  - ${r.descricao}: ${r.atual}/${r.alvo} ${r.unidade} (${pct}%)${r.sala ? ` — ${nomeDaSala(r.sala)}` : ""}`;
         })
         .join("\n");
       return `- ${m.objetivo}${m.confirmada ? "" : " (sugerida, ainda não confirmada pelo CEO)"}\n${krs}`;

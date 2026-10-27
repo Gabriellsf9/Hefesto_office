@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity, ArrowLeft, ChevronDown, ChevronUp, FileCheck2, KanbanSquare, LayoutList, MessageSquare, Minus, ShieldCheck, Users, Volume2, X } from "lucide-react";
 import { colunaDe, type Agent, type RoomId } from "@empresa/shared";
-import { agentById, agentsByRoom, roomById, rooms } from "@empresa/org";
+import { agentById, agentsByRoom, roomById, rooms, nomeDaSala, salaDe } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { statusInfo } from "../../status.ts";
 import { usePaineis } from "../../paineis.ts";
@@ -90,7 +90,7 @@ export function TickerAtividade() {
             {itens.map((f) => (
               <li key={f.id}>
                 <button type="button" onClick={() => selecionarSala(f.sala)} className="flex w-full gap-2 rounded-ctl px-1.5 py-1 text-left text-pequeno hover:bg-hover">
-                  <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: roomById[f.sala].cor }} />
+                  <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: salaDe(f.sala).cor }} />
                   <span className="min-w-0 flex-1 text-fg">{f.texto}</span>
                   <span className="tabular shrink-0 text-legenda text-fg-3">{hora(f.ts)}</span>
                 </button>
@@ -100,7 +100,7 @@ export function TickerAtividade() {
         </div>
       ) : (
         <button type="button" onClick={() => selecionarSala(ultimo.sala)} className="flex h-10 w-full items-center gap-2.5 px-3 text-left">
-          <span className="pulsar size-2 shrink-0 rounded-full" style={{ background: roomById[ultimo.sala].cor }} />
+          <span className="pulsar size-2 shrink-0 rounded-full" style={{ background: salaDe(ultimo.sala).cor }} />
           <span className="min-w-0 flex-1 truncate text-pequeno text-fg">{ultimo.texto}</span>
           <span className="tabular shrink-0 text-legenda text-fg-3">{hora(ultimo.ts)}</span>
         </button>
@@ -118,7 +118,7 @@ export function PainelContexto() {
   const recolhido = usePaineis((s) => s.minimizados.lateral);
   const alternar = usePaineis((s) => s.alternar);
   if (!sala || entrevistaAberta) return null;
-  const room = roomById[sala];
+  const room = salaDe(sala);
   if (recolhido) {
     return (
       <button type="button" onClick={() => alternar("lateral")} className="painel pointer-events-auto absolute right-3 top-3 flex h-10 items-center gap-2 px-3 text-pequeno font-semibold text-fg">
@@ -140,7 +140,7 @@ export function PainelContexto() {
 }
 
 function VistaSala({ sala }: { sala: RoomId }) {
-  const room = roomById[sala];
+  const room = salaDe(sala);
   const membros = agentsByRoom(sala);
   const validador = room.validador ? agentById[room.validador] : null;
   const cards = useStore((s) => s.cards);
@@ -238,7 +238,7 @@ function VistaAgente({ agent }: { agent: Agent }) {
     <div className="scroll-fino min-h-0 flex-1 overflow-y-auto">
       <div className="px-4 pb-4 pr-20 pt-3">
         <button type="button" onClick={() => selecionarSala(agent.sala)} className="mb-3 flex items-center gap-1 text-legenda text-fg-3 hover:text-fg">
-          <ArrowLeft className="size-3.5" /> {roomById[agent.sala].nome}
+          <ArrowLeft className="size-3.5" /> {nomeDaSala(agent.sala)}
         </button>
         <div className="flex items-center gap-3">
           <Avatarzinho agent={agent} tamanho={48} />

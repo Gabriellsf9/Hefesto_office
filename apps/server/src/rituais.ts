@@ -1,5 +1,5 @@
 import { colunaDe, type Ata, type RitualId, type RitualInfo } from "@empresa/shared";
-import { agentById, agents, roomById } from "@empresa/org";
+import { agentById, agents, roomById, nomeDaSala } from "@empresa/org";
 import { db, getSetting, setSetting } from "./db.ts";
 import { emit, focus, postChat, setAgentStatus } from "./bus.ts";
 import { clienteClaude } from "./custo.ts";
@@ -252,7 +252,7 @@ function indicadoresEmTexto(): string {
   const usd = (v: number) => `US$ ${v.toFixed(2)}`;
   const areas = ind.areas
     .filter((a) => a.concluidos7d || a.emAndamento || a.aguardandoCeo || a.bugsAbertos)
-    .map((a) => `- ${roomById[a.sala].nome}: ${a.concluidos7d} concluídos em 7 dias, ${a.emAndamento} em andamento, ${a.bugsAbertos} bugs abertos, aprovação de primeira ${a.aprovacaoPrimeira ?? "–"}%, custo 7d ${usd(a.custo7dUsd)}`)
+    .map((a) => `- ${nomeDaSala(a.sala)}: ${a.concluidos7d} concluídos em 7 dias, ${a.emAndamento} em andamento, ${a.bugsAbertos} bugs abertos, aprovação de primeira ${a.aprovacaoPrimeira ?? "–"}%, custo 7d ${usd(a.custo7dUsd)}`)
     .join("\n");
   return `${areas || "- sem atividade nas áreas"}\nCusto de IA: hoje ${usd(ind.custoHojeUsd)}, 7 dias ${usd(ind.custo7dUsd)}, mês ${usd(ind.custoMesUsd)}`;
 }
@@ -357,7 +357,7 @@ function planejamento(atrasado: boolean): Ata {
   const backlog = listarCards()
     .filter((c) => !c.demo && c.coluna === "backlog")
     .slice(0, 30)
-    .map((c) => `- ${c.chave} ${c.titulo} (${roomById[c.sala].nome}, ${c.prioridade})`)
+    .map((c) => `- ${c.chave} ${c.titulo} (${nomeDaSala(c.sala)}, ${c.prioridade})`)
     .join("\n");
   const card = criarCard(
     {

@@ -1,5 +1,5 @@
-import { colunaDe, fluxoDaSala, fluxos, type RoomId } from "@empresa/shared";
-import { agentById, roomById } from "@empresa/org";
+import { colunaDe, fluxoDaSala, fluxos, type RoomId, fluxoPadrao } from "@empresa/shared";
+import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude } from "../custo.ts";
 import { recentChat } from "../db.ts";
@@ -116,7 +116,7 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
         const donoPedido = typeof c.dono === "string" ? c.dono : "";
         const dono = agentById[donoPedido]?.sala === sala ? donoPedido : undefined;
         const dep = typeof c.depende_de === "number" && c.depende_de >= 0 && c.depende_de < i ? ids[c.depende_de] : undefined;
-        const fluxo = fluxoDaSala[sala];
+        const fluxo = fluxoPadrao(sala);
         const card = criarCard(
           {
             titulo: texto(c, "titulo", 200),
@@ -136,7 +136,7 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
           HELENA,
         );
         ids.push(card.id);
-        chaves.push(`${card.chave} → ${roomById[sala].nome} (${card.dono ? agentById[card.dono]!.nome : "sem dono"})${dep ? `, depois do ${`EMP-${dep}`}` : ""}`);
+        chaves.push(`${card.chave} → ${nomeDaSala(sala)} (${card.dono ? agentById[card.dono]!.nome : "sem dono"})${dep ? `, depois do ${`EMP-${dep}`}` : ""}`);
       });
       criados.push(...chaves);
       postFeed("diretoria", HELENA, `Helena criou ${chaves.length} card(s) a partir do pedido do CEO`);

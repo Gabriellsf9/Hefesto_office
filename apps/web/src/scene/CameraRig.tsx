@@ -59,6 +59,7 @@ export function CameraRig() {
     }
     if (camera.sala) {
       const r = roomRectById[camera.sala];
+      if (!r) return void visaoGeral(c, true, aspecto);
       const h = Math.max(r.largura * 0.95, r.profundidade * 1.3) + 6;
       void c.setFocalOffset(lateralMinimizado ? 0 : h * 0.14, 0, 0, true);
       void c.setLookAt(r.x, h, r.z + h * 0.72, r.x, 0, r.z, true);
@@ -79,7 +80,7 @@ export function CameraRig() {
       if (agenteSelecionado) x = 2.2;
       else {
         const r = roomRectById[salaSelecionada];
-        x = (Math.max(r.largura * 0.95, r.profundidade * 1.3) + 6) * 0.14;
+        if (r) x = (Math.max(r.largura * 0.95, r.profundidade * 1.3) + 6) * 0.14;
       }
     }
     void c.setFocalOffset(x, 0, 0, true);

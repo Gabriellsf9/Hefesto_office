@@ -136,6 +136,7 @@ const poi = (sala: Poi["sala"], acao: Acao, x: number, z: number, rot: number, s
 {
   const estante = (sala: RoomId, xLocal: (w: number) => number) => {
     const s = roomRectById[sala];
+    if (!s) return;
     poi(sala, "ler", s.x + xLocal(s.largura), s.z - s.profundidade / 2 + 1.1, NORTE);
   };
   estante("diretoria", (w) => -w / 2 + 3.6);
@@ -151,6 +152,8 @@ export const poisAreas = pois;
 /** Mesa da Sala de Reunião (mesma fórmula do MeetingTable em RoomMesh). */
 export const mesaReuniao = (() => {
   const r = roomRectById.reuniao;
+  // Escritórios sem Sala de Reunião: retângulo vazio, fora de tudo.
+  if (!r) return { x: 0, z: 0, largura: 0, profundidade: 0 };
   return { x: r.x, z: r.z - 0.3, largura: Math.min(r.largura - 5, 9), profundidade: 2.2 };
 })();
 

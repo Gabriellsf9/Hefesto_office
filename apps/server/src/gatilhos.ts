@@ -1,4 +1,4 @@
-import { colunaDeEntrada, fluxoDaSala, type Card } from "@empresa/shared";
+import { colunaDeEntrada, fluxoDaSala, type Card, fluxoPadrao } from "@empresa/shared";
 import { getSetting, setSetting } from "./db.ts";
 import { postFeed } from "./bus.ts";
 import { aoAprovar, comentar, criarCard, ultimaEntrega } from "./tarefas.ts";
@@ -124,8 +124,8 @@ ${entrega?.conteudo ?? "(sem entrega registrada)"}`;
           ...comuns,
           titulo: `Medir o resultado: ${card.titulo}`,
           sala: "dados",
-          fluxo: fluxoDaSala.dados,
-          coluna: colunaDeEntrada(fluxoDaSala.dados),
+          fluxo: fluxoPadrao("dados"),
+          coluna: colunaDeEntrada(fluxoPadrao("dados")),
           tipo: "tarefa",
           dono: "product-analytics",
           nivel: "N1",
@@ -143,8 +143,8 @@ ${entrega?.conteudo ?? "(sem entrega registrada)"}`;
           ...comuns,
           titulo: `Revisar os textos: ${card.titulo}`,
           sala: "design",
-          fluxo: fluxoDaSala.design,
-          coluna: colunaDeEntrada(fluxoDaSala.design),
+          fluxo: fluxoPadrao("design"),
+          coluna: colunaDeEntrada(fluxoPadrao("design")),
           tipo: "tarefa",
           dono: "ux-writer",
           nivel: "N1",
@@ -162,8 +162,8 @@ ${entrega?.conteudo ?? "(sem entrega registrada)"}`;
           ...comuns,
           titulo: `Privacidade (LGPD): ${card.titulo}`,
           sala: "administrativo",
-          fluxo: fluxoDaSala.administrativo,
-          coluna: colunaDeEntrada(fluxoDaSala.administrativo),
+          fluxo: fluxoPadrao("administrativo"),
+          coluna: colunaDeEntrada(fluxoPadrao("administrativo")),
           tipo: "tarefa",
           dono: "dpo",
           nivel: "N1",

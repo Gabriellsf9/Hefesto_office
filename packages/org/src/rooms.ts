@@ -1,6 +1,7 @@
 import type { Room, RoomId } from "@empresa/shared";
 
-export const rooms: Room[] = [
+/** Salas da sede (o escritório principal). */
+export const SALAS_SEDE: Room[] = [
   { id: "diretoria", nome: "Diretoria", descricao: "Recebe seus pedidos, distribui o trabalho e cobra os prazos.", cor: "#f2c879", validador: "cto" },
   { id: "produto", nome: "Produto", descricao: "Visão do produto, backlog e histórias com critérios de aceite.", cor: "#9ad0c2", validador: "arquiteto" },
   { id: "design", nome: "Design UX/UI", descricao: "Pesquisa, fluxos, protótipos navegáveis, design system e os textos da interface.", cor: "#f4a6b8", validador: "pm" },
@@ -20,4 +21,13 @@ export const rooms: Room[] = [
   { id: "administrativo", nome: "Administrativo", descricao: "Financeiro, contábil e fiscal, jurídico, privacidade (LGPD) e RH.", cor: "#c9b8a6", validador: "chief-of-staff" },
 ];
 
-export const roomById = Object.fromEntries(rooms.map((r) => [r.id, r])) as Record<RoomId, Room>;
+/** Salas do escritório ativo (o registro troca o conteúdo no lugar). */
+export const rooms: Room[] = [...SALAS_SEDE];
+/** Todas as salas de todos os escritórios registrados. */
+export const roomById: Record<RoomId, Room> = Object.fromEntries(SALAS_SEDE.map((r) => [r.id, r]));
+
+/** Nome de uma sala (ou o próprio id, se a sala não existir mais). */
+export const nomeDaSala = (id: RoomId) => roomById[id]?.nome ?? id;
+
+/** A sala (ou uma sala genérica com o próprio id, se ela não existir mais, ex.: escritório excluído). */
+export const salaDe = (id: RoomId): Room => roomById[id] ?? { id, nome: id, descricao: "", cor: "#a3a3a3", validador: null };

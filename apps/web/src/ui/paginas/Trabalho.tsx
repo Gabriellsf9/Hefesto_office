@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Bug, CalendarDays, Columns3, FilePlus2, Hourglass, KanbanSquare, List, Lock, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { colunaDe, fluxos, prioridades, tiposCard, type Card, type Coluna, type FluxoId } from "@empresa/shared";
-import { agentById, agents, rooms } from "@empresa/org";
+import { agentById, agents, rooms, fluxosDe, escritorioAtivo } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
 import { navegar, useNav } from "../../nav.ts";
@@ -33,17 +33,20 @@ const COR_COLUNA: Record<Coluna["tipo"], string> = {
 
 export default function PaginaTrabalho() {
   const rota = useNav((s) => s.rota);
-  const fluxoId: FluxoId = rota.sub && rota.sub in fluxos ? (rota.sub as FluxoId) : useStore.getState().fluxoBoard;
+  // Fluxos do escritório ativo; um endereço de outro escritório cai no primeiro fluxo deste.
+  const doEscritorio = fluxosDe(escritorioAtivo()).map((x) => x.id);
+  const preferido = rota.sub ?? useStore.getState().fluxoBoard;
+  const fluxoId: FluxoId = doEscritorio.includes(preferido) ? preferido : doEscritorio[0]!;
   const cards = useStore((s) => s.cards);
   const projetoAtivo = useStore((s) => s.projetoAtivo);
   const [f, setF] = useState<Filtros>(INICIAIS);
   const [visao, setVisao] = useState<Visao>("quadro");
   const todos = useMemo(() => Object.values(cards), [cards]);
-  const fluxo = fluxos[fluxoId];
+  const fluxo = fluxos[fluxoId]!;
 
   useEffect(() => {
     useStore.getState().setFluxoBoard(fluxoId);
-    if (!rota.sub) navegar("trabalho", fluxoId, null, { substituir: true, manterCard: true });
+    if (rota.sub !== fluxoId) navegar("trabalho", fluxoId, null, { substituir: true, manterCard: true });
     if (fluxoId !== "marketing" && visao === "calendario") setVisao("quadro");
   }, [fluxoId, rota.sub, visao]);
 
@@ -128,9 +131,9 @@ export default function PaginaTrabalho() {
           className="mt-4"
           ativa={fluxoId}
           onChange={(id) => navegar("trabalho", id)}
-          abas={(Object.keys(fluxos) as FluxoId[]).map((id) => ({
+          abas={fluxosDe(escritorioAtivo()).map((x) => x.id).map((id) => ({
             id,
-            rotulo: fluxos[id].nome,
+            rotulo: fluxos[id]!.nome,
             contador: todos.filter((c) => c.fluxo === id && colunaDe(c.fluxo, c.coluna)?.tipo === "ceo").length,
             alerta: true,
           }))}

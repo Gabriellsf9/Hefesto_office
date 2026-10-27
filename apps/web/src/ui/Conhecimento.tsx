@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { tiposConhecimento, type ItemConhecimento, type RoomId, type TipoConhecimento } from "@empresa/shared";
-import { agentById, roomById, rooms } from "@empresa/org";
+import { agentById, roomById, rooms, nomeDaSala, salaDe } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { api } from "../api.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -76,8 +76,8 @@ export function PainelConhecimento() {
             {visiveis.map((i) => (
               <button key={i.id} onClick={() => setAberto(i.id)} className="block w-full rounded-xl p-3 text-left ring-1 ring-line hover:bg-hover">
                 <div className="flex items-center gap-2 text-legenda text-fg-3">
-                  <span className="h-2 w-2 rounded-full" style={{ background: roomById[i.sala].cor }} />
-                  {roomById[i.sala].nome} · {nomeTipo(i.tipo)}
+                  <span className="h-2 w-2 rounded-full" style={{ background: salaDe(i.sala).cor }} />
+                  {nomeDaSala(i.sala)} · {nomeTipo(i.tipo)}
                   {!i.aprovado && <span className="rounded-full bg-warning-soft px-1.5 font-semibold text-warning-fg">proposta</span>}
                 </div>
                 <div className="mt-0.5 text-corpo font-semibold">{i.titulo}</div>
@@ -137,8 +137,8 @@ function Detalhe({ item, aoFechar }: { item: ItemConhecimento; aoFechar: () => v
           ← Voltar
         </button>
         <div className="flex items-center gap-2 text-legenda text-fg-3">
-          <span className="h-2 w-2 rounded-full" style={{ background: roomById[item.sala].cor }} />
-          {roomById[item.sala].nome} · {nomeTipo(item.tipo)} · por {autor}
+          <span className="h-2 w-2 rounded-full" style={{ background: salaDe(item.sala).cor }} />
+          {nomeDaSala(item.sala)} · {nomeTipo(item.tipo)} · por {autor}
           {origem && (
             <button onClick={() => useStore.getState().abrirCard(origem.id)} className="font-semibold text-fg underline">
               {origem.chave}

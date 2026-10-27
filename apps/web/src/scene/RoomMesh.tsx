@@ -4,7 +4,7 @@ import { Html } from "@react-three/drei";
 import { Color, type MeshStandardMaterial, type Texture } from "three";
 import type { RoomId } from "@empresa/shared";
 import type { RoomRect } from "@empresa/org";
-import { agentsByRoom, deskSpots, ESPESSURA_PAREDE, PORTA_SALA, roomById } from "@empresa/org";
+import { agentsByRoom, deskSpots, ESPESSURA_PAREDE, PORTA_SALA, roomById, salaDe } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { MeetingTable, Plant, Sofa, Whiteboard } from "./Furniture.tsx";
 import {
@@ -25,7 +25,7 @@ const pisoDeMadeira: RoomId[] = ["diretoria", "reuniao", "design", "marketing"];
 const pisoPorcelanato: RoomId[] = ["infraestrutura", "devops"];
 
 export function RoomMesh({ rect }: { rect: RoomRect }) {
-  const room = roomById[rect.id];
+  const room = salaDe(rect.id);
   const { x, z, largura: w, profundidade: d } = rect;
   const selecionada = useStore((s) => s.salaSelecionada === rect.id);
   const ativos = useStore((s) => agentsByRoom(rect.id).filter((a) => (s.estados[a.id]?.status ?? "ocioso") !== "ocioso").length);
@@ -135,7 +135,7 @@ function areaDasMesas(rect: RoomRect) {
 /** O que toda sala tem: tapete sob as mesas, quadros, relógio, arandelas, plantas, luminária e lixeira. */
 function DecoracaoBase({ rect }: { rect: RoomRect }) {
   const { largura: w, profundidade: d, id } = rect;
-  const room = roomById[id];
+  const room = salaDe(id);
   const seed = hashStr(id);
   const area = areaDasMesas(rect);
 
@@ -190,7 +190,7 @@ function DecoracaoBase({ rect }: { rect: RoomRect }) {
 function DecoracaoTematica({ rect }: { rect: RoomRect }) {
   const { largura: w, profundidade: d, id } = rect;
   const seed = hashStr(id) + 100;
-  const room = roomById[id];
+  const room = salaDe(id);
   const frenteZ = d / 2 - 1.5;
   const esq = -w / 2 + 2.2;
   const dir = w / 2 - 2.2;

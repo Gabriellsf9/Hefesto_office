@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { colunaDeEntrada, fluxoDaSala, fluxos, niveis, prioridades, tiposCard, type Card, type FluxoId, type RoomId } from "@empresa/shared";
-import { agentById, agents, roomById, rooms } from "@empresa/org";
+import { colunaDeEntrada, fluxoDaSala, fluxos, niveis, prioridades, tiposCard, type Card, type FluxoId, type RoomId, fluxoPadrao } from "@empresa/shared";
+import { agentById, agents, roomById, rooms, salaDe, fluxosDe, escritorioAtivo } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
 import { AreaTexto, Botao, Campo, Interruptor, Janela, Seletor, avisar } from "../kit/index.ts";
 
 // Novo card (DESIGN-INTERFACE.md §6.3): título em destaque, quadro/área/prioridade à mostra, o resto recolhido.
 
-const salaPadrao: Record<FluxoId, RoomId> = {
+const salaPadrao: Partial<Record<FluxoId, RoomId>> = {
   software: "produto", marketing: "marketing", comercial: "comercial", operacoes: "infraestrutura", geral: "diretoria",
 };
+/** Sala onde um card novo deste fluxo nasce (a da sede, a da 1ª coluna com sala ou a 1ª sala do escritório). */
+const salaPadraoDo = (f: FluxoId): RoomId => salaPadraoDo(f) ?? fluxos[f]?.colunas.find((c) => c.sala)?.sala ?? rooms[0]!.id;
 const liderDe = (s: RoomId) => agents.find((a) => a.sala === s && a.lider)?.id ?? agents.find((a) => a.sala === s)?.id ?? "";
 
 export function NovoCard() {
@@ -28,7 +30,7 @@ function Formulario({ fechar }: { fechar: () => void }) {
   const projetos = useStore((s) => s.projetos);
   const projetoAtivo = useStore((s) => s.projetoAtivo);
   const [fluxo, setFluxo] = useState<FluxoId>(fluxoInicial);
-  const [sala, setSala] = useState<RoomId>(salaPadrao[fluxoInicial]);
+  const [sala, setSala] = useState<RoomId>(salaPadraoDo(fluxoInicial));
   const [titulo, setTitulo] = useState("");
   const [tipo, setTipo] = useState<Card["tipo"]>(fluxoInicial === "software" ? "historia" : "tarefa");
   const [prioridade, setPrioridade] = useState<Card["prioridade"]>("P2");
@@ -36,13 +38,13 @@ function Formulario({ fechar }: { fechar: () => void }) {
   const [descricao, setDescricao] = useState("");
   const [criterios, setCriterios] = useState("");
   const [projetoId, setProjetoId] = useState<number | null>(fluxoInicial === "software" ? projetoAtivo : null);
-  const [dono, setDono] = useState(liderDe(salaPadrao[fluxoInicial]));
+  const [dono, setDono] = useState(liderDe(salaPadraoDo(fluxoInicial)));
   const [comecarAgora, setComecarAgora] = useState(true);
   const [mais, setMais] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
-  const salasDoFluxo = rooms.filter((r) => fluxoDaSala[r.id] === fluxo || r.id === sala);
-  const validador = roomById[sala].validador ? agentById[roomById[sala].validador!] : null;
+  const salasDoFluxo = rooms.filter((r) => fluxoPadrao(r.id) === fluxo || r.id === sala);
+  const validador = salaDe(sala).validador ? agentById[salaDe(sala).validador!] : null;
 
   const criar = async () => {
     if (!titulo.trim()) return setErro("Dê um título ao card.");
@@ -79,11 +81,11 @@ function Formulario({ fechar }: { fechar: () => void }) {
           onChange={(e) => {
             const f = e.target.value as FluxoId;
             setFluxo(f);
-            setSala(salaPadrao[f]);
-            setDono(liderDe(salaPadrao[f]));
+            setSala(salaPadraoDo(f));
+            setDono(liderDe(salaPadraoDo(f)));
           }}
         >
-          {(Object.keys(fluxos) as FluxoId[]).map((f) => <option key={f} value={f}>{fluxos[f].nome}</option>)}
+          {fluxosDe(escritorioAtivo()).map((x) => x.id).map((f) => <option key={f} value={f}>{fluxos[f]!.nome}</option>)}
         </Seletor>
         <Seletor
           rotulo="Área"

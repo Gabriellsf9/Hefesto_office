@@ -1,5 +1,5 @@
 import { colunaDe, type Agent } from "@empresa/shared";
-import { agents, roomById } from "@empresa/org";
+import { agents, roomById, nomeDaSala } from "@empresa/org";
 import { emit, focus, postChat, setAgentStatus } from "../bus.ts";
 import { clienteClaude } from "../custo.ts";
 import { listarCards, listarComentarios, ultimaEntrega } from "../tarefas.ts";
@@ -57,7 +57,7 @@ export async function conversarComAgente(agente: Agent, pergunta: string, imagen
     return;
   }
   setAgentStatus(agente.id, "pensando", "Respondendo ao CEO");
-  const sistema = `Você é ${agente.nome}, ${agente.cargo} do Hefesto (área ${roomById[agente.sala].nome}). ${agente.persona}
+  const sistema = `Você é ${agente.nome}, ${agente.cargo} do Hefesto (área ${nomeDaSala(agente.sala)}). ${agente.persona}
 
 O CEO está falando com você por voz. Responda como numa conversa rápida de corredor: em português do Brasil, 2 a 4 frases curtas, sem listas, sem títulos, sem Markdown e sem emojis (a resposta vai ser lida em voz alta). Fale só do que está nos seus cards; se não souber, diga que não sabe e o que vai fazer. Não invente progresso.
 

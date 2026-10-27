@@ -3,7 +3,7 @@ import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { CanvasTexture, SRGBColorSpace, type Group, type MeshBasicMaterial, type Sprite, type SpriteMaterial } from "three";
 import type { Agent, AgentStatus } from "@empresa/shared";
-import { roomById } from "@empresa/org";
+import { roomById, salaDe } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { statusInfo } from "../status.ts";
 import { comportamentoDe, type Comportamento } from "./behavior.ts";
@@ -104,7 +104,7 @@ function visualDe(agent: Agent) {
   const p = r();
   return {
     calca: CALCAS[Math.floor(r() * CALCAS.length)]!,
-    cracha: roomById[agent.sala].cor,
+    cracha: salaDe(agent.sala).cor,
     oculos: r() < 0.32,
     fone: usaFone,
     penteado: (p < 0.38 ? "longo" : p < 0.52 ? "coque" : "curto") as "longo" | "coque" | "curto",

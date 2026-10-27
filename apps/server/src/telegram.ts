@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { colunaDe, type Card, type EstadoTelegram, type ServerEvent } from "@empresa/shared";
-import { agentById, roomById } from "@empresa/org";
+import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { getSetting, setSetting } from "./db.ts";
 import { emit, subscribe } from "./bus.ts";
 import { apagarSegredo, lerSegredo, salvarSegredo } from "./secrets.ts";
@@ -138,7 +138,7 @@ function avisoCard(card: Card) {
   if (card.demo) return;
   if (tipo === "ceo" && c.notificar.aprovacoes && uma(`ap-${card.id}-${card.atualizadoEm}-${card.devolucoes}`)) {
     void enviar(
-      `✅ <b>Pronto para aprovar</b> · ${card.chave} (${card.nivel}, ${card.prioridade})\n${escapar(card.titulo)}\n<i>${escapar(roomById[card.sala].nome)} · ${escapar(nomeDe(card.dono))}${card.validador ? `, validado por ${escapar(nomeDe(card.validador))}` : ""}</i>`,
+      `✅ <b>Pronto para aprovar</b> · ${card.chave} (${card.nivel}, ${card.prioridade})\n${escapar(card.titulo)}\n<i>${escapar(nomeDaSala(card.sala))} · ${escapar(nomeDe(card.dono))}${card.validador ? `, validado por ${escapar(nomeDe(card.validador))}` : ""}</i>`,
       [[{ text: "Aprovar", callback_data: `ap:${card.id}` }, { text: "Devolver", callback_data: `dv:${card.id}` }]],
     );
   } else if (card.bloqueado && c.notificar.perguntas && uma(`bq-${card.id}-${card.atualizadoEm}`)) {

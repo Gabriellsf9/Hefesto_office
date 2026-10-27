@@ -1,7 +1,6 @@
 import {
-  colunaDeTrabalho, colunaDeValidacao, fluxoDaSala, fluxos, type AgentStatus, type Card, type FluxoId, type RoomId,
-} from "@empresa/shared";
-import { agentById, agentsByRoom, roomById, rooms } from "@empresa/org";
+  colunaDeTrabalho, colunaDeValidacao, fluxoDaSala, fluxos, type AgentStatus, type Card, type FluxoId, type RoomId, fluxoPadrao } from "@empresa/shared";
+import { agentById, agentsByRoom, roomById, rooms, salaDe } from "@empresa/org";
 import { emit, focus, postFeed, resetAll, setAgentStatus } from "./bus.ts";
 import { projetoAtivo } from "./projetos.ts";
 import { abrirBug, comentar, criarCard, marcarValidacao, mover, registrarDevolucao } from "./tarefas.ts";
@@ -49,7 +48,7 @@ const motivosDeDevolucao = [
 ];
 
 async function episodio(sala: RoomId) {
-  const room = roomById[sala];
+  const room = salaDe(sala);
   const membros = agentsByRoom(sala).filter((a) => !ocupados.has(a.id));
   if (!room.validador || membros.length === 0) return;
   const autor = sorteia(membros);
@@ -59,7 +58,7 @@ async function episodio(sala: RoomId) {
   ocupados.add(validador.id);
 
   const tarefa = sorteia(tarefas[sala] ?? ["Trabalhando"]);
-  const fluxo = fluxoDaSala[sala];
+  const fluxo = fluxoPadrao(sala);
   const sorte = Math.random();
   try {
     // 1. Card criado na fila e pego pelo autor
@@ -139,7 +138,7 @@ async function episodio(sala: RoomId) {
 
     // 5. N0 o validador conclui; N1/N2 vão para a sua caixa de aprovações
     if (card.nivel === "N0") {
-      mover(card.id, fluxos[fluxo].aprovarPara, validador.id);
+      mover(card.id, fluxos[fluxo]!.aprovarPara, validador.id);
       postFeed(sala, validador.id, `${validador.nome} concluiu o ${card.chave} (nível N0, não precisa do CEO)`);
       setAgentStatus(autor.id, "ocioso", null);
     } else {

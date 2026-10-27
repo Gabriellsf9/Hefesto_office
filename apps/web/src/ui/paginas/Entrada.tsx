@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Check, CheckCheck, ChevronRight, Inbox, Lock, MessageCircle, Plug, RotateCcw, Terminal, X } from "lucide-react";
-import { agentById, roomById } from "@empresa/org";
+import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import type { MensagemWhatsapp } from "@empresa/shared";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
@@ -156,7 +156,7 @@ function ItemPendencia({ p, marcado, marcar, aprovar, devolver, abrir }: { p: Pe
           <div className="mt-1 text-corpo font-medium text-fg">{c.titulo}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-legenda text-fg-3">
             <IconeTipo tipo={c.tipo} />
-            <span className="tabular">{c.chave}</span>·<span>{roomById[c.sala].nome}</span>
+            <span className="tabular">{c.chave}</span>·<span>{nomeDaSala(c.sala)}</span>
             {autor && <>·<span>{autor.nome}{validador && p.tipo === "aprovacao" ? `, validado por ${validador.nome}` : ""}</span></>}
             ·<span>{quando(p.ts)}</span>
           </div>
