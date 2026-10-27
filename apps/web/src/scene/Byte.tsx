@@ -243,7 +243,7 @@ export function Byte() {
           </group>
         </group>
         <Html position={[0, 1.2, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
-          <div className={`whitespace-nowrap rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold shadow-md ring-1 ring-black/5 transition-opacity ${hover ? "opacity-100" : "invisible opacity-0"}`}>
+          <div className={`whitespace-nowrap rounded-full bg-glass px-2.5 py-1 text-legenda font-semibold shadow-2 ring-1 ring-line transition-opacity ${hover ? "opacity-100" : "invisible opacity-0"}`}>
             🐶 Byte · mascote
           </div>
         </Html>

@@ -4,7 +4,7 @@ import { agentById } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { send } from "../ws.ts";
 import { Markdown } from "./Markdown.tsx";
-import { Avatarzinho } from "./SidePanel.tsx";
+import { Avatarzinho } from "./comum.tsx";
 import { AvisosVoz, BotoesVoz } from "./Voz.tsx";
 
 const helena = agentById["chief-of-staff"]!;
@@ -26,14 +26,14 @@ export function ConviteEntrevista() {
     <div className="painel pointer-events-auto absolute left-1/2 top-24 flex w-[min(520px,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 p-3">
       <Avatarzinho agent={helena} grande />
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold">A Helena quer conhecer a sua empresa</div>
-        <div className="text-xs text-black/55">
+        <div className="text-corpo font-semibold">A Helena quer conhecer a sua empresa</div>
+        <div className="text-pequeno text-fg-2">
           {status === "nao-iniciado"
             ? "Uma conversa de poucos minutos para montar o Livro da Empresa, que todos os agentes vão ler."
             : "A entrevista está pausada. Continue de onde parou."}
         </div>
       </div>
-      <button onClick={comecar} className="shrink-0 rounded-xl bg-[#1f2430] px-4 py-2 text-sm font-semibold text-white">
+      <button onClick={comecar} className="shrink-0 rounded-xl bg-ink px-4 py-2 text-corpo font-semibold text-on-ink">
         {status === "nao-iniciado" ? "Começar entrevista" : "Continuar"}
       </button>
     </div>
@@ -68,27 +68,27 @@ export function PainelEntrevista() {
 
   return (
     <aside className="painel pointer-events-auto absolute bottom-4 right-4 top-24 flex w-[440px] flex-col overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-black/5 p-4">
+      <div className="flex items-center gap-3 border-b border-line p-4">
         <Avatarzinho agent={helena} grande />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold">Entrevista com a Helena</div>
-          <div className="text-xs text-black/55">
+          <div className="text-corpo font-bold">Entrevista com a Helena</div>
+          <div className="text-pequeno text-fg-2">
             {status === "concluido" ? "Concluída. O Livro está pronto para revisão." : "Chief of Staff · montando o Livro da Empresa"}
           </div>
         </div>
-        <button onClick={fechar} className="rounded-lg px-2.5 py-1 text-xs text-black/60 ring-1 ring-black/10 hover:bg-black/5">
+        <button onClick={fechar} className="rounded-lg px-2.5 py-1 text-pequeno text-fg-2 ring-1 ring-line hover:bg-hover">
           {status === "concluido" ? "Fechar" : "Pausar"}
         </button>
       </div>
 
       {/* Progresso: um ponto por bloco da entrevista */}
-      <div className="flex flex-wrap gap-1.5 border-b border-black/5 px-4 py-2.5">
+      <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2.5">
         {secoesLivro.map((s) => (
           <span
             key={s.id}
             title={s.objetivo}
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              feitas.has(s.id) ? "bg-emerald-100 text-emerald-800" : "bg-black/5 text-black/45"
+            className={`rounded-full px-2 py-0.5 text-legenda font-medium ${
+              feitas.has(s.id) ? "bg-success-soft text-success-fg" : "bg-sunken text-fg-3"
             }`}
           >
             {feitas.has(s.id) ? "✓ " : ""}
@@ -102,13 +102,13 @@ export function PainelEntrevista() {
           m.de === "helena" ? (
             <div key={m.id} className="flex gap-2">
               <Avatarzinho agent={helena} />
-              <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-black/5 px-3 py-2 text-[13px] leading-relaxed">
+              <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-sunken px-3 py-2 text-pequeno leading-relaxed">
                 <Markdown texto={m.texto} />
               </div>
             </div>
           ) : (
             <div key={m.id} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-[#1f2430] px-3 py-2 text-[13px] leading-relaxed text-white">
+              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-ink px-3 py-2 text-pequeno leading-relaxed text-on-ink">
                 {m.texto}
               </div>
             </div>
@@ -117,16 +117,16 @@ export function PainelEntrevista() {
         {ocupado && (
           <div className="flex gap-2">
             <Avatarzinho agent={helena} />
-            <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-black/5 px-3 py-2 text-[13px] leading-relaxed">
-              {parcial ? <Markdown texto={parcial} /> : <span className="pulsar text-black/50">Helena está pensando…</span>}
+            <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-sunken px-3 py-2 text-pequeno leading-relaxed">
+              {parcial ? <Markdown texto={parcial} /> : <span className="pulsar text-fg-3">Helena está pensando…</span>}
             </div>
           </div>
         )}
-        {erro && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{erro}</p>}
+        {erro && <p className="rounded-lg bg-danger-soft px-3 py-2 text-pequeno text-danger-fg">{erro}</p>}
         {status === "concluido" && !ocupado && (
           <button
             onClick={() => setLivroAberto(true)}
-            className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="w-full rounded-xl bg-success px-4 py-2.5 text-corpo font-semibold text-white hover:bg-success"
           >
             Revisar o Livro da Empresa
           </button>
@@ -134,7 +134,7 @@ export function PainelEntrevista() {
         <div ref={fim} />
       </div>
 
-      <div className="border-t border-black/5 p-3">
+      <div className="border-t border-line p-3">
         <AvisosVoz />
         <div className="flex items-end gap-2">
           <div className="flex flex-col gap-1.5">
@@ -151,17 +151,17 @@ export function PainelEntrevista() {
             }}
             rows={2}
             placeholder={ocupado ? "A Helena está respondendo…" : "Responda à Helena… (Enter envia, Shift+Enter quebra linha)"}
-            className="scroll-fino max-h-40 min-h-10 flex-1 resize-none rounded-xl bg-black/5 px-3 py-2 text-sm outline-none placeholder:text-black/35 focus:ring-2 focus:ring-[#1f2430]/20"
+            className="scroll-fino max-h-40 min-h-10 flex-1 resize-none rounded-xl bg-sunken px-3 py-2 text-corpo outline-none placeholder:text-fg-disabled focus:ring-2 focus:ring-line-strong"
           />
           <button
             onClick={enviar}
             disabled={ocupado || !texto.trim()}
-            className="h-10 rounded-xl bg-[#1f2430] px-4 text-sm font-semibold text-white disabled:opacity-30"
+            className="h-10 rounded-xl bg-ink px-4 text-corpo font-semibold text-on-ink disabled:opacity-30"
           >
             Enviar
           </button>
         </div>
-        <p className="mt-1.5 text-[10px] text-black/40">
+        <p className="mt-1.5 text-legenda text-fg-3">
           Dica: responda por voz com o microfone ou o modo conversa, e mande o link do seu site que a Helena lê sozinha.
         </p>
       </div>

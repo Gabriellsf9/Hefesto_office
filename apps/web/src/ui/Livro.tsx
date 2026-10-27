@@ -2,34 +2,13 @@ import { useState } from "react";
 import { secoesLivro, type SecaoLivro, type SecaoLivroId } from "@empresa/shared";
 import { useStore } from "../store.ts";
 import { Markdown } from "./Markdown.tsx";
-import { PainelConhecimento } from "./Conhecimento.tsx";
 
 /** Livro da Empresa: o CEO revisa, edita e marca cada seção como conferida. */
-export function Livro() {
-  const aberto = useStore((s) => s.livroAberto);
-  const fechar = () => useStore.getState().setLivroAberto(false);
+export function ConteudoLivro() {
   const livro = useStore((s) => s.livro);
   const status = useStore((s) => s.onboarding.status);
   const abrirEntrevista = useStore((s) => s.setEntrevistaAberta);
   const [atual, setAtual] = useState<SecaoLivroId>("negocio");
-  const aba = useStore((s) => s.livroAba);
-  const propostas = useStore((s) => s.conhecimento.filter((i) => !i.aprovado).length);
-  if (!aberto) return null;
-
-  const abas = (
-    <div className="mb-3 flex rounded-lg bg-black/[0.05] p-0.5 text-xs font-semibold">
-      {(["livro", "conhecimento"] as const).map((a) => (
-        <button
-          key={a}
-          onClick={() => useStore.setState({ livroAba: a })}
-          className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 ${aba === a ? "bg-white shadow-sm" : "text-black/55 hover:text-black"}`}
-        >
-          {a === "livro" ? "Livro" : "Conhecimento"}
-          {a === "conhecimento" && propostas > 0 && <span className="rounded-full bg-amber-500 px-1.5 text-[10px] text-white">{propostas}</span>}
-        </button>
-      ))}
-    </div>
-  );
 
   const porId = new Map(livro.map((s) => [s.id, s]));
   const meta = secoesLivro.find((s) => s.id === atual)!;
@@ -37,19 +16,10 @@ export function Livro() {
   const revisadas = livro.filter((s) => s.revisada).length;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-[#1f2430]/35 p-4 backdrop-blur-sm" onClick={fechar}>
-      <div
-        className="flex h-[min(720px,100%)] w-[min(980px,100%)] overflow-hidden rounded-2xl bg-white shadow-[0_8px_30px_rgba(31,36,48,0.18)] ring-1 ring-black/5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {aba === "conhecimento" ? (
-          <PainelConhecimento fechar={fechar} abas={abas} />
-        ) : (
-        <>
-        <nav className="flex w-60 shrink-0 flex-col border-r border-black/5 bg-black/[0.02] p-3">
-          {abas}
-          <div className="px-2 pb-1 text-sm font-bold">Livro da Empresa</div>
-          <div className="px-2 pb-3 text-[11px] text-black/50">
+      <div className="flex min-h-[620px] overflow-hidden rounded-panel bg-surface shadow-1">
+        <nav className="flex w-60 shrink-0 flex-col border-r border-line bg-surface-2 p-3">
+          <div className="px-2 pb-1 text-corpo font-semibold">Livro da Empresa</div>
+          <div className="px-2 pb-3 text-legenda text-fg-3">
             {livro.length}/7 seções · {revisadas} revisadas por você
           </div>
           {secoesLivro.map((s) => {
@@ -58,8 +28,8 @@ export function Livro() {
               <button
                 key={s.id}
                 onClick={() => setAtual(s.id)}
-                className={`mb-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${
-                  atual === s.id ? "bg-[#1f2430] text-white" : "hover:bg-black/5"
+                className={`mb-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-pequeno ${
+                  atual === s.id ? "bg-ink text-on-ink" : "hover:bg-hover"
                 }`}
               >
                 <span className="flex-1 font-medium">{s.titulo}</span>
@@ -70,11 +40,8 @@ export function Livro() {
           <div className="flex-1" />
           {status !== "concluido" && (
             <button
-              onClick={() => {
-                fechar();
-                abrirEntrevista(true);
-              }}
-              className="rounded-lg bg-[#1f2430] px-3 py-2 text-xs font-semibold text-white"
+              onClick={() => abrirEntrevista(true)}
+              className="rounded-lg bg-ink px-3 py-2 text-pequeno font-semibold text-on-ink"
             >
               Continuar entrevista
             </button>
@@ -82,29 +49,23 @@ export function Livro() {
         </nav>
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-start gap-3 border-b border-black/5 p-5">
+          <header className="flex items-start gap-3 border-b border-line p-5">
             <div className="min-w-0 flex-1">
-              <h2 className="text-lg font-bold">{meta.titulo}</h2>
-              <p className="text-xs text-black/55">{meta.objetivo}</p>
+              <h2 className="text-secao font-bold">{meta.titulo}</h2>
+              <p className="text-pequeno text-fg-2">{meta.objetivo}</p>
             </div>
-            <button onClick={fechar} className="grid h-8 w-8 place-items-center rounded-full text-black/50 hover:bg-black/5" aria-label="Fechar">
-              ✕
-            </button>
           </header>
           {/* key: ao trocar de seção, o editor começa limpo */}
           <Conteudo key={atual} id={atual} secao={secao} />
         </section>
-        </>
-        )}
       </div>
-    </div>
   );
 }
 
 function Selo({ secao, escuro }: { secao?: SecaoLivro; escuro: boolean }) {
-  if (!secao) return <span className={`text-[10px] ${escuro ? "text-white/50" : "text-black/35"}`}>vazia</span>;
-  if (secao.revisada) return <span className={`text-[10px] font-semibold ${escuro ? "text-emerald-300" : "text-emerald-700"}`}>✓ revisada</span>;
-  return <span className={`text-[10px] font-semibold ${escuro ? "text-amber-300" : "text-amber-700"}`}>revisar</span>;
+  if (!secao) return <span className={`text-legenda ${escuro ? "text-on-ink/70" : "text-fg-disabled"}`}>vazia</span>;
+  if (secao.revisada) return <span className={`text-legenda font-semibold ${escuro ? "text-emerald-300" : "text-success-fg"}`}>✓ revisada</span>;
+  return <span className={`text-legenda font-semibold ${escuro ? "text-amber-300" : "text-warning-fg"}`}>revisar</span>;
 }
 
 function Conteudo({ id, secao }: { id: SecaoLivroId; secao?: SecaoLivro }) {
@@ -136,11 +97,11 @@ function Conteudo({ id, secao }: { id: SecaoLivroId; secao?: SecaoLivro }) {
 
   if (!secao && !editando) {
     return (
-      <div className="grid flex-1 place-items-center p-8 text-center text-sm text-black/45">
+      <div className="grid flex-1 place-items-center p-8 text-center text-corpo text-fg-3">
         <div>
           A Helena ainda não chegou neste bloco da entrevista.
           <br />
-          <button onClick={() => setEditando(true)} className="mt-3 text-xs font-semibold text-[#1f2430] underline">
+          <button onClick={() => setEditando(true)} className="mt-3 text-pequeno font-semibold text-fg underline">
             Escrever eu mesmo
           </button>
         </div>
@@ -155,29 +116,29 @@ function Conteudo({ id, secao }: { id: SecaoLivroId; secao?: SecaoLivro }) {
           <textarea
             value={rascunho}
             onChange={(e) => setRascunho(e.target.value)}
-            className="h-full min-h-80 w-full resize-none rounded-xl bg-black/[0.03] p-3 font-mono text-[13px] leading-relaxed outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-[#1f2430]/30"
+            className="h-full min-h-80 w-full resize-none rounded-xl bg-sunken p-3 font-mono text-pequeno leading-relaxed outline-none ring-1 ring-line focus:ring-2 focus:ring-ink/30"
           />
         ) : (
-          <Markdown texto={secao!.conteudo} className="text-sm leading-relaxed text-black/80" />
+          <Markdown texto={secao!.conteudo} className="text-corpo leading-relaxed text-fg" />
         )}
       </div>
-      <footer className="flex items-center gap-2 border-t border-black/5 p-4">
-        {erro && <span className="text-xs text-rose-600">{erro}</span>}
+      <footer className="flex items-center gap-2 border-t border-line p-4">
+        {erro && <span className="text-pequeno text-danger-fg">{erro}</span>}
         {secao && !editando && (
-          <span className="text-[11px] text-black/40">
+          <span className="text-legenda text-fg-3">
             Atualizada em {new Date(secao.atualizadoEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
           </span>
         )}
         <div className="flex-1" />
         {editando ? (
           <>
-            <button onClick={() => setEditando(false)} className="rounded-lg px-3 py-2 text-xs text-black/60 hover:bg-black/5">
+            <button onClick={() => setEditando(false)} className="rounded-lg px-3 py-2 text-pequeno text-fg-2 hover:bg-hover">
               Cancelar
             </button>
             <button
               disabled={salvando || !rascunho.trim()}
               onClick={() => salvar({ conteudo: rascunho })}
-              className="rounded-lg bg-[#1f2430] px-4 py-2 text-xs font-semibold text-white disabled:opacity-30"
+              className="rounded-lg bg-ink px-4 py-2 text-pequeno font-semibold text-on-ink disabled:opacity-30"
             >
               Salvar
             </button>
@@ -189,7 +150,7 @@ function Conteudo({ id, secao }: { id: SecaoLivroId; secao?: SecaoLivro }) {
                 setRascunho(secao?.conteudo ?? "");
                 setEditando(true);
               }}
-              className="rounded-lg px-3 py-2 text-xs font-medium text-black/70 ring-1 ring-black/10 hover:bg-black/5"
+              className="rounded-lg px-3 py-2 text-pequeno font-medium text-fg ring-1 ring-line hover:bg-hover"
             >
               Editar
             </button>
@@ -198,7 +159,7 @@ function Conteudo({ id, secao }: { id: SecaoLivroId; secao?: SecaoLivro }) {
                 disabled={salvando}
                 onClick={() => salvar({ revisada: !secao.revisada })}
                 className={`rounded-lg px-4 py-2 text-xs font-semibold ${
-                  secao.revisada ? "text-black/60 ring-1 ring-black/10 hover:bg-black/5" : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  secao.revisada ? "text-fg-2 ring-1 ring-line hover:bg-hover" : "bg-success text-white hover:bg-success"
                 }`}
               >
                 {secao.revisada ? "Desmarcar revisão" : "Marcar como revisada"}

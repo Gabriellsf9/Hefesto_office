@@ -16,11 +16,11 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
     const [cab, ...corpo] = tabela;
     blocos.push(
       <div key={blocos.length} className="scroll-fino overflow-x-auto">
-        <table className="min-w-full border-collapse text-[12px]">
+        <table className="min-w-full border-collapse text-legenda">
           <thead>
             <tr>
               {cab!.map((c, i) => (
-                <th key={i} className="border-b border-black/15 px-2 py-1 text-left font-semibold">
+                <th key={i} className="border-b border-line-strong px-2 py-1 text-left font-semibold">
                   {inline(c)}
                 </th>
               ))}
@@ -30,7 +30,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
             {corpo.map((l, i) => (
               <tr key={i} className="align-top">
                 {l.map((c, j) => (
-                  <td key={j} className="border-b border-black/5 px-2 py-1">
+                  <td key={j} className="border-b border-line px-2 py-1">
                     {inline(c)}
                   </td>
                 ))}
@@ -68,7 +68,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
       if (/^\s*```/.test(linha)) {
         const c = codigo;
         blocos.push(
-          <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-[#1f2430] p-3 text-[12px] leading-relaxed text-slate-100">
+          <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-ink p-3 text-legenda leading-relaxed text-slate-100">
             <code>{c.linhas.join("\n")}</code>
           </pre>,
         );
@@ -104,11 +104,11 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
       blocos.push(
         midia[3] !== "webm" ? (
           <figure key={blocos.length} className="my-1">
-            <img src={midia[2]} alt={midia[1]} loading="lazy" className="max-w-full rounded-lg ring-1 ring-black/10" />
-            {midia[1] && <figcaption className="mt-1 text-[11px] text-black/50">{midia[1]}</figcaption>}
+            <img src={midia[2]} alt={midia[1]} loading="lazy" className="max-w-full rounded-lg ring-1 ring-line" />
+            {midia[1] && <figcaption className="mt-1 text-legenda text-fg-3">{midia[1]}</figcaption>}
           </figure>
         ) : (
-          <video key={blocos.length} src={midia[2]} controls className="my-1 max-w-full rounded-lg ring-1 ring-black/10" />
+          <video key={blocos.length} src={midia[2]} controls className="my-1 max-w-full rounded-lg ring-1 ring-line" />
         ),
       );
       continue;
@@ -146,7 +146,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
   if (codigo) {
     const c: { linhas: string[] } = codigo;
     blocos.push(
-      <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-[#1f2430] p-3 text-[12px] text-slate-100">
+      <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-ink p-3 text-legenda text-slate-100">
         <code>{c.linhas.join("\n")}</code>
       </pre>,
     );
@@ -165,11 +165,11 @@ function inline(texto: string): ReactNode[] {
     const t = m[0];
     const k = out.length;
     if (t.startsWith("**")) out.push(<strong key={k}>{t.slice(2, -2)}</strong>);
-    else if (t.startsWith("`")) out.push(<code key={k} className="rounded bg-black/5 px-1">{t.slice(1, -1)}</code>);
+    else if (t.startsWith("`")) out.push(<code key={k} className="rounded bg-sunken px-1">{t.slice(1, -1)}</code>);
     else if (t.startsWith("[")) {
       const [, rotulo, url] = /^\[([^\]]+)\]\((.+)\)$/.exec(t)!;
       out.push(
-        <a key={k} href={url} target="_blank" rel="noreferrer noopener" className="text-blue-600 underline">
+        <a key={k} href={url} target="_blank" rel="noreferrer noopener" className="text-accent-fg underline">
           {rotulo}
         </a>,
       );

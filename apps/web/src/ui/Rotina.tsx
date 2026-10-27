@@ -17,13 +17,13 @@ export function Rotina() {
   if (!aberta) return null;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-[#1f2430]/35 p-4 backdrop-blur-sm" onClick={fechar}>
+    <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-ink/35 p-4 backdrop-blur-sm" onClick={fechar}>
       <div
-        className="flex h-[min(760px,100%)] w-[min(1040px,100%)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
+        className="flex h-[min(760px,100%)] w-[min(1040px,100%)] flex-col overflow-hidden rounded-2xl bg-surface shadow-3 ring-1 ring-line"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center gap-1 border-b border-black/5 px-5 pt-3">
-          <h2 className="mr-3 pb-2.5 text-base font-bold">Rotina da empresa</h2>
+        <header className="flex items-center gap-1 border-b border-line px-5 pt-3">
+          <h2 className="mr-3 pb-2.5 text-destaque font-bold">Rotina da empresa</h2>
           {(
             [
               ["metas", "Metas"],
@@ -37,13 +37,13 @@ export function Rotina() {
             <button
               key={id}
               onClick={() => setAba(id)}
-              className={`-mb-px border-b-2 px-3 pb-2.5 text-xs font-semibold ${aba === id ? "border-[#1f2430]" : "border-transparent text-black/45 hover:text-black/70"}`}
+              className={`-mb-px border-b-2 px-3 pb-2.5 text-pequeno font-semibold ${aba === id ? "border-ink" : "border-transparent text-fg-3 hover:text-fg"}`}
             >
               {nome}
             </button>
           ))}
           <div className="flex-1" />
-          <button onClick={fechar} className="mb-2 grid h-8 w-8 place-items-center rounded-full text-black/50 hover:bg-black/5" aria-label="Fechar">
+          <button onClick={fechar} className="mb-2 grid h-8 w-8 place-items-center rounded-full text-fg-3 hover:bg-hover" aria-label="Fechar">
             ✕
           </button>
         </header>
@@ -81,7 +81,7 @@ function useAcao() {
 
 const trimestreAtual = (d = new Date()) => `${d.getFullYear()}-T${Math.floor(d.getMonth() / 3) + 1}`;
 
-function AbaMetas() {
+export function AbaMetas() {
   const metas = useStore((s) => s.metas);
   const { erro, ocupado, acao } = useAcao();
   const doTrimestre = metas.filter((m) => m.trimestre === trimestreAtual());
@@ -90,26 +90,26 @@ function AbaMetas() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <p className="flex-1 text-xs text-black/55">
+        <p className="flex-1 text-pequeno text-fg-2">
           Metas de {trimestreAtual()}: 1 a 3 objetivos com resultados-chave mensuráveis. Todos os agentes e rituais trabalham em cima delas.
         </p>
         <button
           disabled={ocupado}
           onClick={() => acao(() => api("/api/metas/sugerir", "POST"))}
-          className="rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ring-black/10 hover:bg-black/5 disabled:opacity-40"
+          className="rounded-lg px-3 py-1.5 text-pequeno font-semibold ring-1 ring-line hover:bg-hover disabled:opacity-40"
         >
           {ocupado ? "A Helena está pensando…" : "Sugerir com a Helena"}
         </button>
         <button
           onClick={() => acao(() => api("/api/metas", "POST", { objetivo: "Novo objetivo", resultados: [{ descricao: "Resultado-chave", atual: 0, alvo: 10, unidade: "" }] }))}
-          className="rounded-lg bg-[#1f2430] px-3 py-1.5 text-xs font-semibold text-white"
+          className="rounded-lg bg-ink px-3 py-1.5 text-pequeno font-semibold text-on-ink"
         >
           + Nova meta
         </button>
       </div>
-      {erro && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{erro}</p>}
+      {erro && <p className="rounded-lg bg-danger-soft px-3 py-2 text-pequeno text-danger-fg">{erro}</p>}
       {doTrimestre.length === 0 && (
-        <p className="rounded-xl border border-dashed border-black/10 py-10 text-center text-xs text-black/45">
+        <p className="rounded-xl border border-dashed border-line py-10 text-center text-pequeno text-fg-3">
           Nenhuma meta para este trimestre. Crie uma ou peça para a Helena sugerir a partir do Livro da Empresa.
         </p>
       )}
@@ -117,7 +117,7 @@ function AbaMetas() {
         <CartaoMeta key={m.id} meta={m} />
       ))}
       {anteriores.length > 0 && (
-        <details className="text-xs text-black/55">
+        <details className="text-pequeno text-fg-2">
           <summary className="cursor-pointer">Trimestres anteriores ({anteriores.length})</summary>
           <div className="mt-2 space-y-3">
             {anteriores.map((m) => (
@@ -143,19 +143,19 @@ function CartaoMeta({ meta }: { meta: Meta }) {
     : 0;
 
   return (
-    <div className={`rounded-2xl p-4 ring-1 ${meta.confirmada ? "ring-black/10" : "bg-amber-50/50 ring-amber-300"}`}>
+    <div className={`rounded-2xl p-4 ring-1 ${meta.confirmada ? "ring-line" : "bg-warning-soft/50 ring-warning"}`}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          {!meta.confirmada && <div className="mb-1 text-[10px] font-bold uppercase text-amber-700">Sugerida pela Helena · confirme ou ajuste</div>}
+          {!meta.confirmada && <div className="mb-1 text-legenda font-bold uppercase text-warning-fg">Sugerida pela Helena · confirme ou ajuste</div>}
           <input
             value={rascunho.objetivo}
             onChange={(e) => setRascunho({ ...rascunho, objetivo: e.target.value })}
-            className="w-full rounded-lg px-1 py-0.5 text-sm font-bold outline-none hover:bg-black/[0.03] focus:bg-black/[0.03]"
+            className="w-full rounded-lg px-1 py-0.5 text-corpo font-bold outline-none hover:bg-hover focus:bg-sunken"
           />
         </div>
         <div className="text-right">
-          <div className="text-lg font-bold">{progresso}%</div>
-          <div className="text-[10px] text-black/40">{meta.trimestre}</div>
+          <div className="text-secao font-bold">{progresso}%</div>
+          <div className="text-legenda text-fg-3">{meta.trimestre}</div>
         </div>
       </div>
 
@@ -163,11 +163,11 @@ function CartaoMeta({ meta }: { meta: Meta }) {
         {rascunho.resultados.map((r, i) => {
           const pct = r.alvo ? Math.min(100, Math.round((r.atual / r.alvo) * 100)) : 0;
           return (
-            <div key={r.id} className="grid grid-cols-[1fr_70px_70px_80px_140px_24px] items-center gap-2 text-xs">
+            <div key={r.id} className="grid grid-cols-[1fr_70px_70px_80px_140px_24px] items-center gap-2 text-pequeno">
               <div>
                 <input value={r.descricao} onChange={(e) => mudarKr(i, { descricao: e.target.value })} className="campo" />
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/5">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-sunken">
+                  <div className="h-full rounded-full bg-success transition-all" style={{ width: `${pct}%` }} />
                 </div>
               </div>
               <input type="number" value={r.atual} onChange={(e) => mudarKr(i, { atual: Number(e.target.value) })} className="campo" title="Atual" />
@@ -185,7 +185,7 @@ function CartaoMeta({ meta }: { meta: Meta }) {
               </select>
               <button
                 onClick={() => setRascunho({ ...rascunho, resultados: rascunho.resultados.filter((_, j) => j !== i) })}
-                className="text-black/30 hover:text-rose-600"
+                className="text-fg-disabled hover:text-danger-fg"
                 title="Remover resultado-chave"
               >
                 ✕
@@ -203,22 +203,22 @@ function CartaoMeta({ meta }: { meta: Meta }) {
               resultados: [...rascunho.resultados, { id: crypto.randomUUID(), descricao: "Novo resultado-chave", atual: 0, alvo: 10, unidade: "", sala: null }],
             })
           }
-          className="text-[11px] font-semibold text-black/55 hover:text-black"
+          className="text-legenda font-semibold text-fg-2 hover:text-fg"
         >
           + resultado-chave
         </button>
-        {erro && <span className="text-[11px] text-rose-600">{erro}</span>}
+        {erro && <span className="text-legenda text-danger-fg">{erro}</span>}
         <div className="flex-1" />
         <button
           onClick={() => acao(async () => {
             if (confirm("Excluir esta meta?")) await api(`/api/metas/${meta.id}`, "DELETE");
           })}
-          className="rounded-lg px-2 py-1 text-[11px] text-rose-600 hover:bg-rose-50"
+          className="rounded-lg px-2 py-1 text-legenda text-danger-fg hover:bg-danger-soft"
         >
           Excluir
         </button>
         {(mudou || !meta.confirmada) && (
-          <button onClick={() => salvar({ ...rascunho, confirmada: true })} className="rounded-lg bg-[#1f2430] px-3 py-1.5 text-[11px] font-semibold text-white">
+          <button onClick={() => salvar({ ...rascunho, confirmada: true })} className="rounded-lg bg-ink px-3 py-1.5 text-legenda font-semibold text-on-ink">
             {meta.confirmada ? "Salvar" : "Confirmar meta"}
           </button>
         )}
@@ -229,11 +229,11 @@ function CartaoMeta({ meta }: { meta: Meta }) {
 
 /* ---------- Indicadores ---------- */
 
-function AbaIndicadores() {
+export function AbaIndicadores() {
   const [ind, setInd] = useState<Indicadores | null>(null);
   const carregar = () => void api<Indicadores>("/api/indicadores").then(setInd).catch(() => setInd(null));
   useEffect(carregar, []);
-  if (!ind) return <p className="text-xs text-black/45">Carregando…</p>;
+  if (!ind) return <p className="text-pequeno text-fg-3">Carregando…</p>;
   const usd = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "USD" });
   const ativas = ind.areas.filter((a) => a.concluidos7d || a.emAndamento || a.aguardandoCeo || a.bugsAbertos || a.custo7dUsd);
 
@@ -245,23 +245,23 @@ function AbaIndicadores() {
           ["Últimos 7 dias", ind.custo7dUsd],
           ["Este mês", ind.custoMesUsd],
         ].map(([rotulo, v]) => (
-          <div key={rotulo as string} className="rounded-xl bg-black/[0.03] p-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-black/45">{rotulo}</div>
+          <div key={rotulo as string} className="rounded-xl bg-sunken p-3">
+            <div className="text-legenda font-semibold uppercase tracking-wide text-fg-3">{rotulo}</div>
             <div className="text-xl font-bold tabular-nums">{usd(v as number)}</div>
           </div>
         ))}
       </div>
       <div className="flex items-center">
-        <p className="flex-1 text-xs text-black/55">Calculados da própria board (sem integrações). Aprovação de primeira e devoluções olham os últimos 30 dias.</p>
-        <button onClick={carregar} className="text-[11px] font-semibold text-black/55 underline">
+        <p className="flex-1 text-pequeno text-fg-2">Calculados da própria board (sem integrações). Aprovação de primeira e devoluções olham os últimos 30 dias.</p>
+        <button onClick={carregar} className="text-legenda font-semibold text-fg-2 underline">
           atualizar
         </button>
       </div>
       {ativas.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-black/10 py-10 text-center text-xs text-black/45">Sem atividade ainda. Os números aparecem quando a equipe começar a trabalhar.</p>
+        <p className="rounded-xl border border-dashed border-line py-10 text-center text-pequeno text-fg-3">Sem atividade ainda. Os números aparecem quando a equipe começar a trabalhar.</p>
       ) : (
-        <table className="w-full text-xs">
-          <thead className="text-left text-[10px] uppercase tracking-wide text-black/45">
+        <table className="w-full text-pequeno">
+          <thead className="text-left text-legenda uppercase tracking-wide text-fg-3">
             <tr>
               <th className="py-2">Área</th>
               <th>Concluídos 7d</th>
@@ -276,14 +276,14 @@ function AbaIndicadores() {
           </thead>
           <tbody className="tabular-nums">
             {ativas.map((a) => (
-              <tr key={a.sala} className="border-t border-black/5">
+              <tr key={a.sala} className="border-t border-line">
                 <td className="py-2 font-medium">{roomById[a.sala].nome}</td>
                 <td>{a.concluidos7d}</td>
                 <td>{a.emAndamento}</td>
-                <td className={a.aguardandoCeo ? "font-semibold text-rose-600" : ""}>{a.aguardandoCeo}</td>
+                <td className={a.aguardandoCeo ? "font-semibold text-danger-fg" : ""}>{a.aguardandoCeo}</td>
                 <td>{a.aprovacaoPrimeira === null ? "–" : `${a.aprovacaoPrimeira}%`}</td>
                 <td>{a.devolucoesMedias ?? "–"}</td>
-                <td className={a.bugsAbertos ? "font-semibold text-rose-600" : ""}>{a.bugsAbertos}</td>
+                <td className={a.bugsAbertos ? "font-semibold text-danger-fg" : ""}>{a.bugsAbertos}</td>
                 <td>{a.tempoMedioHoras === null ? "–" : `${a.tempoMedioHoras} h`}</td>
                 <td className="text-right">{usd(a.custo7dUsd)}</td>
               </tr>
@@ -297,7 +297,7 @@ function AbaIndicadores() {
 
 /* ---------- Rituais ---------- */
 
-function AbaRituais() {
+export function AbaRituais() {
   const rituais = useStore((s) => s.rituais);
   const chave = useStore((s) => s.chaveConfigurada);
   const { erro, acao } = useAcao();
@@ -305,23 +305,23 @@ function AbaRituais() {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-black/55">
+      <p className="text-pequeno text-fg-2">
         Os rituais rodam no seu Mac. Se ele estiver desligado na hora, o ritual roda quando você abrir o app (marcado como atrasado).
-        {!chave && <b className="text-amber-700"> Configure a chave da API para os rituais rodarem.</b>}
+        {!chave && <b className="text-warning-fg"> Configure a chave da API para os rituais rodarem.</b>}
       </p>
-      {erro && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{erro}</p>}
+      {erro && <p className="rounded-lg bg-danger-soft px-3 py-2 text-pequeno text-danger-fg">{erro}</p>}
       <Gatilhos />
       <OlharCritico />
-      <h3 className="pt-2 text-[11px] font-bold uppercase tracking-wide text-black/50">Rituais</h3>
+      <h3 className="pt-2 text-legenda font-bold uppercase tracking-wide text-fg-3">Rituais</h3>
       {rituais.map((r: RitualInfo) => (
-        <div key={r.id} className="flex items-start gap-3 rounded-xl p-3 ring-1 ring-black/10">
+        <div key={r.id} className="flex items-start gap-3 rounded-xl p-3 ring-1 ring-line">
           <label className="mt-0.5 flex cursor-pointer items-center" title={r.ativo ? "Desligar" : "Ligar"}>
             <input type="checkbox" checked={r.ativo} onChange={(e) => acao(() => api(`/api/rituais/${r.id}`, "PUT", { ativo: e.target.checked }))} />
           </label>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold">{r.nome}</div>
-            <div className="text-xs text-black/55">{r.descricao}</div>
-            <div className="mt-1 text-[11px] text-black/45">
+            <div className="text-corpo font-semibold">{r.nome}</div>
+            <div className="text-pequeno text-fg-2">{r.descricao}</div>
+            <div className="mt-1 text-legenda text-fg-3">
               {r.quando} · última: {quando(r.ultimaExecucao)} · próxima: {r.ativo ? quando(r.proximaExecucao) : "desligado"}
             </div>
           </div>
@@ -329,12 +329,12 @@ function AbaRituais() {
             type="time"
             defaultValue={r.hora}
             onBlur={(e) => e.target.value !== r.hora && acao(() => api(`/api/rituais/${r.id}`, "PUT", { hora: e.target.value }))}
-            className="campo w-24"
+            className="campo tabular w-[112px] shrink-0"
           />
           <button
             disabled={!chave}
             onClick={() => acao(() => api(`/api/rituais/${r.id}/rodar`, "POST"))}
-            className="rounded-lg px-3 py-1.5 text-[11px] font-semibold ring-1 ring-black/10 hover:bg-black/5 disabled:opacity-30"
+            className="rounded-lg px-3 py-1.5 text-legenda font-semibold ring-1 ring-line hover:bg-hover disabled:opacity-30"
           >
             Rodar agora
           </button>
@@ -358,11 +358,11 @@ function Gatilhos() {
   useEffect(() => void api<Gatilho[]>("/api/gatilhos").then(setGatilhos).catch(() => setGatilhos([])), []);
   if (!gatilhos.length) return null;
   return (
-    <div className="rounded-xl bg-black/[0.03] p-3">
-      <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-black/50">Quando você aprova uma funcionalidade</div>
+    <div className="rounded-xl bg-sunken p-3">
+      <div className="mb-2 text-legenda font-bold uppercase tracking-wide text-fg-3">Quando você aprova uma funcionalidade</div>
       <div className="grid gap-2 sm:grid-cols-3">
         {gatilhos.map((g) => (
-          <label key={g.id} className="flex cursor-pointer items-start gap-2 rounded-lg bg-white p-2.5 text-xs ring-1 ring-black/5">
+          <label key={g.id} className="flex cursor-pointer items-start gap-2 rounded-lg bg-surface p-2.5 text-pequeno ring-1 ring-line">
             <input
               type="checkbox"
               checked={g.ativo}
@@ -371,12 +371,12 @@ function Gatilhos() {
             />
             <span>
               <b>{g.nome}</b>
-              <span className="block text-[11px] text-black/55">{g.descricao}</span>
+              <span className="block text-legenda text-fg-2">{g.descricao}</span>
             </span>
           </label>
         ))}
       </div>
-      {erro && <p className="mt-2 text-[11px] text-rose-600">{erro}</p>}
+      {erro && <p className="mt-2 text-legenda text-danger-fg">{erro}</p>}
     </div>
   );
 }
@@ -391,11 +391,11 @@ function OlharCritico() {
     { id: "licoes", nome: "Lições aprendidas", descricao: "Card concluído depois de devoluções ou dos seus comentários vira uma lição para você aprovar." },
   ];
   return (
-    <div className="rounded-xl bg-black/[0.03] p-3">
-      <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-black/50">Olhar crítico</div>
+    <div className="rounded-xl bg-sunken p-3">
+      <div className="mb-2 text-legenda font-bold uppercase tracking-wide text-fg-3">Olhar crítico</div>
       <div className="grid gap-2 sm:grid-cols-3">
         {opcoes.map((o) => (
-          <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded-lg bg-white p-2.5 text-xs ring-1 ring-black/5">
+          <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded-lg bg-surface p-2.5 text-pequeno ring-1 ring-line">
             <input
               type="checkbox"
               checked={critica[o.id]}
@@ -404,38 +404,38 @@ function OlharCritico() {
             />
             <span>
               <b>{o.nome}</b>
-              <span className="block text-[11px] text-black/55">{o.descricao}</span>
+              <span className="block text-legenda text-fg-2">{o.descricao}</span>
             </span>
           </label>
         ))}
       </div>
-      {erro && <p className="mt-2 text-[11px] text-rose-600">{erro}</p>}
+      {erro && <p className="mt-2 text-legenda text-danger-fg">{erro}</p>}
     </div>
   );
 }
 
 /* ---------- Atas ---------- */
 
-function AbaAtas() {
+export function AbaAtas() {
   const novas = useStore((s) => s.atasNovas);
   const rituais = useStore((s) => s.rituais);
   const [antigas, setAntigas] = useState<Ata[]>([]);
   useEffect(() => void api<Ata[]>("/api/atas").then(setAntigas).catch(() => setAntigas([])), []);
   const todas = [...novas, ...antigas.filter((a) => !novas.some((n) => n.id === a.id))].sort((a, b) => b.ts - a.ts);
-  if (!todas.length) return <p className="rounded-xl border border-dashed border-black/10 py-10 text-center text-xs text-black/45">Nenhum ritual rodou ainda.</p>;
+  if (!todas.length) return <p className="rounded-xl border border-dashed border-line py-10 text-center text-pequeno text-fg-3">Nenhum ritual rodou ainda.</p>;
 
   return (
     <div className="space-y-2">
       {todas.map((a, i) => (
-        <details key={a.id} open={i === 0} className="rounded-xl p-3 ring-1 ring-black/10">
-          <summary className="cursor-pointer text-sm">
+        <details key={a.id} open={i === 0} className="rounded-xl p-3 ring-1 ring-line">
+          <summary className="cursor-pointer text-corpo">
             <b>{rituais.find((r) => r.id === a.ritual)?.nome ?? a.ritual}</b>
-            <span className="ml-2 text-xs text-black/45">
+            <span className="ml-2 text-pequeno text-fg-3">
               {new Date(a.ts).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })} · {agentById[a.autor]?.nome ?? a.autor}
-              {a.atrasado && <span className="ml-1 font-semibold text-amber-700">atrasado</span>}
+              {a.atrasado && <span className="ml-1 font-semibold text-warning-fg">atrasado</span>}
             </span>
           </summary>
-          <Markdown texto={a.conteudo} className="mt-2 text-[13px] text-black/80" />
+          <Markdown texto={a.conteudo} className="mt-2 text-pequeno text-fg" />
         </details>
       ))}
     </div>

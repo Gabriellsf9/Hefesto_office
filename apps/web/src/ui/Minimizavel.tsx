@@ -7,7 +7,7 @@ export function BotaoMinimizar({ id, className = "" }: { id: PainelId; className
   return (
     <button
       onClick={() => alternar(id)}
-      className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-sm leading-none text-black/45 hover:bg-black/5 hover:text-black ${className}`}
+      className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-corpo leading-none text-fg-3 hover:bg-hover hover:text-fg ${className}`}
       title="Minimizar"
       aria-label="Minimizar"
     >
@@ -28,13 +28,13 @@ export function Recolhido({ id, rotulo, cor, extra, className }: {
   return (
     <button
       onClick={() => alternar(id)}
-      className={`painel pointer-events-auto absolute flex items-center gap-2 px-3 py-2 text-xs font-semibold text-black/70 hover:text-black ${className}`}
+      className={`painel pointer-events-auto absolute flex items-center gap-2 px-3 py-2 text-pequeno font-semibold text-fg hover:text-fg ${className}`}
       title="Expandir"
     >
       {cor && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: cor }} />}
       {rotulo}
       {extra}
-      <span className="text-[10px] text-black/40">▸</span>
+      <span className="text-legenda text-fg-3">▸</span>
     </button>
   );
 }

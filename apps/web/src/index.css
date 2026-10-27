@@ -1,7 +1,193 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
 
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+/* Tema: data-tema no <html> = "claro" | "escuro"; sem o atributo, segue o macOS. Ver DESIGN-INTERFACE.md §4. */
+@custom-variant dark (&:where([data-tema="escuro"], [data-tema="escuro"] *));
+
+:root {
+  --bg: #f4f1ec;
+  --surface: #ffffff;
+  --surface-2: #faf8f5;
+  --surface-3: #ffffff;
+  --sunken: #ece7df;
+  --overlay: rgb(24 27 34 / 0.38);
+  --glass: rgb(255 255 255 / 0.86);
+
+  --fg: #1f2430;
+  --fg-2: #4b5160;
+  --fg-3: #6f7583;
+  --fg-disabled: #a3a8b3;
+
+  --line: #e6e0d6;
+  --line-strong: #d3ccc0;
+  --hover: rgb(31 36 48 / 0.05);
+  --press: rgb(31 36 48 / 0.09);
+
+  --ink: #1f2430;
+  --ink-hover: #343a48;
+  --on-ink: #ffffff;
+  --accent: #2f6fdb;
+  --accent-soft: #e7effc;
+  --accent-fg: #1f4fa3;
+
+  --success: #1a8754;
+  --success-soft: #e3f4ea;
+  --success-fg: #116140;
+  --warning: #b86e00;
+  --warning-soft: #fdf1dc;
+  --warning-fg: #7f4c00;
+  --danger: #d23b3b;
+  --danger-soft: #fce8e8;
+  --danger-fg: #a12525;
+  --info: #5b6bd6;
+  --info-soft: #ecedfb;
+  --info-fg: #3b47a3;
+  --whatsapp: #1fa855;
+
+  --shadow-1: 0 1px 2px rgb(31 36 48 / 0.06), 0 0 0 1px rgb(31 36 48 / 0.04);
+  --shadow-2: 0 6px 20px rgb(31 36 48 / 0.1), 0 1px 3px rgb(31 36 48 / 0.06);
+  --shadow-3: 0 24px 60px rgb(31 36 48 / 0.18), 0 4px 12px rgb(31 36 48 / 0.08);
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px rgb(47 111 219 / 0.55);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    --bg: #12151b;
+    --surface: #1a1e26;
+    --surface-2: #161a21;
+    --surface-3: #232833;
+    --sunken: #0e1116;
+    --overlay: rgb(0 0 0 / 0.55);
+    --glass: rgb(26 30 38 / 0.88);
+    --fg: #eceef2;
+    --fg-2: #b9bec9;
+    --fg-3: #8a909c;
+    --fg-disabled: #5b616d;
+    --line: #2a303b;
+    --line-strong: #3a414e;
+    --hover: rgb(255 255 255 / 0.06);
+    --press: rgb(255 255 255 / 0.1);
+    --ink: #eceef2;
+    --ink-hover: #ffffff;
+    --on-ink: #12151b;
+    --accent: #6d9cf0;
+    --accent-soft: #1d2a42;
+    --accent-fg: #a9c4f6;
+    --success: #3fbf7f;
+    --success-soft: #15291f;
+    --success-fg: #8fdcb3;
+    --warning: #e0a43c;
+    --warning-soft: #2e2413;
+    --warning-fg: #f1cc8a;
+    --danger: #ef6b6b;
+    --danger-soft: #331a1b;
+    --danger-fg: #f6a9a9;
+    --info: #8d99ef;
+    --info-soft: #1f2240;
+    --info-fg: #c3c9f7;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.05);
+    --shadow-2: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.05);
+    --shadow-3: 0 24px 60px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
+    color-scheme: dark;
+  }
+}
+:root[data-tema="escuro"] {
+  --bg: #12151b;
+  --surface: #1a1e26;
+  --surface-2: #161a21;
+  --surface-3: #232833;
+  --sunken: #0e1116;
+  --overlay: rgb(0 0 0 / 0.55);
+  --glass: rgb(26 30 38 / 0.88);
+  --fg: #eceef2;
+  --fg-2: #b9bec9;
+  --fg-3: #8a909c;
+  --fg-disabled: #5b616d;
+  --line: #2a303b;
+  --line-strong: #3a414e;
+  --hover: rgb(255 255 255 / 0.06);
+  --press: rgb(255 255 255 / 0.1);
+  --ink: #eceef2;
+  --ink-hover: #ffffff;
+  --on-ink: #12151b;
+  --accent: #6d9cf0;
+  --accent-soft: #1d2a42;
+  --accent-fg: #a9c4f6;
+  --success: #3fbf7f;
+  --success-soft: #15291f;
+  --success-fg: #8fdcb3;
+  --warning: #e0a43c;
+  --warning-soft: #2e2413;
+  --warning-fg: #f1cc8a;
+  --danger: #ef6b6b;
+  --danger-soft: #331a1b;
+  --danger-fg: #f6a9a9;
+  --info: #8d99ef;
+  --info-soft: #1f2240;
+  --info-fg: #c3c9f7;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-2: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-3: 0 24px 60px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-sunken: var(--sunken);
+  --color-overlay: var(--overlay);
+  --color-glass: var(--glass);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-hover: var(--hover);
+  --color-press: var(--press);
+  --color-ink: var(--ink);
+  --color-ink-hover: var(--ink-hover);
+  --color-on-ink: var(--on-ink);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-fg: var(--success-fg);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-fg: var(--warning-fg);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-fg: var(--danger-fg);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-fg: var(--info-fg);
+  --color-whatsapp: var(--whatsapp);
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+  --radius-ctl: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --text-legenda: 12px;
+  --text-legenda--line-height: 16px;
+  --text-pequeno: 13px;
+  --text-pequeno--line-height: 18px;
+  --text-corpo: 14px;
+  --text-corpo--line-height: 20px;
+  --text-destaque: 16px;
+  --text-destaque--line-height: 24px;
+  --text-secao: 18px;
+  --text-secao--line-height: 26px;
+  --text-pagina: 22px;
+  --text-pagina--line-height: 28px;
+  --text-numero: 28px;
+  --text-numero--line-height: 34px;
 }
 
 html,
@@ -10,18 +196,34 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #e9e4da;
-  color: #1f2430;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
 }
 
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+/* Janelas e gavetas recebem o foco por programa (para o Esc e o Tab); não precisam de contorno. */
+[tabindex="-1"]:focus-visible {
+  box-shadow: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Painel flutuante do escritório (um estilo só). */
 .painel {
-  @apply rounded-2xl border border-black/5 bg-white/85 shadow-[0_8px_30px_rgba(31,36,48,0.12)] backdrop-blur-md;
+  @apply rounded-[16px] bg-glass shadow-2 backdrop-blur-xl;
 }
 
 .scroll-fino {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 @keyframes pulso {
@@ -31,11 +233,23 @@ body,
 .pulsar {
   animation: pulso 1.4s ease-in-out infinite;
 }
+@keyframes entrar-lado {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes entrar-cima {
+  from { transform: translateY(6px) scale(0.98); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.anima-lado { animation: entrar-lado 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anima-cima { animation: entrar-cima 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .anima-lado, .anima-cima, .pulsar { animation: none; }
+}
 
-/* Campo de formulário padrão (board, card, criação). Na camada de componentes,
-   para utilitários como w-24 ou flex-1 poderem sobrescrever a largura. */
 @layer components {
+  /* Campo de formulário padrão (telas antigas ainda usam; o kit usa <Campo>). */
   .campo {
-    @apply min-h-8 w-full rounded-lg bg-black/5 px-2 text-xs outline-none focus:ring-2 focus:ring-[#1f2430]/20;
+    @apply min-h-9 w-full rounded-ctl bg-surface px-2.5 text-corpo text-fg shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-fg-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)];
   }
 }

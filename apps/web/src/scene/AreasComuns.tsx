@@ -52,7 +52,7 @@ function Area({ a }: { a: AreaRect }) {
         <LightPool raio={5} intensidade={0.35} />
       )}
       <Html position={[0, (a.aberta ? 0.6 : 2.6) + 0.45, -a.profundidade / 2]} center zIndexRange={[10, 0]}>
-        <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-[#1f2430] shadow-md ring-1 ring-black/5">
+        <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-glass px-3 py-1 text-pequeno font-semibold text-fg shadow-2 ring-1 ring-line">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: coresAreas[a.id] }} />
           {NOMES[a.id]}
         </div>

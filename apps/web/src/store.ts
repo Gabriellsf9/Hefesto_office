@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, Ata, Card, ChatMessage, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EstadoWhatsapp, MensagemWhatsapp, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -18,6 +18,7 @@ export interface EstadoVoz {
   erro: string | null;
 }
 import { agentById } from "@empresa/org";
+import { definirCardNaRota, navegar, useNav } from "./nav.ts";
 
 export interface CameraRequest {
   sala: RoomId | null;
@@ -95,6 +96,11 @@ interface Store {
   rotinaAba: "metas" | "indicadores" | "rituais" | "atas" | "operacao" | "conquistas";
   /** Menu Equipe do topo (abre também pelo painel da Diretoria no 3D). */
   equipeAberta: boolean;
+  whatsapp: EstadoWhatsapp | null;
+  contatosWa: Record<string, ContatoWhatsapp>;
+  /** Mensagens das conversas já abertas (as outras a tela busca na API). */
+  mensagensWa: Record<string, MensagemWhatsapp[]>;
+  setMensagensWa: (tel: string, m: MensagemWhatsapp[]) => void;
 
   aplicar: (e: ServerEvent) => void;
   setConectado: (v: boolean) => void;
@@ -182,6 +188,10 @@ export const useStore = create<Store>((set, get) => ({
   rotinaAba: "metas",
   equipeAberta: false,
   rotinaAberta: false,
+  whatsapp: null,
+  contatosWa: {},
+  mensagensWa: {},
+  setMensagensWa: (tel, m) => set((s) => ({ mensagensWa: { ...s.mensagensWa, [tel]: m } })),
 
   aplicar: (e) => {
     switch (e.type) {
@@ -211,6 +221,22 @@ export const useStore = create<Store>((set, get) => ({
           mcp: e.mcp,
           pedidosMcp: e.pedidosMcp,
           controle: Object.fromEntries(e.controle.map((c) => [c.cardId, c])),
+          whatsapp: e.whatsapp,
+          contatosWa: Object.fromEntries(e.contatosWhatsapp.map((c) => [c.telefone, c])),
+        });
+        break;
+      case "whatsapp":
+        set({ whatsapp: e.estado });
+        break;
+      case "whatsapp_contato":
+        set((s) => ({ contatosWa: { ...s.contatosWa, [e.contato.telefone]: e.contato } }));
+        break;
+      case "whatsapp_mensagem":
+        set((s) => {
+          const lista = s.mensagensWa[e.mensagem.telefone];
+          if (!lista) return {};
+          const i = lista.findIndex((m) => m.id === e.mensagem.id);
+          return { mensagensWa: { ...s.mensagensWa, [e.mensagem.telefone]: i >= 0 ? lista.map((m) => (m.id === e.mensagem.id ? e.mensagem : m)) : [...lista, e.mensagem] } };
         });
         break;
       case "controle":
@@ -340,21 +366,37 @@ export const useStore = create<Store>((set, get) => ({
   setHover: (agenteHover) => set({ agenteHover }),
   setSeguir: (seguirAtividade) => set({ seguirAtividade }),
   setChaveConfigurada: (chaveConfigurada) => set({ chaveConfigurada }),
-  setConfigAberta: (configAberta) => set({ configAberta }),
+  setConfigAberta: (configAberta) => {
+    if (configAberta) navegar("config", "geral");
+  },
   visaoGeral: () =>
     set((s) => ({ salaSelecionada: null, agenteSelecionado: null, camera: { sala: null, n: s.camera.n + 1 } })),
   setTempoLivre: (id, acao) => set((s) => ({ tempoLivre: { ...s.tempoLivre, [id]: acao } })),
   setEntrevistaAberta: (entrevistaAberta) => set({ entrevistaAberta, ...(entrevistaAberta ? { livroAberto: false } : {}) }),
-  setLivroAberto: (livroAberto, aba) => set(aba ? { livroAberto, livroAba: aba } : { livroAberto }),
+  // As janelas antigas viraram páginas: os abridores agora navegam (DESIGN-INTERFACE.md §3).
+  setLivroAberto: (livroAberto, aba) => {
+    set(aba ? { livroAba: aba } : {});
+    if (livroAberto) navegar("empresa", aba === "conhecimento" ? "conhecimento" : "livro");
+  },
   setLivro: (livro) => set({ livro }),
-  setModoBoard: (modoBoard) => set({ modoBoard }),
+  setModoBoard: (modoBoard) => {
+    if (modoBoard !== "fechada") navegar("trabalho", get().fluxoBoard);
+    else if (useNav.getState().rota.area === "trabalho") navegar("escritorio");
+  },
   setFluxoBoard: (fluxoBoard) => set({ fluxoBoard }),
-  abrirCard: (cardAberto) => set({ cardAberto, comentarios: [], entregas: [] }),
+  abrirCard: (cardAberto) => {
+    if (get().cardAberto !== cardAberto) set({ cardAberto, comentarios: [], entregas: [] });
+    definirCardNaRota(cardAberto);
+  },
   setComentarios: (comentarios) => set({ comentarios }),
   setNovoCardAberto: (novoCardAberto) => set({ novoCardAberto }),
   setEntregas: (entregas) => set({ entregas }),
   setVoz: (v) => set((s) => ({ voz: { ...s.voz, ...v } })),
-  setRotinaAberta: (rotinaAberta, aba) => set(aba ? { rotinaAberta, rotinaAba: aba } : { rotinaAberta }),
+  setRotinaAberta: (rotinaAberta, aba) => {
+    if (!rotinaAberta) return;
+    if (aba === "operacao") navegar("operacao", "monitoramento");
+    else navegar("empresa", aba ?? "metas");
+  },
   setEquipeAberta: (equipeAberta) => set({ equipeAberta }),
   focarAgente: (id) =>
     set((s) => {

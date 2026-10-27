@@ -83,13 +83,13 @@ export function RoomMesh({ rect }: { rect: RoomRect }) {
       <Html position={[0, ALTURA_PAREDE + 0.45, -d / 2]} center zIndexRange={[10, 0]}>
         <button
           onClick={() => selecionarSala(rect.id)}
-          className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold shadow-md ring-1 transition ${
-            selecionada ? "bg-[#1f2430] text-white ring-black/20" : "bg-white/90 text-[#1f2430] ring-black/5 hover:bg-white"
+          className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-pequeno font-semibold shadow-2 ring-1 transition ${
+            selecionada ? "bg-ink text-on-ink ring-line-strong" : "bg-glass text-fg ring-line hover:bg-surface"
           }`}
         >
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: acento }} />
           {room.nome}
-          {ativos > 0 && <span className="pulsar rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">{ativos}</span>}
+          {ativos > 0 && <span className="pulsar rounded-full bg-accent px-1.5 text-legenda font-bold text-white">{ativos}</span>}
         </button>
       </Html>
     </group>

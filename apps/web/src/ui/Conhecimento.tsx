@@ -13,7 +13,8 @@ const nomeTipo = (t: TipoConhecimento) => tiposConhecimento.find((x) => x.id ===
 
 type Filtro = "propostas" | RoomId | "todas";
 
-export function PainelConhecimento({ fechar, abas }: { fechar: () => void; abas: React.ReactNode }) {
+/** Conhecimento da casa (Empresa → Conhecimento). */
+export function PainelConhecimento() {
   const itens = useStore((s) => s.conhecimento);
   const propostas = itens.filter((i) => !i.aprovado);
   const [filtro, setFiltro] = useState<Filtro>(propostas.length ? "propostas" : "todas");
@@ -23,15 +24,14 @@ export function PainelConhecimento({ fechar, abas }: { fechar: () => void; abas:
   const atual = typeof aberto === "number" ? itens.find((i) => i.id === aberto) : undefined;
 
   return (
-    <>
-      <nav className="scroll-fino flex w-60 shrink-0 flex-col overflow-y-auto border-r border-black/5 bg-black/[0.02] p-3">
-        {abas}
-        <div className="px-2 pb-3 text-[11px] text-black/50">
+    <div className="flex min-h-[620px] overflow-hidden rounded-panel bg-surface shadow-1">
+      <nav className="scroll-fino flex w-60 shrink-0 flex-col overflow-y-auto border-r border-line bg-surface-2 p-3">
+        <div className="px-2 pb-3 text-legenda text-fg-3">
           {itens.filter((i) => i.aprovado).length} aprovados · {propostas.length} esperando você
         </div>
         <BotaoFiltro ativo={filtro === "propostas"} onClick={() => setFiltro("propostas")} rotulo="Esperando você" n={propostas.length} destaque />
         <BotaoFiltro ativo={filtro === "todas"} onClick={() => setFiltro("todas")} rotulo="Tudo" n={itens.length} />
-        <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-black/45">Por área</div>
+        <div className="px-2 pb-1 pt-3 text-legenda font-semibold uppercase tracking-wide text-fg-3">Por área</div>
         {salasComEquipe.map((r) => (
           <BotaoFiltro
             key={r.id}
@@ -45,21 +45,18 @@ export function PainelConhecimento({ fechar, abas }: { fechar: () => void; abas:
       </nav>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-start gap-3 border-b border-black/5 p-5">
+        <header className="flex items-start gap-3 border-b border-line p-5">
           <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold">Conhecimento da casa</h2>
-            <p className="text-xs text-black/55">
+            <h2 className="text-secao font-bold">Conhecimento da casa</h2>
+            <p className="text-pequeno text-fg-2">
               Padrões, guias, modelos e lições de cada área. O que você aprova entra no trabalho dos agentes daquela área e no checklist de quem valida.
             </p>
           </div>
           <button
             onClick={() => setAberto("novo")}
-            className="shrink-0 rounded-lg bg-[#1f2430] px-3 py-2 text-xs font-semibold text-white"
+            className="shrink-0 rounded-lg bg-ink px-3 py-2 text-pequeno font-semibold text-on-ink"
           >
             Novo
-          </button>
-          <button onClick={fechar} className="grid h-8 w-8 place-items-center rounded-full text-black/50 hover:bg-black/5" aria-label="Fechar">
-            ✕
           </button>
         </header>
 
@@ -70,27 +67,27 @@ export function PainelConhecimento({ fechar, abas }: { fechar: () => void; abas:
         ) : (
           <div className="scroll-fino min-h-0 flex-1 space-y-2 overflow-y-auto p-5">
             {!visiveis.length && (
-              <p className="rounded-xl border border-dashed border-black/10 py-10 text-center text-xs text-black/45">
+              <p className="rounded-xl border border-dashed border-line py-10 text-center text-pequeno text-fg-3">
                 {filtro === "propostas"
                   ? "Nada esperando você. Lições aparecem aqui quando um card é concluído depois de devoluções ou dos seus comentários."
                   : "Nenhum item nesta área ainda. Use Novo para registrar um padrão da casa."}
               </p>
             )}
             {visiveis.map((i) => (
-              <button key={i.id} onClick={() => setAberto(i.id)} className="block w-full rounded-xl p-3 text-left ring-1 ring-black/10 hover:bg-black/[0.02]">
-                <div className="flex items-center gap-2 text-[11px] text-black/50">
+              <button key={i.id} onClick={() => setAberto(i.id)} className="block w-full rounded-xl p-3 text-left ring-1 ring-line hover:bg-hover">
+                <div className="flex items-center gap-2 text-legenda text-fg-3">
                   <span className="h-2 w-2 rounded-full" style={{ background: roomById[i.sala].cor }} />
                   {roomById[i.sala].nome} · {nomeTipo(i.tipo)}
-                  {!i.aprovado && <span className="rounded-full bg-amber-100 px-1.5 font-semibold text-amber-800">proposta</span>}
+                  {!i.aprovado && <span className="rounded-full bg-warning-soft px-1.5 font-semibold text-warning-fg">proposta</span>}
                 </div>
-                <div className="mt-0.5 text-sm font-semibold">{i.titulo}</div>
-                <div className="line-clamp-2 text-xs text-black/55">{i.conteudo}</div>
+                <div className="mt-0.5 text-corpo font-semibold">{i.titulo}</div>
+                <div className="line-clamp-2 text-pequeno text-fg-2">{i.conteudo}</div>
               </button>
             ))}
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }
 
@@ -98,12 +95,12 @@ function BotaoFiltro({ ativo, onClick, rotulo, n, cor, destaque }: { ativo: bool
   return (
     <button
       onClick={onClick}
-      className={`mb-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs ${ativo ? "bg-[#1f2430] text-white" : "hover:bg-black/5"}`}
+      className={`mb-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-pequeno ${ativo ? "bg-ink text-on-ink" : "hover:bg-hover"}`}
     >
       {cor && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: cor }} />}
       <span className="flex-1 truncate font-medium">{rotulo}</span>
       {n > 0 && (
-        <span className={`rounded-full px-1.5 text-[10px] font-semibold ${destaque && !ativo ? "bg-amber-100 text-amber-800" : ativo ? "text-white/70" : "text-black/40"}`}>{n}</span>
+        <span className={`rounded-full px-1.5 text-legenda font-semibold ${destaque && !ativo ? "bg-warning-soft text-warning-fg" : ativo ? "text-on-ink/70" : "text-fg-3"}`}>{n}</span>
       )}
     </button>
   );
@@ -136,23 +133,23 @@ function Detalhe({ item, aoFechar }: { item: ItemConhecimento; aoFechar: () => v
   return (
     <>
       <div className="scroll-fino min-h-0 flex-1 overflow-y-auto p-5">
-        <button onClick={aoFechar} className="mb-3 text-xs text-black/50 hover:text-black">
+        <button onClick={aoFechar} className="mb-3 text-pequeno text-fg-3 hover:text-fg">
           ← Voltar
         </button>
-        <div className="flex items-center gap-2 text-[11px] text-black/50">
+        <div className="flex items-center gap-2 text-legenda text-fg-3">
           <span className="h-2 w-2 rounded-full" style={{ background: roomById[item.sala].cor }} />
           {roomById[item.sala].nome} · {nomeTipo(item.tipo)} · por {autor}
           {origem && (
-            <button onClick={() => useStore.getState().abrirCard(origem.id)} className="font-semibold text-[#1f2430] underline">
+            <button onClick={() => useStore.getState().abrirCard(origem.id)} className="font-semibold text-fg underline">
               {origem.chave}
             </button>
           )}
         </div>
-        <h3 className="mb-2 mt-1 text-base font-bold">{item.titulo}</h3>
-        <Markdown texto={item.conteudo} className="text-sm leading-relaxed text-black/80" />
+        <h3 className="mb-2 mt-1 text-destaque font-bold">{item.titulo}</h3>
+        <Markdown texto={item.conteudo} className="text-corpo leading-relaxed text-fg" />
       </div>
-      <footer className="flex items-center gap-2 border-t border-black/5 p-4">
-        {erro && <span className="text-xs text-rose-600">{erro}</span>}
+      <footer className="flex items-center gap-2 border-t border-line p-4">
+        {erro && <span className="text-pequeno text-danger-fg">{erro}</span>}
         <div className="flex-1" />
         <button
           disabled={ocupado}
@@ -160,18 +157,18 @@ function Detalhe({ item, aoFechar }: { item: ItemConhecimento; aoFechar: () => v
             await api(`/api/conhecimento/${item.id}`, "DELETE");
             aoFechar();
           })}
-          className="rounded-lg px-3 py-2 text-xs text-rose-700 hover:bg-rose-50"
+          className="rounded-lg px-3 py-2 text-pequeno text-danger-fg hover:bg-danger-soft"
         >
           {item.aprovado ? "Excluir" : "Recusar"}
         </button>
-        <button onClick={() => setEditando(true)} className="rounded-lg px-3 py-2 text-xs font-medium text-black/70 ring-1 ring-black/10 hover:bg-black/5">
+        <button onClick={() => setEditando(true)} className="rounded-lg px-3 py-2 text-pequeno font-medium text-fg ring-1 ring-line hover:bg-hover">
           Editar
         </button>
         {!item.aprovado && (
           <button
             disabled={ocupado}
             onClick={() => acao(() => api(`/api/conhecimento/${item.id}/aprovar`, "POST"))}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+            className="rounded-lg bg-success px-4 py-2 text-pequeno font-semibold text-white hover:bg-success"
           >
             Aprovar
           </button>
@@ -219,19 +216,19 @@ function Editor({ item, salaInicial, aoFechar }: { item?: ItemConhecimento; sala
           value={conteudo}
           onChange={(e) => setConteudo(e.target.value)}
           placeholder="O padrão, guia, modelo ou lição, em tópicos. Aceita Markdown."
-          className="min-h-72 flex-1 resize-none rounded-xl bg-black/[0.03] p-3 font-mono text-[13px] leading-relaxed outline-none ring-1 ring-black/10 focus:ring-2 focus:ring-[#1f2430]/30"
+          className="min-h-72 flex-1 resize-none rounded-xl bg-sunken p-3 font-mono text-pequeno leading-relaxed outline-none ring-1 ring-line focus:ring-2 focus:ring-ink/30"
         />
       </div>
-      <footer className="flex items-center gap-2 border-t border-black/5 p-4">
-        {erro && <span className="text-xs text-rose-600">{erro}</span>}
+      <footer className="flex items-center gap-2 border-t border-line p-4">
+        {erro && <span className="text-pequeno text-danger-fg">{erro}</span>}
         <div className="flex-1" />
-        <button onClick={aoFechar} className="rounded-lg px-3 py-2 text-xs text-black/60 hover:bg-black/5">
+        <button onClick={aoFechar} className="rounded-lg px-3 py-2 text-pequeno text-fg-2 hover:bg-hover">
           Cancelar
         </button>
         <button
           disabled={ocupado || !titulo.trim() || !conteudo.trim()}
           onClick={salvar}
-          className="rounded-lg bg-[#1f2430] px-4 py-2 text-xs font-semibold text-white disabled:opacity-30"
+          className="rounded-lg bg-ink px-4 py-2 text-pequeno font-semibold text-on-ink disabled:opacity-30"
         >
           {item ? "Salvar" : "Criar (já aprovado)"}
         </button>

@@ -79,13 +79,13 @@ export function AgentActor({ agent }: { agent: Agent }) {
       {/* Sempre montado e só escondido: montar/desmontar Html do drei a cada hover gera avisos do React. */}
       <Html position={[0, 2.5, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
         <div
-          className={`whitespace-nowrap rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-medium shadow-md ring-1 ring-black/5 transition-opacity ${
+          className={`whitespace-nowrap rounded-full bg-glass px-2.5 py-1 text-legenda font-medium shadow-2 ring-1 ring-line transition-opacity ${
             mostrarNome ? "opacity-100" : "invisible opacity-0"
           }`}
         >
           <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: info.cor }} />
           {agent.nome}
-          <span className="ml-1 text-black/45">· {!ativo && tempoLivre ? tempoLivre : agent.cargo}</span>
+          <span className="ml-1 text-fg-3">· {!ativo && tempoLivre ? tempoLivre : agent.cargo}</span>
         </div>
       </Html>
     </group>

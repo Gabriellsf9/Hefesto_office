@@ -27,8 +27,8 @@ export function ConfigMaquina() {
   if (!c) return null;
   const salvar = async (d: Partial<Config>) => setC(await api<Config>("/api/maquina/config", "PUT", d));
   return (
-    <div className="space-y-1.5 rounded-xl bg-black/[0.03] p-2.5 text-[11px] text-black/65">
-      <div className="font-semibold text-black/80">Máquina (terminal e controle do Mac)</div>
+    <div className="space-y-1.5 rounded-xl bg-sunken p-2.5 text-legenda text-fg-2">
+      <div className="font-semibold text-fg">Máquina (terminal e controle do Mac)</div>
       <label className="flex items-start gap-2">
         <input type="checkbox" checked={c.terminal} onChange={(e) => void salvar({ terminal: e.target.checked })} className="mt-0.5" />
         <span>Terminal: comandos com a sua aprovação (os liberados abaixo rodam direto)</span>
@@ -47,7 +47,7 @@ export function ConfigMaquina() {
               <button
                 key={r.id}
                 onClick={() => void salvar({ salas: on ? c.salas.filter((s) => s !== r.id) : [...c.salas, r.id] })}
-                className={`rounded-full px-1.5 py-0.5 text-[10px] ring-1 ${on ? "bg-[#1f2430] text-white ring-[#1f2430]" : "ring-black/10"}`}
+                className={`rounded-full px-1.5 py-0.5 text-legenda ring-1 ${on ? "bg-ink text-on-ink ring-ink" : "ring-line"}`}
               >
                 {r.nome}
               </button>
@@ -62,18 +62,18 @@ export function ConfigMaquina() {
           setSalvo(false);
         }}
         rows={3}
-        className="w-full rounded-lg bg-white p-1.5 font-mono text-[10px] ring-1 ring-black/10"
+        className="w-full rounded-lg bg-surface p-1.5 font-mono text-legenda ring-1 ring-line"
       />
       <button
         onClick={async () => {
           await salvar({ liberados: liberados.split("\n").filter((l) => l.trim()) });
           setSalvo(true);
         }}
-        className="rounded-md px-2 py-0.5 font-semibold ring-1 ring-black/10 hover:bg-white"
+        className="rounded-md px-2 py-0.5 font-semibold ring-1 ring-line hover:bg-surface"
       >
         {salvo ? "Salvo ✓" : "Salvar liberados"}
       </button>
-      <p className="text-[10px] text-black/45">
+      <p className="text-legenda text-fg-3">
         O macOS vai pedir Gravação de Tela e Acessibilidade para o programa que roda o Hefesto. Comandos que citam chaves, senhas ou tokens sempre pedem aprovação.
       </p>
     </div>
@@ -98,27 +98,27 @@ export function FaixaControle() {
   const mmss = `${Math.floor(resta / 60_000)}:${String(Math.floor((resta % 60_000) / 1000)).padStart(2, "0")}`;
   return (
     <div className="pointer-events-auto absolute left-1/2 top-2 z-[60] w-[min(760px,calc(100%-2rem))] -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-2xl bg-rose-600 px-3 py-2 text-xs text-white shadow-xl ring-2 ring-rose-300">
-        <span className="pulsar h-2.5 w-2.5 rounded-full bg-white" />
+      <div className="flex items-center gap-2 rounded-2xl bg-danger px-3 py-2 text-pequeno text-white shadow-3 ring-2 ring-danger">
+        <span className="pulsar h-2.5 w-2.5 rounded-full bg-surface" />
         <span className="flex-1">
           <b>{a?.nome ?? s.agenteId}</b> está controlando o seu Mac (EMP-{s.cardId}) · resta {mmss}
           {ativas.length > 1 && ` · +${ativas.length - 1} sessão(ões)`}
         </span>
-        <button onClick={() => setVer(!ver)} className="rounded-lg bg-white/15 px-2.5 py-1 font-semibold hover:bg-white/25">
+        <button onClick={() => setVer(!ver)} className="rounded-lg bg-glass px-2.5 py-1 font-semibold hover:bg-glass">
           {ver ? "Esconder" : "Ver tela"}
         </button>
-        <button onClick={() => api("/api/maquina/parar", "POST")} className="rounded-lg bg-white px-3 py-1 font-bold text-rose-700">
+        <button onClick={() => api("/api/maquina/parar", "POST")} className="rounded-lg bg-surface px-3 py-1 font-bold text-danger-fg">
           PARAR
         </button>
       </div>
       {ver && (
-        <div className="mt-2 flex gap-2 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-black/10">
-          {s.imagem ? <img src={s.imagem} alt="Tela do Mac" className="max-h-80 min-w-0 flex-1 rounded-lg object-contain ring-1 ring-black/10" /> : <span className="flex-1 p-6 text-center text-xs text-black/45">Sem print ainda.</span>}
-          <ol className="scroll-fino max-h-80 w-56 shrink-0 space-y-1 overflow-y-auto text-[11px]">
+        <div className="mt-2 flex gap-2 rounded-2xl bg-surface p-2 shadow-3 ring-1 ring-line">
+          {s.imagem ? <img src={s.imagem} alt="Tela do Mac" className="max-h-80 min-w-0 flex-1 rounded-lg object-contain ring-1 ring-line" /> : <span className="flex-1 p-6 text-center text-pequeno text-fg-3">Sem print ainda.</span>}
+          <ol className="scroll-fino max-h-80 w-56 shrink-0 space-y-1 overflow-y-auto text-legenda">
             {[...s.acoes].reverse().map((x, i) => (
-              <li key={i} className={`rounded-lg px-2 py-1 ${x.ok ? "bg-black/[0.03]" : "bg-rose-50 text-rose-800"}`}>
-                <b>{x.acao}</b> <span className="text-black/40">{new Date(x.ts).toLocaleTimeString("pt-BR")}</span>
-                <div className="break-all text-black/60">{x.detalhe}</div>
+              <li key={i} className={`rounded-lg px-2 py-1 ${x.ok ? "bg-sunken" : "bg-danger-soft text-danger-fg"}`}>
+                <b>{x.acao}</b> <span className="text-fg-3">{new Date(x.ts).toLocaleTimeString("pt-BR")}</span>
+                <div className="break-all text-fg-2">{x.detalhe}</div>
               </li>
             ))}
           </ol>

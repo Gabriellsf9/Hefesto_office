@@ -150,7 +150,7 @@ export function Minimapa() {
   return (
     <div className={`painel pointer-events-auto absolute ${posicao} p-2`}>
       <div className="-mt-0.5 mb-1 flex items-center pl-1">
-        <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-black/45">Mapa · teclas 1–{fileiras.length}</span>
+        <span className="flex-1 text-legenda font-semibold uppercase tracking-wide text-fg-3">Mapa · teclas 1–{fileiras.length}</span>
         <BotaoMinimizar id="mapa" />
       </div>
       <canvas

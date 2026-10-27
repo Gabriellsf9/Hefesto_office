@@ -66,28 +66,28 @@ export function Onboarding() {
   };
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-50 grid place-items-center bg-[#1f2430]/35 p-4 backdrop-blur-sm">
-      <form onSubmit={salvar} className="painel w-full max-w-md bg-white p-6">
+    <div className="pointer-events-auto absolute inset-0 z-50 grid place-items-center bg-ink/35 p-4 backdrop-blur-sm">
+      <form onSubmit={salvar} className="painel w-full max-w-md bg-surface p-6">
         <div className="mb-4 flex items-center gap-3">
           <img src="/hefesto.svg" alt="Hefesto" className="h-10 w-10" />
           <div>
-            <h1 className="text-lg font-bold">Bem-vindo à sua empresa</h1>
-            <p className="text-xs text-black/55">{agents.length} agentes de IA esperando o primeiro pedido do CEO.</p>
+            <h1 className="text-secao font-bold">Bem-vindo à sua empresa</h1>
+            <p className="text-pequeno text-fg-2">{agents.length} agentes de IA esperando o primeiro pedido do CEO.</p>
           </div>
         </div>
 
         {status?.chaveConfigurada && (
-          <div className="mb-4 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <div className="mb-4 flex items-center justify-between rounded-lg bg-success-soft px-3 py-2 text-pequeno text-success-fg">
             <span>
               Chave salva: <code className="font-mono">{status.dicaChave}</code>
             </span>
-            <button type="button" onClick={remover} className="font-semibold text-rose-600 hover:underline">
+            <button type="button" onClick={remover} className="font-semibold text-danger-fg hover:underline">
               Remover
             </button>
           </div>
         )}
 
-        <label className="mb-1 block text-xs font-semibold">
+        <label className="mb-1 block text-pequeno font-semibold">
           {status?.chaveConfigurada ? "Trocar a chave da API da Anthropic" : "Chave da API da Anthropic"}
         </label>
         <input
@@ -96,22 +96,22 @@ export function Onboarding() {
           onChange={(e) => setChave(e.target.value)}
           placeholder="sk-ant-…"
           autoComplete="off"
-          className="h-10 w-full rounded-lg px-3 font-mono text-sm ring-1 ring-black/15 outline-none focus:ring-2 focus:ring-[#1f2430]"
+          className="h-10 w-full rounded-lg px-3 font-mono text-corpo ring-1 ring-line-strong outline-none focus:ring-2 focus:ring-ink"
         />
-        <p className="mt-2 text-[11px] leading-relaxed text-black/50">
+        <p className="mt-2 text-legenda leading-relaxed text-fg-3">
           A chave fica só no seu computador, cifrada, e nunca volta para o navegador. Os agentes só passam a usá-la na
           Fase 2. Crie uma em console.anthropic.com.
         </p>
-        {erro && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{erro}</p>}
+        {erro && <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-pequeno text-danger-fg">{erro}</p>}
 
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={fechar} className="rounded-lg px-4 py-2 text-sm text-black/60 hover:bg-black/5">
+          <button type="button" onClick={fechar} className="rounded-lg px-4 py-2 text-corpo text-fg-2 hover:bg-hover">
             {status?.chaveConfigurada ? "Fechar" : "Agora não"}
           </button>
           <button
             type="submit"
             disabled={salvando || !chave.trim()}
-            className="rounded-lg bg-[#1f2430] px-4 py-2 text-sm font-semibold text-white disabled:opacity-30"
+            className="rounded-lg bg-ink px-4 py-2 text-corpo font-semibold text-on-ink disabled:opacity-30"
           >
             {salvando ? "Validando…" : "Salvar chave"}
           </button>

@@ -26,7 +26,7 @@ export function BotoesVoz({ compacto = false }: { compacto?: boolean }) {
         onPointerUp={soltarPtt}
         onPointerLeave={() => ouvindo === "ptt" && soltarPtt()}
         className={`grid ${tamanho} shrink-0 select-none place-items-center rounded-xl ring-1 transition ${
-          ouvindo === "ptt" ? "scale-110 bg-rose-600 text-white ring-rose-700" : "text-black/60 ring-black/10 hover:bg-black/5"
+          ouvindo === "ptt" ? "scale-110 bg-danger text-white ring-danger" : "text-fg-2 ring-line hover:bg-hover"
         }`}
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
@@ -39,8 +39,8 @@ export function BotoesVoz({ compacto = false }: { compacto?: boolean }) {
         onClick={alternarConversa}
         title="Modo conversa: escuta contínua, envia sozinho quando você para de falar"
         aria-label="Modo conversa"
-        className={`grid ${tamanho} shrink-0 place-items-center rounded-xl text-[11px] font-bold ring-1 transition ${
-          ouvindo === "conversa" ? "pulsar bg-emerald-600 text-white ring-emerald-700" : "text-black/60 ring-black/10 hover:bg-black/5"
+        className={`grid ${tamanho} shrink-0 place-items-center rounded-xl text-legenda font-bold ring-1 transition ${
+          ouvindo === "conversa" ? "pulsar bg-success text-white ring-success" : "text-fg-2 ring-line hover:bg-hover"
         }`}
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
@@ -67,7 +67,7 @@ export function AvisosVoz() {
   return (
     <div className="mb-2 space-y-2">
       {voz.ouvindo !== "nao" && !avisoLido && (
-        <div className="painel flex items-start gap-2 p-2.5 text-[11px] text-black/70">
+        <div className="painel flex items-start gap-2 p-2.5 text-legenda text-fg">
           <span className="flex-1">
             O reconhecimento de voz é feito pelo navegador e o áudio pode ir para o fabricante dele (Google no Chrome, Apple no Safari).
           </span>
@@ -80,32 +80,32 @@ export function AvisosVoz() {
                 /* sem armazenamento: o aviso volta na próxima vez */
               }
             }}
-            className="font-semibold text-[#1f2430] underline"
+            className="font-semibold text-fg underline"
           >
             Entendi
           </button>
         </div>
       )}
       {voz.ouvindo !== "nao" && (
-        <div className="painel flex items-center gap-2 px-3 py-2 text-sm">
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${voz.ouvindo === "ptt" ? "bg-rose-600" : "bg-emerald-600"} pulsar`} />
-          <span className="text-[11px] font-semibold text-black/45">{voz.ouvindo === "ptt" ? "Ouvindo…" : "Modo conversa"}</span>
-          <span className="min-w-0 flex-1 truncate">{voz.legenda || <span className="text-black/35">fale agora</span>}</span>
+        <div className="painel flex items-center gap-2 px-3 py-2 text-corpo">
+          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${voz.ouvindo === "ptt" ? "bg-danger" : "bg-success"} pulsar`} />
+          <span className="text-legenda font-semibold text-fg-3">{voz.ouvindo === "ptt" ? "Ouvindo…" : "Modo conversa"}</span>
+          <span className="min-w-0 flex-1 truncate">{voz.legenda || <span className="text-fg-disabled">fale agora</span>}</span>
         </div>
       )}
       {quem && (
-        <div className="painel flex items-center gap-2 px-3 py-1.5 text-xs">
+        <div className="painel flex items-center gap-2 px-3 py-1.5 text-pequeno">
           <span>🔊</span>
           <span className="flex-1">
             <b>{quem.nome}</b> está falando
           </span>
-          <button onClick={pararDeFalar} className="rounded-lg px-2 py-0.5 text-[11px] font-semibold ring-1 ring-black/10 hover:bg-black/5">
+          <button onClick={pararDeFalar} className="rounded-lg px-2 py-0.5 text-legenda font-semibold ring-1 ring-line hover:bg-hover">
             Parar
           </button>
         </div>
       )}
       {voz.erro && (
-        <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700 ring-1 ring-rose-200">
+        <div className="flex items-center gap-2 rounded-xl bg-danger-soft px-3 py-2 text-pequeno text-danger-fg ring-1 ring-danger">
           <span className="flex-1">{voz.erro}</span>
           <button onClick={() => setVoz({ erro: null })} className="font-semibold">
             ✕

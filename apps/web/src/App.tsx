@@ -1,65 +1,95 @@
+import { lazy, Suspense, useEffect } from "react";
 import { Office } from "./scene/Office.tsx";
 import { useStore } from "./store.ts";
-import { Board } from "./ui/board/Board.tsx";
-import { CardDetalhe } from "./ui/board/CardDetalhe.tsx";
+import { useNav } from "./nav.ts";
+import { DetalheCard } from "./ui/trabalho/DetalheCard.tsx";
 import { NovoCard } from "./ui/board/NovoCard.tsx";
-import { CommandBar } from "./ui/CommandBar.tsx";
 import { ConviteEntrevista, PainelEntrevista } from "./ui/Entrevista.tsx";
-import { Feed } from "./ui/Feed.tsx";
-import { Livro } from "./ui/Livro.tsx";
 import { Onboarding } from "./ui/Onboarding.tsx";
-import { Rotina } from "./ui/Rotina.tsx";
-import { RoomList } from "./ui/RoomList.tsx";
-import { SidePanel } from "./ui/SidePanel.tsx";
-import { TopBar } from "./ui/TopBar.tsx";
-import { AvisosVoz } from "./ui/Voz.tsx";
-import { useAtalhoPaineis } from "./ui/Minimizavel.tsx";
 import { useAvisoSonoro } from "./ui/useAvisoSonoro.ts";
 import { Minimapa } from "./ui/Minimapa.tsx";
 import { AvisoConquista } from "./ui/AvisoConquista.tsx";
-import { PainelNavegador } from "./ui/NavegadorAgentes.tsx";
-import { PainelConectores } from "./ui/Conectores.tsx";
 import { FaixaControle } from "./ui/Maquina.tsx";
+import { BarraLateral } from "./ui/shell/BarraLateral.tsx";
+import { Cabecalho } from "./ui/shell/Cabecalho.tsx";
+import { Dock } from "./ui/shell/Dock.tsx";
+import { Paleta } from "./ui/shell/Paleta.tsx";
+import { PainelContexto, PainelSalas, TickerAtividade } from "./ui/escritorio/Paineis.tsx";
+import { Avisos, Confirmacoes, Esqueleto } from "./ui/kit/index.ts";
+import "./ui/shell/tema.ts";
+
+// Casca da aplicação (DESIGN-INTERFACE.md §3): barra lateral + cabeçalho + página.
+// O escritório 3D fica montado (a câmera e os agentes não reiniciam), mas só desenha quando está à vista.
+
+const PaginaEntrada = lazy(() => import("./ui/paginas/Entrada.tsx"));
+const PaginaTrabalho = lazy(() => import("./ui/paginas/Trabalho.tsx"));
+const PaginaClientes = lazy(() => import("./ui/paginas/Clientes.tsx"));
+const PaginaEquipe = lazy(() => import("./ui/paginas/Equipe.tsx"));
+const PaginaEmpresa = lazy(() => import("./ui/paginas/Empresa.tsx"));
+const PaginaOperacao = lazy(() => import("./ui/paginas/Operacao.tsx"));
+const PaginaConfig = lazy(() => import("./ui/paginas/Configuracoes.tsx"));
 
 export function App() {
-  // Com a board aberta, os painéis do escritório saem da frente.
-  const boardAberta = useStore((s) => s.modoBoard !== "fechada");
-  useAtalhoPaineis();
+  const rota = useNav((s) => s.rota);
+  const noEscritorio = rota.area === "escritorio";
   useAvisoSonoro();
+
+  // Trocar de página fecha o que é passageiro (janela de novo card, menu da equipe).
+  useEffect(() => {
+    useStore.setState({ novoCardAberto: false, equipeAberta: false });
+  }, [rota.area, rota.sub]);
+
+  // O card aberto acompanha o endereço (?card=25): link direto, voltar do navegador e recarregar funcionam.
+  useEffect(() => {
+    const atual = useStore.getState().cardAberto;
+    if (rota.card !== atual) useStore.setState({ cardAberto: rota.card, comentarios: [], entregas: [] });
+  }, [rota.card]);
+
   return (
-    <div className="relative h-full w-full">
-      <Office />
-      {/* A camada de interface não bloqueia a câmera; cada painel reativa os cliques. */}
-      {/* z-index alto: fica acima das etiquetas 3D (Html do drei), que vivem fora do canvas. */}
-      <div className="pointer-events-none absolute inset-0 z-[1000]">
-        <TopBar />
-        {!boardAberta && (
-          <>
-            <RoomList />
-            <SidePanel />
-            <Feed />
-            <CommandBar />
-            <Minimapa />
-          </>
-        )}
-        {boardAberta && (
-          <div className="pointer-events-auto absolute bottom-4 left-4 z-10 w-80">
-            <AvisosVoz />
+    <div className="flex h-full w-full bg-bg">
+      <BarraLateral />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Cabecalho />
+        <main className="relative min-h-0 flex-1 overflow-hidden">
+          <div className={noEscritorio ? "absolute inset-0" : "invisible absolute inset-0"} aria-hidden={!noEscritorio}>
+            <Office ativo={noEscritorio} />
           </div>
-        )}
-        <FaixaControle />
-        <AvisoConquista />
-        <ConviteEntrevista />
-        <Board />
-        <PainelEntrevista />
-        <CardDetalhe />
-        <NovoCard />
-        <Livro />
-        <Rotina />
-        <PainelNavegador />
-        <PainelConectores />
-        <Onboarding />
+          {noEscritorio && (
+            <div className="pointer-events-none absolute inset-0 z-[100]">
+              <PainelSalas />
+              <PainelContexto />
+              <TickerAtividade />
+              <Minimapa />
+            </div>
+          )}
+          {!noEscritorio && (
+            <div className="absolute inset-0 z-[100] bg-bg">
+              <Suspense fallback={<div className="space-y-3 p-8"><Esqueleto className="h-8 w-60" /><Esqueleto className="h-40 w-full" /></div>}>
+                {rota.area === "entrada" && <PaginaEntrada />}
+                {rota.area === "trabalho" && <PaginaTrabalho />}
+                {rota.area === "clientes" && <PaginaClientes />}
+                {rota.area === "equipe" && <PaginaEquipe />}
+                {rota.area === "empresa" && <PaginaEmpresa />}
+                {rota.area === "operacao" && <PaginaOperacao />}
+                {rota.area === "config" && <PaginaConfig />}
+              </Suspense>
+            </div>
+          )}
+          <div className="pointer-events-none absolute inset-0 z-[200]">
+            <FaixaControle />
+            <AvisoConquista />
+            <ConviteEntrevista />
+            <PainelEntrevista />
+          </div>
+          <Dock />
+        </main>
       </div>
+      <DetalheCard />
+      <NovoCard />
+      <Onboarding />
+      <Paleta />
+      <Confirmacoes />
+      <Avisos />
     </div>
   );
 }

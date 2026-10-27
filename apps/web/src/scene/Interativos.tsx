@@ -47,7 +47,7 @@ export function Interativo({ dica, onClick, children }: { dica: string; onClick:
     >
       {children}
       <Html position={[0, 1.2, 0.3]} center zIndexRange={[30, 0]} style={{ pointerEvents: "none" }}>
-        <div className={`whitespace-nowrap rounded-full bg-[#1f2430] px-2.5 py-1 text-[11px] font-semibold text-white shadow-md transition-opacity ${hover ? "opacity-100" : "invisible opacity-0"}`}>
+        <div className={`whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-legenda font-semibold text-on-ink shadow-2 transition-opacity ${hover ? "opacity-100" : "invisible opacity-0"}`}>
           {dica}
         </div>
       </Html>

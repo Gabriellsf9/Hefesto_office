@@ -19,7 +19,8 @@ import { Byte } from "./Byte.tsx";
 import { SonsDoEscritorio } from "./SonsDoEscritorio.tsx";
 import { madeira, porcelanato } from "./textures.ts";
 
-export function Office() {
+/** ativo = false: a página não mostra o escritório; o 3D para de desenhar (economiza bateria). */
+export function Office({ ativo = true }: { ativo?: boolean }) {
   const visaoGeral = useStore((s) => s.visaoGeral);
   // Qualidade automática (DESIGN-ESCRITORIO.md, seção 13): se o FPS cai, a resolução baixa; se sobra folga, sobe.
   const [dpr, setDpr] = useState(() => Math.min(2, window.devicePixelRatio || 1));
@@ -39,7 +40,7 @@ export function Office() {
   }, [largura]);
 
   return (
-    <Canvas shadows dpr={dpr} camera={{ fov: 40, near: 0.5, far: 900, position: [0, 70, 45] }}>
+    <Canvas shadows dpr={dpr} frameloop={ativo ? "always" : "never"} camera={{ fov: 40, near: 0.5, far: 900, position: [0, 70, 45] }}>
       <PerformanceMonitor
         onDecline={() => setDpr((d) => Math.max(0.75, Math.round((d - 0.25) * 100) / 100))}
         onIncline={() => setDpr((d) => Math.min(Math.min(2, window.devicePixelRatio || 1), Math.round((d + 0.25) * 100) / 100))}
