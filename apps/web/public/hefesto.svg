@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Hefesto</title>
+  <defs>
+    <radialGradient id="brasa" cx="50%" cy="78%" r="60%">
+      <stop offset="0" stop-color="#f97316" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="faisca" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="0.55" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="ferro" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7f3ec"/>
+      <stop offset="1" stop-color="#d9d0c1"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#1f2430"/>
+  <rect width="512" height="512" rx="112" fill="url(#brasa)"/>
+  <!-- Faísca: a forja de Hefesto e o brilho da IA -->
+  <path d="M300 64 Q307 133 370 142 Q307 151 300 220 Q293 151 230 142 Q293 133 300 64 Z" fill="url(#faisca)"/>
+  <circle cx="386" cy="86" r="11" fill="#fbbf24"/>
+  <circle cx="214" cy="96" r="8" fill="#f97316"/>
+  <!-- Bigorna -->
+  <path d="M76 230 H408 V276 Q408 290 394 290 H354 Q326 298 322 330 V346 H368 Q382 346 382 360 V400 H130 V360 Q130 346 144 346 H190 V330 Q186 300 156 292 Q100 278 76 230 Z" fill="url(#ferro)"/>
+  <rect x="150" y="230" width="258" height="14" fill="#ffffff" opacity="0.55"/>
+</svg>

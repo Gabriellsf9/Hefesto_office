@@ -1,0 +1,15 @@
+{
+  "name": "empresa-completa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @empresa/server --filter @empresa/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm --filter @empresa/web build",
+    "start": "pnpm --filter @empresa/server start",
+    "app": "pnpm build && bash scripts/criar-app.sh"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "empresa",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 5317
+    },
+    {
+      "name": "web-5318",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@empresa/web", "exec", "vite", "--port", "5318", "--strictPort"],
+      "port": 5318
+    }
+  ]
+}
