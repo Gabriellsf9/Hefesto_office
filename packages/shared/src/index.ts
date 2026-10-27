@@ -1,7 +1,7 @@
 // Tipos compartilhados entre o escritório 3D (web) e o servidor.
 
 export * from "./board.ts";
-import type { Ata, Card, Comentario, ConfigCritica, Conquista, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, EstadoMotor, ItemConhecimento, Lead, Meta, Monitor, Peca, Projeto, RitualInfo } from "./board.ts";
+import type { Ata, Card, Comentario, ConfigCritica, Conquista, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, Previa, MensagemWhatsapp, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, EstadoMotor, ItemConhecimento, Lead, Meta, Monitor, Peca, Projeto, RitualInfo } from "./board.ts";
 
 export type RoomId =
   | "diretoria"
@@ -189,6 +189,7 @@ export type ServerEvent =
     }
   | { type: "whatsapp"; estado: EstadoWhatsapp }
   | { type: "telegram"; estado: EstadoTelegram }
+  | { type: "previa"; previa: Previa }
   | { type: "whatsapp_contato"; contato: ContatoWhatsapp }
   | { type: "whatsapp_mensagem"; mensagem: MensagemWhatsapp }
   | { type: "controle"; sessao: SessaoControle }

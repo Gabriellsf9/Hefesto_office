@@ -17,6 +17,7 @@ import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
 import { imagensDoTexto } from "../imagens.ts";
 import { arquivosDoTexto, ferramentaGerarArquivo } from "../arquivos.ts";
 import { ferramentaMemoria } from "../memoria.ts";
+import { ferramentaPrevia, urlDaPrevia } from "../fabrica/previa.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ferramentaDeControle } from "../maquina/controle.ts";
@@ -319,10 +320,13 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
     if (agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
   } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
-  if (projeto?.urlLocal && agente.ferramentas.includes("playwright")) ferramentas.push(ferramentaDeCaptura(card.id, projeto.urlLocal));
+  // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
+  if (wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
+  const urlDoApp = (wt ? urlDaPrevia(card.id, card) : null) ?? projeto?.urlLocal ?? null;
+  if (urlDoApp && agente.ferramentas.includes("playwright")) ferramentas.push(ferramentaDeCaptura(card.id, urlDoApp));
   // Navegador do sistema: quem pesquisa na web, testa telas ou usa o navegador.
   if (["navegador", "web", "playwright"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) {
-    ferramentas.push(ferramentaDeNavegador(card.id, agente.id, projeto?.urlLocal ?? null));
+    ferramentas.push(ferramentaDeNavegador(card.id, agente.id, urlDoApp));
   }
   // Documentos de verdade (DOCX, PDF, XLSX, CSV) para anexar à entrega.
   ferramentas.push(ferramentaGerarArquivo(card.id));

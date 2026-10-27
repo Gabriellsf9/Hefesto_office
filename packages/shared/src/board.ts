@@ -685,6 +685,18 @@ export interface SessaoControle {
   acoes: { ts: number; acao: string; detalhe: string; ok: boolean }[];
 }
 
+/* ---------- Prévia do app por card ---------- */
+
+export interface Previa {
+  cardId: number;
+  status: "instalando" | "iniciando" | "no-ar" | "erro" | "parada";
+  url: string | null;
+  comando: string;
+  log: string[];
+  erro: string | null;
+  desde: number;
+}
+
 /* ---------- Telegram (aprovar pelo celular) ---------- */
 
 export interface EstadoTelegram {

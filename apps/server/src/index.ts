@@ -10,6 +10,7 @@ import { pedirParaHelena } from "./agentes/helena.ts";
 import { custoHoje } from "./custo.ts";
 import { configurarGatilho, listarGatilhos, type GatilhoId } from "./gatilhos.ts";
 import { codigoDoCard, descartar, mesclar } from "./fabrica/workspace.ts";
+import { iniciarPrevia, lerPrevia, pararPrevia, pararTodasPrevias } from "./fabrica/previa.ts";
 import { editarPeca, iniciarLembretesDeMarketing, listarPecas, marcarPublicado } from "./marketing.ts";
 import { configurarConexao, conexaoDoProjeto, removerConexao } from "./areas/dados.ts";
 import { adicionarMonitor, checarTodos, consultarDns, iniciarMonitoramento, listarMonitores, removerMonitor, verificarSite } from "./areas/infra.ts";
@@ -327,8 +328,15 @@ app.post<{ Params: { id: string }; Body: { link?: string } }>("/api/pecas/:id/pu
 /* ---------- Fábrica de software (Fase 4) ---------- */
 
 app.get<{ Params: { id: string } }>("/api/cards/:id/codigo", async (req) => (await codigoDoCard(lerCard(idDe(req.params.id)))) ?? { semCodigo: true });
-app.post<{ Params: { id: string } }>("/api/cards/:id/merge", async (req) => mesclar(idDe(req.params.id)));
+app.post<{ Params: { id: string } }>("/api/cards/:id/merge", async (req) => {
+  await pararPrevia(idDe(req.params.id), "card mesclado");
+  return mesclar(idDe(req.params.id));
+});
+app.get<{ Params: { id: string } }>("/api/cards/:id/previa", async (req) => lerPrevia(idDe(req.params.id)) ?? { status: "parada", url: null, log: [], erro: null });
+app.post<{ Params: { id: string } }>("/api/cards/:id/previa", async (req) => iniciarPrevia(lerCard(idDe(req.params.id))));
+app.delete<{ Params: { id: string } }>("/api/cards/:id/previa", async (req) => pararPrevia(idDe(req.params.id)));
 app.post<{ Params: { id: string } }>("/api/cards/:id/descartar", async (req) => {
+  await pararPrevia(idDe(req.params.id), "card descartado");
   await descartar(idDe(req.params.id));
   return { ok: true };
 });
@@ -510,6 +518,7 @@ iniciarWhatsapp();
 iniciarTelegram();
 for (const sinal of ["SIGINT", "SIGTERM"] as const) process.once(sinal, () => {
   pararWhatsapp();
+  pararTodasPrevias();
   process.exit(0);
 });
 iniciarRituais();

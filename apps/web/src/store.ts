@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -98,6 +98,8 @@ interface Store {
   equipeAberta: boolean;
   whatsapp: EstadoWhatsapp | null;
   telegram: EstadoTelegram | null;
+  /** Prévias do app por card (chegam ao vivo). */
+  previas: Record<number, Previa>;
   contatosWa: Record<string, ContatoWhatsapp>;
   /** Mensagens das conversas já abertas (as outras a tela busca na API). */
   mensagensWa: Record<string, MensagemWhatsapp[]>;
@@ -191,6 +193,7 @@ export const useStore = create<Store>((set, get) => ({
   rotinaAberta: false,
   whatsapp: null,
   telegram: null,
+  previas: {},
   contatosWa: {},
   mensagensWa: {},
   setMensagensWa: (tel, m) => set((s) => ({ mensagensWa: { ...s.mensagensWa, [tel]: m } })),
@@ -233,6 +236,9 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "telegram":
         set({ telegram: e.estado });
+        break;
+      case "previa":
+        set((s) => ({ previas: { ...s.previas, [e.previa.cardId]: e.previa } }));
         break;
       case "whatsapp_contato":
         set((s) => ({ contatosWa: { ...s.contatosWa, [e.contato.telefone]: e.contato } }));

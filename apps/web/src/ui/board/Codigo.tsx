@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import type { Card, CodigoDoCard } from "@empresa/shared";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
+import { ExternalLink, Play, Square, TerminalSquare } from "lucide-react";
+import type { Previa } from "@empresa/shared";
+import { Botao, Etiqueta, avisarErro } from "../kit/index.ts";
 
 // Código do card (Fase 4): a branch na cópia isolada, o que mudou e o merge no seu projeto.
 
@@ -52,6 +55,8 @@ export function SecaoCodigo({ card }: { card: Card }) {
           {ativo ? "cópia isolada" : codigo.status === "mesclado" ? "mesclado no projeto" : "descartado"}
         </span>
       </div>
+
+      {ativo && <PreviaDoApp cardId={card.id} />}
 
       {ativo && (
         <>
@@ -133,5 +138,40 @@ export function SecaoCodigo({ card }: { card: Card }) {
         </>
       )}
     </section>
+  );
+}
+
+/** Prévia do app com o código deste card (antes do merge), numa porta local e dentro da sandbox. */
+function PreviaDoApp({ cardId }: { cardId: number }) {
+  const aoVivo = useStore((s) => s.previas[cardId]);
+  const [inicial, setInicial] = useState<Previa | null>(null);
+  const [log, setLog] = useState(false);
+  useEffect(() => void api<Previa>(`/api/cards/${cardId}/previa`).then(setInicial).catch(() => {}), [cardId]);
+  const p = aoVivo ?? inicial;
+  const rodando = p && ["instalando", "iniciando", "no-ar"].includes(p.status);
+  const tom = p?.status === "no-ar" ? "sucesso" : p?.status === "erro" ? "perigo" : rodando ? "alerta" : "neutro";
+  const rotulo = { instalando: "instalando dependências…", iniciando: "subindo…", "no-ar": "no ar", erro: "erro", parada: "parada" }[p?.status ?? "parada"];
+  return (
+    <div className="mb-3 rounded-ctl bg-surface p-3 shadow-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-pequeno font-semibold text-fg">Prévia do app</span>
+        <Etiqueta tom={tom}>{rotulo}</Etiqueta>
+        <span className="flex-1" />
+        {p?.status === "no-ar" && p.url && (
+          <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-ctl bg-ink px-3 text-pequeno font-medium text-on-ink">
+            <ExternalLink className="size-4" /> Abrir
+          </a>
+        )}
+        {rodando ? (
+          <Botao tamanho="p" icone={Square} onClick={() => void api(`/api/cards/${cardId}/previa`, "DELETE").catch(avisarErro)}>Parar</Botao>
+        ) : (
+          <Botao tamanho="p" icone={Play} onClick={() => void api(`/api/cards/${cardId}/previa`, "POST").catch(avisarErro)}>{p?.status === "erro" ? "Tentar de novo" : "Subir prévia"}</Botao>
+        )}
+        {p && p.log.length > 0 && <Botao tamanho="p" variante="discreto" icone={TerminalSquare} onClick={() => setLog(!log)}>{log ? "Esconder log" : "Log"}</Botao>}
+      </div>
+      <p className="mt-1 text-legenda text-fg-3">{p?.url ? <span className="font-mono">{p.url}</span> : "Roda o código desta branch numa porta local, sem internet e sem acesso aos seus segredos. Para sozinha depois de 60 min sem uso."}</p>
+      {p?.erro && <p className="mt-1.5 text-legenda text-danger-fg">{p.erro}</p>}
+      {log && p && <pre className="scroll-fino mt-2 max-h-56 overflow-auto rounded-ctl bg-sunken p-2 font-mono text-legenda text-fg-2">{p.log.join("\n")}</pre>}
+    </div>
   );
 }
