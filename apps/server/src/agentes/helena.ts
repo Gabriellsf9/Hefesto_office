@@ -9,6 +9,7 @@ import { agenteChamado, conversarComAgente } from "./conversa.ts";
 import { iniciarProspeccao } from "../prospeccao.ts";
 import { filtrarImagens, imagensEmMarkdown } from "../imagens.ts";
 import { arquivosEmMarkdown, filtrarArquivos, nomeOriginal } from "../arquivos.ts";
+import { ferramentaMemoria } from "../memoria.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ErroEntrada, ferramenta, rodarAgente, texto } from "./loop.ts";
@@ -185,6 +186,7 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. S
       sistema: sistemaHelena(),
       mensagem,
       ferramentas: [
+        ferramentaMemoria,
         criarCards,
         prospectar,
         ...ferramentasDeConectores(agentById[HELENA]!, null),

@@ -16,6 +16,7 @@ import { ferramentaDeCaptura } from "../fabrica/capturas.ts";
 import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
 import { imagensDoTexto } from "../imagens.ts";
 import { arquivosDoTexto, ferramentaGerarArquivo } from "../arquivos.ts";
+import { ferramentaMemoria } from "../memoria.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ferramentaDeControle } from "../maquina/controle.ts";
@@ -208,6 +209,7 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
   const autocritica = configCritica().autocritica;
   let rascunho: { resumo: string; conteudo: string } | null = null;
   const ferramentas: Ferramenta[] = [
+    ferramentaMemoria,
     ferramenta(
       "entregar",
       autocritica
@@ -468,6 +470,7 @@ async function validar(client: Anthropic, inicial: Card, validador: Agent) {
 
   let decisao: { tipo: "aprovar" | "devolver"; texto: string } | null = null;
   const ferramentas: Ferramenta[] = [
+    ferramentaMemoria,
     ferramenta(
       "aprovar",
       "Aprova a entrega: ela está pronta para seguir. Termina a validação.",

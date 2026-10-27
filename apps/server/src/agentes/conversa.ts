@@ -6,6 +6,7 @@ import { listarCards, listarComentarios, ultimaEntrega } from "../tarefas.ts";
 import { rodarAgente } from "./loop.ts";
 import { playbookDe } from "./prompts.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
+import { ferramentaMemoria } from "../memoria.ts";
 
 // "Rafael, como está o login?": o CEO chama um agente pelo nome e ele mesmo
 // responde, curto e falado, sobre o trabalho dele. Usa o Haiku (conversa rápida,
@@ -64,7 +65,7 @@ Seu padrão de trabalho, para referência:
 ${playbookDe(agente.sala)}`;
 
   try {
-    const conectores = ferramentasDeConectores(agente, null);
+    const conectores = [ferramentaMemoria, ...ferramentasDeConectores(agente, null)];
     const r = await rodarAgente({
       client,
       modelo: MODELO_CONVERSA,

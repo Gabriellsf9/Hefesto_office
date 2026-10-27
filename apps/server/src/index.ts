@@ -17,6 +17,7 @@ import { abrirAtendimento } from "./areas/atendimento.ts";
 import { calcularSimples } from "./areas/financas.ts";
 import { iniciarConquistas, listarConquistas } from "./conquistas.ts";
 import { definirConfigBackup, estadoBackup, fazerBackup, iniciarBackup } from "./backup.ts";
+import { buscarNaMemoria } from "./memoria.ts";
 import {
   aprovarResposta, atualizarContato, configurarWhatsapp, descartarResposta, enviarModelo, enviarTexto, esquecerWhatsapp, estadoWhatsapp,
   iniciarWhatsapp, listarContatos, listarMensagens, listarModelos, pararWhatsapp, testarConexao,
@@ -271,6 +272,7 @@ app.patch<{ Params: { tel: string }; Body: { humano?: boolean; lido?: boolean; e
 });
 app.post<{ Params: { id: string }; Body: { texto?: string } }>("/api/whatsapp/mensagens/:id/aprovar", async (req) => aprovarResposta(idDe(req.params.id), req.body?.texto));
 app.post<{ Params: { id: string } }>("/api/whatsapp/mensagens/:id/descartar", async (req) => descartarResposta(idDe(req.params.id)));
+app.get<{ Querystring: { q?: string } }>("/api/memoria", async (req) => buscarNaMemoria(String(req.query.q ?? "").slice(0, 200), 12));
 app.get("/api/backup", async () => estadoBackup());
 app.put<{ Body: { ativo?: boolean; pasta?: string; manter?: number } }>("/api/backup", async (req) => definirConfigBackup(req.body ?? {}));
 app.post("/api/backup/agora", async () => fazerBackup());

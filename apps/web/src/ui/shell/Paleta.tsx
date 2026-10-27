@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowRight, Building2, CornerDownLeft, FilePlus2, MessageCircle, Moon, Pause, Play, Search, Sparkles, Sun, Target, User, type LucideIcon,
+  ArrowRight, Brain, Building2, CornerDownLeft, FilePlus2, MessageCircle, Moon, Pause, Play, Search, Sparkles, Sun, Target, User, type LucideIcon,
 } from "lucide-react";
 import { create } from "zustand";
 import { agents, roomById } from "@empresa/org";
@@ -68,6 +68,14 @@ export function Paleta() {
   const leads = useStore((s) => s.leads);
   const contatos = useStore((s) => s.contatosWa);
   const motor = useStore((s) => s.motor);
+  // Memória da empresa (busca no servidor): cards antigos, entregas, debates, atas, conhecimento, Livro e chat.
+  const [memoria, setMemoria] = useState<{ tipo: string; titulo: string; trecho: string; cardId: number | null; ref: string }[]>([]);
+  useEffect(() => {
+    const t = q.trim();
+    if (t.length < 3) return setMemoria([]);
+    const h = setTimeout(() => void api<typeof memoria>(`/api/memoria?q=${encodeURIComponent(t)}`).then(setMemoria).catch(() => setMemoria([])), 220);
+    return () => clearTimeout(h);
+  }, [q]);
 
   // ⌘K / Ctrl+K abre de qualquer lugar; ⌘1…7 vão para as áreas; ⌘, abre as configurações.
   useEffect(() => {
@@ -139,10 +147,25 @@ export function Paleta() {
           .slice(0, 5)
           .map((c) => ({ id: `w-${c.telefone}`, grupo: "Conversas", titulo: c.nome || c.telefone, detalhe: c.ultimaMensagem?.texto, icone: MessageCircle, fazer: () => navegar("clientes", "whatsapp", c.telefone) })),
       );
+      r.push(
+        ...memoria.slice(0, 6).map((m) => ({
+          id: `m-${m.tipo}-${m.ref}`,
+          grupo: "Na memória da empresa",
+          titulo: m.titulo,
+          detalhe: m.trecho.replace(/[«»]/g, ""),
+          icone: Brain,
+          fazer: () => {
+            if (m.cardId) useStore.getState().abrirCard(m.cardId);
+            else if (m.tipo === "livro") navegar("empresa", "livro");
+            else if (m.tipo === "conhecimento") navegar("empresa", "conhecimento");
+            else if (m.tipo === "ata") navegar("empresa", "rituais");
+          },
+        })),
+      );
       r.push({ id: "helena", grupo: "Pedir", titulo: `Pedir à Helena: "${q.trim()}"`, icone: Sparkles, fazer: () => { send({ type: "command", texto: q.trim() }); avisar("Pedido enviado à Helena", "info"); } });
     }
     return r;
-  }, [q, cards, leads, contatos, motor.pausado]);
+  }, [q, cards, leads, contatos, motor.pausado, memoria]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {
