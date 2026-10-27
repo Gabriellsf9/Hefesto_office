@@ -11,6 +11,8 @@ import { IconeTipo, LinhaCard, SeloPrioridade, tipoInfo } from "./cartao.tsx";
 import { FichaLead } from "../board/Prospeccao.tsx";
 import { SecaoCodigo } from "../board/Codigo.tsx";
 import { FichaPeca } from "../board/Marketing.tsx";
+import { arquivosCitados } from "../anexos.ts";
+import { ListaArquivos } from "../shell/Dock.tsx";
 
 // Detalhe do card (DESIGN-INTERFACE.md §6.3): gaveta larga; à esquerda o conteúdo (pendência, descrição,
 // entrega, debate), à direita as propriedades num painel compacto. Abre por cima de qualquer página.
@@ -275,6 +277,12 @@ function Entregas({ entregas }: { entregas: Entrega[] }) {
           <span className="min-w-0 flex-1 truncate"><b className="font-semibold text-fg">{autor?.nome ?? e.autor}</b> · {e.resumo}</span>
           <span className="text-legenda text-fg-3">v{e.versao} · {hora(e.ts)}</span>
         </div>
+        {arquivosCitados(e.conteudo).length > 0 && (
+          <div className="border-b border-line px-4 py-2.5">
+            <div className="text-legenda font-medium text-fg-3">Arquivos da entrega</div>
+            <ListaArquivos arquivos={arquivosCitados(e.conteudo)} />
+          </div>
+        )}
         <div className="px-4 py-3">
           <Markdown texto={e.conteudo} className="text-corpo leading-relaxed text-fg" />
         </div>

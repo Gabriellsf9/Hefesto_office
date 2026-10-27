@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, History, Loader2, Paperclip, X } from "lucide-react";
+import { ArrowUp, FileText, History, Loader2, Paperclip, X } from "lucide-react";
 import { agentById } from "@empresa/org";
 import type { ChatMessage } from "@empresa/shared";
 import { useStore } from "../../store.ts";
 import { send } from "../../ws.ts";
 import { AvisosVoz, BotoesVoz } from "../Voz.tsx";
-import { enviarImagem, imagensDe } from "../anexos.ts";
+import { arquivosDe, enviarDocumento, enviarImagem } from "../anexos.ts";
 import { BotaoIcone, Gaveta, cx } from "../kit/index.ts";
 import { Avatarzinho, hora } from "../comum.tsx";
 
@@ -35,19 +35,25 @@ export function Dock() {
   }, []);
 
   const [anexos, setAnexos] = useState<string[]>([]);
+  const [documentos, setDocumentos] = useState<{ url: string; nome: string }[]>([]);
   const [subindo, setSubindo] = useState(0);
   const [erroAnexo, setErroAnexo] = useState<string | null>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
   const anexar = async (arquivos: File[]) => {
     if (!arquivos.length) return;
     setErroAnexo(null);
-    const vagas = Math.max(0, 6 - anexos.length);
-    if (arquivos.length > vagas) setErroAnexo("Até 6 imagens por mensagem.");
+    const vagas = Math.max(0, 6 - anexos.length - documentos.length);
+    if (arquivos.length > vagas) setErroAnexo("Até 6 anexos por mensagem.");
     for (const f of arquivos.slice(0, vagas)) {
       setSubindo((n) => n + 1);
       try {
-        const url = await enviarImagem(f);
-        setAnexos((a) => [...a, url]);
+        if (f.type.startsWith("image/")) {
+          const url = await enviarImagem(f);
+          setAnexos((a) => [...a, url]);
+        } else {
+          const d = await enviarDocumento(f);
+          setDocumentos((x) => [...x, d]);
+        }
       } catch (err) {
         setErroAnexo(err instanceof Error ? err.message : String(err));
       } finally {
@@ -58,15 +64,16 @@ export function Dock() {
 
   const enviar = () => {
     const t = texto.trim();
-    if ((!t && !anexos.length) || subindo || !conectado) return;
-    send({ type: "command", texto: t, ...(anexos.length ? { imagens: anexos } : {}) });
+    if ((!t && !anexos.length && !documentos.length) || subindo || !conectado) return;
+    send({ type: "command", texto: t, ...(anexos.length ? { imagens: anexos } : {}), ...(documentos.length ? { arquivos: documentos.map((d) => d.url) } : {}) });
     setTexto("");
     setAnexos([]);
+    setDocumentos([]);
     setErroAnexo(null);
   };
 
   const recentes = historico ? [] : chat.slice(-2).filter((m) => agora - m.ts < 30_000);
-  const pode = conectado && (!!texto.trim() || anexos.length > 0) && subindo === 0;
+  const pode = conectado && (!!texto.trim() || anexos.length > 0 || documentos.length > 0) && subindo === 0;
 
   return (
     <>
@@ -82,7 +89,7 @@ export function Dock() {
             {parcial && agentById[parcial.de] && <Bolha m={{ id: "p", ts: Date.now(), de: parcial.de, texto: parcial.texto }} flutuante escrevendo />}
           </div>
         )}
-        {(anexos.length > 0 || subindo > 0 || erroAnexo) && (
+        {(anexos.length > 0 || documentos.length > 0 || subindo > 0 || erroAnexo) && (
           <div className="painel pointer-events-auto flex flex-wrap items-center gap-2 p-2">
             {anexos.map((u) => (
               <div key={u} className="relative">
@@ -92,7 +99,14 @@ export function Dock() {
                 </button>
               </div>
             ))}
-            {subindo > 0 && <span className="flex items-center gap-1.5 text-pequeno text-fg-2"><Loader2 className="size-4 animate-spin" /> Enviando imagem…</span>}
+            {documentos.map((d) => (
+              <span key={d.url} className="flex h-14 items-center gap-2 rounded-ctl bg-surface px-3 text-pequeno text-fg shadow-1">
+                <FileText className="size-4 text-fg-3" />
+                <span className="max-w-[160px] truncate">{d.nome}</span>
+                <button type="button" onClick={() => setDocumentos((x) => x.filter((y) => y.url !== d.url))} className="grid size-5 place-items-center rounded-full text-fg-3 hover:bg-hover" aria-label="Remover arquivo"><X className="size-3" /></button>
+              </span>
+            ))}
+            {subindo > 0 && <span className="flex items-center gap-1.5 text-pequeno text-fg-2"><Loader2 className="size-4 animate-spin" /> Enviando…</span>}
             {erroAnexo && <span className="text-pequeno text-danger-fg">{erroAnexo}</span>}
           </div>
         )}
@@ -104,13 +118,13 @@ export function Dock() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
-            void anexar(imagensDe(e.dataTransfer.files));
+            void anexar(arquivosDe(e.dataTransfer.files));
           }}
           className="painel pointer-events-auto flex items-end gap-1.5 p-1.5"
         >
           <BotoesVoz />
-          <input ref={arquivoRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={(e) => { void anexar(imagensDe(e.target.files)); e.target.value = ""; }} />
-          <BotaoIcone icone={Paperclip} rotulo="Anexar imagens (ou cole com ⌘V, ou arraste)" onClick={() => arquivoRef.current?.click()} disabled={!conectado} />
+          <input ref={arquivoRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.docx,.doc,.rtf,.xlsx,.pptx,.csv,.txt,.md,.json" multiple hidden onChange={(e) => { void anexar(arquivosDe(e.target.files)); e.target.value = ""; }} />
+          <BotaoIcone icone={Paperclip} rotulo="Anexar imagens ou documentos: PDF, Word, Excel, PowerPoint, CSV (ou cole com ⌘V, ou arraste)" onClick={() => arquivoRef.current?.click()} disabled={!conectado} />
           <textarea
             ref={campo}
             rows={1}
@@ -127,7 +141,7 @@ export function Dock() {
               }
             }}
             onPaste={(e) => {
-              const imgs = imagensDe(e.clipboardData.items);
+              const imgs = arquivosDe(e.clipboardData.items);
               if (imgs.length) {
                 e.preventDefault();
                 void anexar(imgs);
@@ -167,7 +181,7 @@ function FimDaLista({ dep }: { dep: number }) {
   return <div ref={ref} />;
 }
 
-function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" | "de" | "texto" | "imagens">; flutuante?: boolean; escrevendo?: boolean }) {
+function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" | "de" | "texto" | "imagens" | "arquivos">; flutuante?: boolean; escrevendo?: boolean }) {
   const a = m.de === "voce" ? null : agentById[m.de];
   return (
     <div className={cx("flex gap-2.5", a ? "" : "flex-row-reverse")}>
@@ -185,6 +199,7 @@ function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" 
           </div>
         )}
         <div className="whitespace-pre-wrap">{m.texto}</div>
+        {m.arquivos && m.arquivos.length > 0 && <ListaArquivos arquivos={m.arquivos} escuro={!a} />}
         {m.imagens && m.imagens.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {m.imagens.map((u) => (
@@ -195,6 +210,20 @@ function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" 
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Arquivos como chips para baixar (PDF, Word, Excel…). */
+export function ListaArquivos({ arquivos, escuro }: { arquivos: { url: string; nome: string }[]; escuro?: boolean }) {
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {arquivos.map((d) => (
+        <a key={d.url} href={d.url} download className={cx("flex items-center gap-1.5 rounded-ctl px-2.5 py-1.5 text-pequeno", escuro ? "bg-white/15 text-on-ink hover:bg-white/25" : "bg-surface text-fg shadow-1 hover:shadow-2")}>
+          <FileText className="size-4 shrink-0 opacity-70" />
+          <span className="max-w-[220px] truncate">{d.nome}</span>
+        </a>
+      ))}
     </div>
   );
 }

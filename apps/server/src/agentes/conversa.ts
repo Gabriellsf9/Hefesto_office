@@ -48,7 +48,7 @@ function contextoDoAgente(agente: Agent): string {
     .join("\n");
 }
 
-export async function conversarComAgente(agente: Agent, pergunta: string, imagens: string[] = []) {
+export async function conversarComAgente(agente: Agent, pergunta: string, imagens: string[] = [], arquivos: string[] = []) {
   const client = clienteClaude();
   focus(agente.sala, agente.id);
   if (!client) {
@@ -69,8 +69,9 @@ ${playbookDe(agente.sala)}`;
       client,
       modelo: MODELO_CONVERSA,
       sistema,
-      mensagem: `## Seus cards agora\n${contextoDoAgente(agente)}\n\n## O CEO pergunta\n${pergunta}${imagens.length ? "\n\n(O CEO anexou imagens, acima.)" : ""}`,
+      mensagem: `## Seus cards agora\n${contextoDoAgente(agente)}\n\n## O CEO pergunta\n${pergunta}${imagens.length || arquivos.length ? "\n\n(O CEO anexou imagens ou arquivos, acima.)" : ""}`,
       imagens,
+      arquivos,
       // Conectores da sala (ex.: "Vanessa, quantos tickets abertos?" lendo do sistema de suporte).
       ferramentas: conectores,
       esforco: "low",

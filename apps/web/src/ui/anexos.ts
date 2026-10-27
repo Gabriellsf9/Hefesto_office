@@ -42,3 +42,29 @@ export function imagensDe(lista: DataTransferItemList | FileList | null | undefi
   const arquivos = "length" in lista && lista instanceof FileList ? [...lista] : [...(lista as DataTransferItemList)].map((i) => (i.kind === "file" ? i.getAsFile() : null));
   return arquivos.filter((f): f is File => !!f && f.type.startsWith("image/"));
 }
+
+/* ---------- Documentos (PDF, Word, Excel, PowerPoint, CSV, texto) ---------- */
+
+export const EXT_DOCUMENTO = /\.(pdf|docx|doc|rtf|xlsx|pptx|csv|txt|md|json)$/i;
+
+export async function enviarDocumento(arquivo: File): Promise<{ url: string; nome: string }> {
+  if (!EXT_DOCUMENTO.test(arquivo.name)) throw new Error("Use PDF, Word, Excel, PowerPoint, CSV, TXT, Markdown ou JSON.");
+  if (arquivo.size > 15 * 1024 * 1024) throw new Error("Arquivo grande demais (máximo 15 MB).");
+  const dados = await lerComoDataUrl(arquivo);
+  return api<{ url: string; nome: string }>("/api/arquivos", "POST", { nome: arquivo.name, dados });
+}
+
+/** Todos os arquivos de um colar ou arrastar (imagens e documentos). */
+export function arquivosDe(lista: DataTransferItemList | FileList | null | undefined): File[] {
+  if (!lista) return [];
+  const arquivos = "length" in lista && lista instanceof FileList ? [...lista] : [...(lista as DataTransferItemList)].map((i) => (i.kind === "file" ? i.getAsFile() : null));
+  return arquivos.filter((f): f is File => !!f && (f.type.startsWith("image/") || EXT_DOCUMENTO.test(f.name)));
+}
+
+/** Links de arquivos citados num texto em Markdown (entregas): [nome](/api/midia/...arquivos/...). */
+export function arquivosCitados(texto: string): { url: string; nome: string }[] {
+  const vistos = new Set<string>();
+  return [...texto.matchAll(/\[([^\]]+)\]\((\/api\/midia\/(?:arquivos\/[a-f0-9-]{36}\.[a-z]+|\d+\/arquivos\/[^)\s]+))\)/g)]
+    .filter((m) => !vistos.has(m[2]!) && vistos.add(m[2]!))
+    .map((m) => ({ nome: m[1]!, url: m[2]! }));
+}

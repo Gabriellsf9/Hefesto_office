@@ -113,6 +113,8 @@ export interface ChatMessage {
   texto: string;
   /** Imagens anexadas (endereços /api/midia/chat/…). */
   imagens?: string[];
+  /** Arquivos anexados (PDF, Word, Excel…): endereço e nome original. */
+  arquivos?: { url: string; nome: string }[];
 }
 
 /* ---------- Livro da Empresa e entrevista de onboarding (Fase 2a) ---------- */
@@ -224,7 +226,7 @@ export type ServerEvent =
   | { type: "chave"; configurada: boolean };
 
 export type ClientEvent =
-  | { type: "command"; texto: string; imagens?: string[] }
+  | { type: "command"; texto: string; imagens?: string[]; arquivos?: string[] }
   | { type: "demo"; ativo: boolean }
   | { type: "onboarding.iniciar" }
   | { type: "onboarding.responder"; texto: string };

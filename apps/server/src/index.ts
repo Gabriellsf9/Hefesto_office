@@ -44,6 +44,7 @@ import { estadoOnboarding, iniciarEntrevista, responder } from "./onboarding.ts"
 import { adicionarProjeto, definirAtivo, definirUrlLocal, escolherPasta, listarProjetos, projetoAtivo, removerProjeto } from "./projetos.ts";
 import { pastaDeMidia } from "./fabrica/capturas.ts";
 import { nomeValido, PASTA_IMAGENS, salvarImagem } from "./imagens.ts";
+import { mimeDe, nomeArquivoValido, nomeOriginal, PASTA_ARQUIVOS, salvarArquivo } from "./arquivos.ts";
 import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -391,6 +392,21 @@ app.put<{ Params: { id: string }; Body: { urlLocal: string | null } }>("/api/pro
 });
 // Imagens que você envia no chat.
 app.post<{ Body: { dados?: string } }>("/api/imagens", { bodyLimit: 8 * 1024 * 1024 }, async (req) => salvarImagem(req.body?.dados));
+app.post<{ Body: { nome?: string; dados?: string } }>("/api/arquivos", { bodyLimit: 22 * 1024 * 1024 }, async (req) => salvarArquivo(req.body?.nome, req.body?.dados));
+const baixar = (nomeArquivo: string) => `attachment; filename*=UTF-8''${encodeURIComponent(nomeArquivo)}`;
+app.get<{ Params: { arquivo: string } }>("/api/midia/arquivos/:arquivo", async (req, reply) => {
+  const { arquivo } = req.params;
+  if (!nomeArquivoValido(arquivo) || !existsSync(join(PASTA_ARQUIVOS, arquivo))) throw new ErroCard("Não encontrado.", 404);
+  const ext = arquivo.split(".").pop()!;
+  return reply.header("content-type", mimeDe(ext)).header("content-disposition", baixar(nomeOriginal(arquivo))).header("x-content-type-options", "nosniff").send(createReadStream(join(PASTA_ARQUIVOS, arquivo)));
+});
+app.get<{ Params: { card: string; nome: string } }>("/api/midia/:card/arquivos/:nome", async (req, reply) => {
+  const nome = req.params.nome;
+  if (!/^[\w .-]{1,90}\.(docx|pdf|xlsx|csv|md|html)$/.test(nome) || nome.includes("..")) throw new ErroCard("Arquivo inválido.", 400);
+  const caminho = join(pastaDeMidia(idDe(req.params.card)), "arquivos", nome);
+  if (!existsSync(caminho)) throw new ErroCard("Não encontrado.", 404);
+  return reply.header("content-type", mimeDe(nome.split(".").pop()!)).header("content-disposition", baixar(nome)).header("x-content-type-options", "nosniff").send(createReadStream(caminho));
+});
 app.get<{ Params: { arquivo: string } }>("/api/midia/chat/:arquivo", async (req, reply) => {
   const { arquivo } = req.params;
   if (!nomeValido(arquivo)) throw new ErroCard("Arquivo inválido.", 400);
@@ -454,7 +470,7 @@ app.get("/ws", { websocket: true }, (socket) => {
       return;
     }
     if (msg.type === "demo") setDemo(msg.ativo);
-    if (msg.type === "command" && typeof msg.texto === "string") pedirParaHelena(msg.texto, msg.imagens);
+    if (msg.type === "command" && typeof msg.texto === "string") pedirParaHelena(msg.texto, msg.imagens, msg.arquivos);
     if (msg.type === "onboarding.iniciar") void iniciarEntrevista();
     if (msg.type === "onboarding.responder" && typeof msg.texto === "string") void responder(msg.texto);
   });

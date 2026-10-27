@@ -8,6 +8,7 @@ import { criarCard, listarCards } from "../tarefas.ts";
 import { agenteChamado, conversarComAgente } from "./conversa.ts";
 import { iniciarProspeccao } from "../prospeccao.ts";
 import { filtrarImagens, imagensEmMarkdown } from "../imagens.ts";
+import { arquivosEmMarkdown, filtrarArquivos, nomeOriginal } from "../arquivos.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ErroEntrada, ferramenta, rodarAgente, texto } from "./loop.ts";
@@ -24,13 +25,14 @@ let fila: Promise<void> = Promise.resolve();
  * Os pedidos são atendidos um de cada vez, na ordem em que chegam. Se o CEO
  * chamar alguém pelo nome ("Rafael, como está o login?"), quem responde é essa pessoa.
  */
-export function pedirParaHelena(textoDoCeo: string, imagensBrutas: unknown = []) {
+export function pedirParaHelena(textoDoCeo: string, imagensBrutas: unknown = [], arquivosBrutos: unknown = []) {
   const imagens = filtrarImagens(imagensBrutas);
-  const limpo = textoDoCeo.trim().slice(0, 8000) || (imagens.length ? "(imagem)" : "");
+  const arquivos = filtrarArquivos(arquivosBrutos);
+  const limpo = textoDoCeo.trim().slice(0, 8000) || (imagens.length ? "(imagem)" : arquivos.length ? "(arquivo)" : "");
   if (!limpo) return;
-  postChat("voce", limpo, imagens);
+  postChat("voce", limpo, imagens, arquivos.map((url) => ({ url, nome: nomeOriginal(url.split("/").pop()!) })));
   const chamado = agenteChamado(limpo);
-  const tarefa = chamado && chamado.agente.id !== HELENA ? () => conversarComAgente(chamado.agente, chamado.pergunta, imagens) : () => atender(limpo, imagens);
+  const tarefa = chamado && chamado.agente.id !== HELENA ? () => conversarComAgente(chamado.agente, chamado.pergunta, imagens, arquivos) : () => atender(limpo, imagens, arquivos);
   fila = fila.then(tarefa).catch(() => {});
 }
 
@@ -61,7 +63,7 @@ function conversaRecente(): string {
     .join("\n");
 }
 
-async function atender(pedido: string, imagens: string[] = []) {
+async function atender(pedido: string, imagens: string[] = [], arquivos: string[] = []) {
   const client = clienteClaude();
   focus("diretoria", HELENA);
   if (!client) {
@@ -117,7 +119,7 @@ async function atender(pedido: string, imagens: string[] = []) {
         const card = criarCard(
           {
             titulo: texto(c, "titulo", 200),
-            descricao: texto(c, "descricao", 20_000) + imagensEmMarkdown(imagens),
+            descricao: texto(c, "descricao", 20_000) + imagensEmMarkdown(imagens) + arquivosEmMarkdown(arquivos),
             criterios: typeof c.criterios === "string" ? c.criterios : "",
             sala,
             fluxo,
@@ -171,7 +173,7 @@ ${ativo ? `Sim (id ${ativo}). Use usar_projeto_ativo nos cards de software que m
 ${Object.values(fluxos).map((f) => `- ${f.nome}: ${f.colunas.map((c) => c.nome).join(" → ")}`).join("\n")}
 
 ## Novo pedido do CEO
-${pedido}${imagens.length ? `\n\n(O CEO anexou ${imagens.length} imagem(ns), acima. Os cards que você criar levam as imagens junto, para quem for trabalhar neles.)` : ""}
+${pedido}${imagens.length ? `\n\n(O CEO anexou ${imagens.length} imagem(ns), acima. Os cards que você criar levam as imagens junto, para quem for trabalhar neles.)` : ""}${arquivos.length ? `\n\n(O CEO anexou ${arquivos.length} arquivo(s), acima. Os cards que você criar levam os arquivos junto.)` : ""}
 
 Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. Se for um pedido de clientes ou leads, use iniciar_prospeccao (se faltar a região, pergunte antes). Se for pergunta, responda direto.`;
 
@@ -189,6 +191,7 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. S
         ...(podeUsarMaquina(agentById[HELENA]!, "terminal") ? [ferramentaDeTerminal(agentById[HELENA]!, null)] : []),
       ],
       imagens,
+      arquivos,
       lembrete: "Responda ao CEO agora, em poucas linhas.",
       exigeFerramenta: false,
       onTexto: (parcial) => emit({ type: "chat.parcial", de: HELENA, texto: parcial }),

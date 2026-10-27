@@ -3,6 +3,7 @@ import { registrarUso } from "../custo.ts";
 import { somarCusto } from "../tarefas.ts";
 import { buscarNoCodigo, ErroArquivo, lerArquivo, listarArquivos } from "./arquivos.ts";
 import { blocosDeImagem } from "../imagens.ts";
+import { blocosDeArquivo } from "../arquivos.ts";
 
 // Laço de um agente: chama a API, executa as ferramentas pedidas e repete até o
 // agente chamar uma ferramenta final (entregar, aprovar, devolver…) ou parar.
@@ -43,6 +44,8 @@ export interface OpcoesAgente {
   maxRodadas?: number;
   /** Imagens que acompanham a mensagem (o modelo enxerga). Endereços /api/midia/chat/…. */
   imagens?: string[];
+  /** Arquivos (PDF, Word, Excel…) que acompanham a mensagem: o modelo lê o conteúdo. */
+  arquivos?: string[];
 }
 
 export interface ResultadoAgente {
@@ -119,9 +122,9 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
 }
 
 export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
-  const imagens = o.imagens?.length ? blocosDeImagem(o.imagens) : [];
+  const anexos: Anthropic.Beta.BetaContentBlockParam[] = [...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])];
   const mensagens: Anthropic.Beta.BetaMessageParam[] = [
-    { role: "user", content: imagens.length ? [...imagens, { type: "text", text: o.mensagem }] : o.mensagem },
+    { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
   ];
   const porNome = new Map(o.ferramentas.flatMap((f) => ("name" in f.def && f.executar ? [[f.def.name, f] as const] : [])));
   let custoUsd = 0;

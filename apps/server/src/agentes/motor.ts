@@ -15,6 +15,7 @@ import { ferramentaDeComando, ferramentaDeDiff, ferramentasDeEscrita } from "../
 import { ferramentaDeCaptura } from "../fabrica/capturas.ts";
 import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
 import { imagensDoTexto } from "../imagens.ts";
+import { arquivosDoTexto, ferramentaGerarArquivo } from "../arquivos.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ferramentaDeControle } from "../maquina/controle.ts";
@@ -321,6 +322,8 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
   if (["navegador", "web", "playwright"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) {
     ferramentas.push(ferramentaDeNavegador(card.id, agente.id, projeto?.urlLocal ?? null));
   }
+  // Documentos de verdade (DOCX, PDF, XLSX, CSV) para anexar à entrega.
+  ferramentas.push(ferramentaGerarArquivo(card.id));
   // Celular de teste (iPhone no Simulador, Android no emulador): QA, Mobile e Treinamento.
   if (agente.ferramentas.includes("celular")) ferramentas.push(ferramentaDeCelular(agente, card, [wt?.caminho, projeto?.caminho].filter((c): c is string => !!c)));
 
@@ -330,6 +333,7 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
     sistema: sistemaAutor(agente),
     mensagem: mensagemExecutar(card),
     imagens: imagensDoTexto(card.descricao),
+    arquivos: arquivosDoTexto(card.descricao),
     ferramentas,
     cardId: card.id,
     maxRodadas: wt ? 40 : undefined,
@@ -512,6 +516,7 @@ ${c.patch.slice(0, 20_000)}
     sistema: sistemaValidador(validador, card.sala, focoDaEtapa(card), card.dono),
     mensagem,
     imagens: imagensDoTexto(card.descricao),
+    arquivos: arquivosDoTexto(card.descricao),
     maxRodadas: wt ? 24 : undefined,
     ferramentas,
     cardId: card.id,
