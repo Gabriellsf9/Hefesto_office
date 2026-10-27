@@ -3,3 +3,4 @@ export * from "./agents.ts";
 export * from "./layout.ts";
 export * from "./playbooks.ts";
 export * from "./registro.ts";
+export * from "./modelos.ts";

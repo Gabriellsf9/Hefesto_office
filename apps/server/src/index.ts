@@ -19,6 +19,8 @@ import { calcularSimples } from "./areas/financas.ts";
 import { iniciarConquistas, listarConquistas } from "./conquistas.ts";
 import { definirConfigBackup, estadoBackup, fazerBackup, iniciarBackup } from "./backup.ts";
 import { buscarNaMemoria } from "./memoria.ts";
+import { carregarEscritorios, excluirEscritorio, listarEscritorios, restaurarSede, salvarEscritorio } from "./escritorios.ts";
+import { escritorioDoModelo, MODELOS_FLUXO, modelosDeEscritorio } from "@empresa/org";
 import { configurarTelegram, desparear, enviar as enviarTelegram, esquecerTelegram, estadoTelegram, iniciarTelegram } from "./telegram.ts";
 import {
   aprovarResposta, atualizarContato, configurarWhatsapp, descartarResposta, enviarModelo, enviarTexto, esquecerWhatsapp, estadoWhatsapp,
@@ -57,6 +59,9 @@ import {
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
 
 const PORT = Number(process.env.API_PORT ?? 4317);
+
+// Escritórios guardados no banco entram no registro antes de tudo (motor, prompts e rotas usam o registro).
+carregarEscritorios();
 
 // Escuta só em localhost: a chave e os agentes nunca ficam expostos na rede.
 const app = Fastify({ logger: { level: "warn" } });
@@ -275,6 +280,32 @@ app.patch<{ Params: { tel: string }; Body: { humano?: boolean; lido?: boolean; e
 app.post<{ Params: { id: string }; Body: { texto?: string } }>("/api/whatsapp/mensagens/:id/aprovar", async (req) => aprovarResposta(idDe(req.params.id), req.body?.texto));
 app.post<{ Params: { id: string } }>("/api/whatsapp/mensagens/:id/descartar", async (req) => descartarResposta(idDe(req.params.id)));
 app.get<{ Querystring: { q?: string } }>("/api/memoria", async (req) => buscarNaMemoria(String(req.query.q ?? "").slice(0, 200), 12));
+app.get("/api/escritorios", async () => listarEscritorios());
+app.get("/api/escritorios/modelos", async () => ({ escritorios: modelosDeEscritorio(), fluxos: MODELOS_FLUXO }));
+app.post<{ Body: { modelo?: string; nome?: string; projetoId?: number | null } }>("/api/escritorios", async (req) => {
+  const nome = String(req.body?.nome ?? "").trim().slice(0, 60);
+  if (!nome) throw new ErroCard("Dê um nome ao escritório.");
+  // Id curto e único (vira o prefixo de salas, agentes e fluxos).
+  const base = nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 20) || "escritorio";
+  const usados = new Set(listarEscritorios().map((d) => d.id));
+  let id = base;
+  for (let i = 2; usados.has(id); i++) id = `${base}-${i}`;
+  try {
+    return salvarEscritorio(escritorioDoModelo(String(req.body?.modelo ?? "em-branco"), id, nome, typeof req.body?.projetoId === "number" ? req.body.projetoId : null));
+  } catch (e) {
+    throw e instanceof ErroCard ? e : new ErroCard(e instanceof Error ? e.message : String(e));
+  }
+});
+app.put<{ Params: { id: string }; Body: Record<string, unknown> }>("/api/escritorios/:id", async (req) => {
+  const def = req.body as unknown as Parameters<typeof salvarEscritorio>[0];
+  if (!def || def.id !== req.params.id) throw new ErroCard("Definição inválida.");
+  return salvarEscritorio(def);
+});
+app.delete<{ Params: { id: string } }>("/api/escritorios/:id", async (req) => {
+  excluirEscritorio(req.params.id);
+  return { ok: true };
+});
+app.post("/api/escritorios/sede/restaurar", async () => restaurarSede());
 app.get("/api/telegram", async () => estadoTelegram());
 app.put<{ Body: Record<string, unknown> }>("/api/telegram", async (req) => configurarTelegram(req.body ?? {}));
 app.post("/api/telegram/desparear", async () => desparear());
@@ -478,6 +509,7 @@ app.get("/ws", { websocket: true }, (socket) => {
     controle: listarSessoesControle(),
     whatsapp: estadoWhatsapp(),
     telegram: estadoTelegram(),
+    escritorios: listarEscritorios(),
     contatosWhatsapp: listarContatos(),
   });
   const unsubscribe = subscribe(send);
@@ -491,7 +523,7 @@ app.get("/ws", { websocket: true }, (socket) => {
       return;
     }
     if (msg.type === "demo") setDemo(msg.ativo);
-    if (msg.type === "command" && typeof msg.texto === "string") pedirParaHelena(msg.texto, msg.imagens, msg.arquivos);
+    if (msg.type === "command" && typeof msg.texto === "string") pedirParaHelena(msg.texto, msg.imagens, msg.arquivos, msg.escritorio);
     if (msg.type === "onboarding.iniciar") void iniciarEntrevista();
     if (msg.type === "onboarding.responder" && typeof msg.texto === "string") void responder(msg.texto);
   });

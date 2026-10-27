@@ -136,6 +136,9 @@ export const fluxoDaSala: Record<RoomId, FluxoId> = {
   reuniao: "geral",
 };
 
+/** Coluna "Aguardando CEO" do fluxo (todo fluxo tem uma). */
+export const colunaDoCeo = (fluxo: FluxoId): string => fluxos[fluxo]?.colunas.find((c) => c.tipo === "ceo")?.id ?? "aguardando-ceo";
+
 /** Fluxo padrão de uma sala (ao criar cards). */
 export const fluxoPadrao = (sala: RoomId): FluxoId => fluxoDaSala[sala] ?? "geral";
 

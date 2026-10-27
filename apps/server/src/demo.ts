@@ -1,5 +1,5 @@
 import {
-  colunaDeTrabalho, colunaDeValidacao, fluxoDaSala, fluxos, type AgentStatus, type Card, type FluxoId, type RoomId, fluxoPadrao } from "@empresa/shared";
+  colunaDeTrabalho, colunaDeValidacao, fluxoDaSala, fluxos, type AgentStatus, type Card, type FluxoId, type RoomId, fluxoPadrao, colunaDoCeo } from "@empresa/shared";
 import { agentById, agentsByRoom, roomById, rooms, salaDe } from "@empresa/org";
 import { emit, focus, postFeed, resetAll, setAgentStatus } from "./bus.ts";
 import { projetoAtivo } from "./projetos.ts";
@@ -142,7 +142,7 @@ async function episodio(sala: RoomId) {
       postFeed(sala, validador.id, `${validador.nome} concluiu o ${card.chave} (nível N0, não precisa do CEO)`);
       setAgentStatus(autor.id, "ocioso", null);
     } else {
-      mover(card.id, "aguardando-ceo", validador.id);
+      mover(card.id, colunaDoCeo(fluxo), validador.id);
       postFeed(sala, validador.id, `${card.chave} validado por ${validador.nome}. Aguardando sua aprovação.`);
       setAgentStatus(autor.id, "aguardando-aprovacao", `Aguardando seu OK no ${card.chave}`);
       await espera(6000);

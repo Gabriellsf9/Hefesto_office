@@ -1,5 +1,5 @@
 import { colunaDe, type Agent } from "@empresa/shared";
-import { agents, roomById, nomeDaSala } from "@empresa/org";
+import { agentesDe, nomeDaSala, SEDE } from "@empresa/org";
 import { emit, focus, postChat, setAgentStatus } from "../bus.ts";
 import { clienteClaude } from "../custo.ts";
 import { listarCards, listarComentarios, ultimaEntrega } from "../tarefas.ts";
@@ -20,11 +20,11 @@ const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLo
  * Descobre se a fala começa chamando alguém pelo nome ("Rafael, …", "oi Ana …").
  * O reconhecimento de voz nem sempre põe vírgula, então basta o nome ser a primeira palavra.
  */
-export function agenteChamado(texto: string): { agente: Agent; pergunta: string } | null {
+export function agenteChamado(texto: string, escritorio = SEDE): { agente: Agent; pergunta: string } | null {
   const m = /^\s*(?:(?:oi|olá|ola|ei|e aí|e ai|fala)[,!\s]+)?([\p{L}]+)[,:!?\s]+(.+)$/isu.exec(texto);
   if (!m) return null;
   const nome = semAcento(m[1]!);
-  const agente = agents.find((a) => semAcento(a.nome) === nome);
+  const agente = agentesDe(escritorio).find((a) => semAcento(a.nome) === nome);
   return agente ? { agente, pergunta: m[2]!.trim() } : null;
 }
 

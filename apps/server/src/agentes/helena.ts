@@ -9,6 +9,7 @@ import { agenteChamado, conversarComAgente } from "./conversa.ts";
 import { iniciarProspeccao } from "../prospeccao.ts";
 import { filtrarImagens, imagensEmMarkdown } from "../imagens.ts";
 import { arquivosEmMarkdown, filtrarArquivos, nomeOriginal } from "../arquivos.ts";
+import { coordenadorDe, definicaoDe, escritorioDe, escritorioDoFluxoId, fluxosDe, SEDE } from "@empresa/org";
 import { ferramentaMemoria } from "../memoria.ts";
 import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
@@ -26,14 +27,16 @@ let fila: Promise<void> = Promise.resolve();
  * Os pedidos são atendidos um de cada vez, na ordem em que chegam. Se o CEO
  * chamar alguém pelo nome ("Rafael, como está o login?"), quem responde é essa pessoa.
  */
-export function pedirParaHelena(textoDoCeo: string, imagensBrutas: unknown = [], arquivosBrutos: unknown = []) {
+export function pedirParaHelena(textoDoCeo: string, imagensBrutas: unknown = [], arquivosBrutos: unknown = [], escritorioBruto: unknown = SEDE) {
+  const escritorio = typeof escritorioBruto === "string" && definicaoDe(escritorioBruto) ? escritorioBruto : SEDE;
   const imagens = filtrarImagens(imagensBrutas);
   const arquivos = filtrarArquivos(arquivosBrutos);
   const limpo = textoDoCeo.trim().slice(0, 8000) || (imagens.length ? "(imagem)" : arquivos.length ? "(arquivo)" : "");
   if (!limpo) return;
   postChat("voce", limpo, imagens, arquivos.map((url) => ({ url, nome: nomeOriginal(url.split("/").pop()!) })));
-  const chamado = agenteChamado(limpo);
-  const tarefa = chamado && chamado.agente.id !== HELENA ? () => conversarComAgente(chamado.agente, chamado.pergunta, imagens, arquivos) : () => atender(limpo, imagens, arquivos);
+  const coord = coordenadorDe(escritorio)?.id ?? HELENA;
+  const chamado = agenteChamado(limpo, escritorio);
+  const tarefa = chamado && chamado.agente.id !== coord ? () => conversarComAgente(chamado.agente, chamado.pergunta, imagens, arquivos) : () => atender(limpo, imagens, arquivos, escritorio);
   fila = fila.then(tarefa).catch(() => {});
 }
 
@@ -43,8 +46,8 @@ export function transformarPlanoEmCards(chave: string, plano: string) {
   fila = fila.then(() => atender(pedido)).catch(() => {});
 }
 
-function resumoDaBoard(): string {
-  const cards = listarCards().filter((c) => !c.demo);
+function resumoDaBoard(escritorio = SEDE): string {
+  const cards = listarCards().filter((c) => !c.demo && escritorioDoFluxoId(c.fluxo) === escritorio);
   if (!cards.length) return "A board está vazia.";
   const abertos = cards.filter((c) => colunaDe(c.fluxo, c.coluna)?.tipo !== "feito").slice(-40);
   const linhas = abertos.map((c) => {
@@ -64,14 +67,18 @@ function conversaRecente(): string {
     .join("\n");
 }
 
-async function atender(pedido: string, imagens: string[] = [], arquivos: string[] = []) {
+async function atender(pedido: string, imagens: string[] = [], arquivos: string[] = [], escritorio = SEDE) {
   const client = clienteClaude();
-  focus("diretoria", HELENA);
+  // Quem atende é o coordenador do escritório (na sede, a Helena).
+  const coord = coordenadorDe(escritorio) ?? agentById[HELENA]!;
+  const HELENA_ = coord.id;
+  const naSede = escritorio === SEDE;
+  focus(coord.sala, HELENA_);
   if (!client) {
-    postChat(HELENA, "Para eu e a equipe trabalharmos de verdade, configure a chave da API no botão \"Chave\" do topo.");
+    postChat(HELENA_, "Para eu e a equipe trabalharmos de verdade, configure a chave da API no botão \"Chave\" do topo.");
     return;
   }
-  setAgentStatus(HELENA, "pensando", "Lendo o pedido do CEO");
+  setAgentStatus(HELENA_, "pensando", "Lendo o pedido do CEO");
   const criados: string[] = [];
   const ativo = projetoAtivo();
 
@@ -112,7 +119,7 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
       lista.slice(0, 12).forEach((bruto, i) => {
         const c = bruto as Record<string, unknown>;
         const sala = texto(c, "sala", 40) as RoomId;
-        if (!roomById[sala]) throw new ErroEntrada(`Card ${i}: sala inválida "${sala}".`);
+        if (!roomById[sala] || escritorioDe(sala) !== escritorio) throw new ErroEntrada(`Card ${i}: sala inválida "${sala}" (use as salas do diretório).`);
         const donoPedido = typeof c.dono === "string" ? c.dono : "";
         const dono = agentById[donoPedido]?.sala === sala ? donoPedido : undefined;
         const dep = typeof c.depende_de === "number" && c.depende_de >= 0 && c.depende_de < i ? ids[c.depende_de] : undefined;
@@ -133,13 +140,13 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
             prazo: typeof c.data === "string" && Number.isFinite(Date.parse(c.data)) ? Date.parse(c.data.length === 10 ? `${c.data}T09:00:00` : c.data) : null,
             projetoId: c.usar_projeto_ativo ? ativo : null,
           },
-          HELENA,
+          HELENA_,
         );
         ids.push(card.id);
         chaves.push(`${card.chave} → ${nomeDaSala(sala)} (${card.dono ? agentById[card.dono]!.nome : "sem dono"})${dep ? `, depois do ${`EMP-${dep}`}` : ""}`);
       });
       criados.push(...chaves);
-      postFeed("diretoria", HELENA, `Helena criou ${chaves.length} card(s) a partir do pedido do CEO`);
+      postFeed(coord.sala, HELENA_, `${coord.nome} criou ${chaves.length} card(s) a partir do pedido do CEO`);
       return { texto: `Cards criados:\n${chaves.join("\n")}\nAgora responda ao CEO em poucas linhas.` };
     },
   );
@@ -155,7 +162,7 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
     },
     ["produto", "cliente_ideal", "regiao", "quantidade"],
     (e) => {
-      const { campanha, card } = iniciarProspeccao({ produto: e.produto, clienteIdeal: e.cliente_ideal, regiao: e.regiao, quantidade: e.quantidade }, HELENA);
+      const { campanha, card } = iniciarProspeccao({ produto: e.produto, clienteIdeal: e.cliente_ideal, regiao: e.regiao, quantidade: e.quantidade }, HELENA_);
       criados.push(`${card.chave} → Comercial (Daniel): prospecção de ${campanha.quantidade} leads em ${campanha.regiao}`);
       return { texto: `Campanha #${campanha.id} aberta (${card.chave}). Agora responda ao CEO em poucas linhas: o que vai acontecer e que ele aprova as mensagens antes de qualquer contato.` };
     },
@@ -165,47 +172,48 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
 ${conversaRecente() || "(início da conversa)"}
 
 ## Board agora
-${resumoDaBoard()}
+${resumoDaBoard(escritorio)}
 
 ## Projeto ativo
 ${ativo ? `Sim (id ${ativo}). Use usar_projeto_ativo nos cards de software que mexem nele.` : "Nenhum."}
 
 ## Fluxos
-${Object.values(fluxos).map((f) => `- ${f.nome}: ${f.colunas.map((c) => c.nome).join(" → ")}`).join("\n")}
+${fluxosDe(escritorio).map((f) => `- ${f.nome}: ${f.colunas.map((c) => c.nome).join(" → ")}`).join("\n")}
 
 ## Novo pedido do CEO
 ${pedido}${imagens.length ? `\n\n(O CEO anexou ${imagens.length} imagem(ns), acima. Os cards que você criar levam as imagens junto, para quem for trabalhar neles.)` : ""}${arquivos.length ? `\n\n(O CEO anexou ${arquivos.length} arquivo(s), acima. Os cards que você criar levam os arquivos junto.)` : ""}
 
-Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. Se for um pedido de clientes ou leads, use iniciar_prospeccao (se faltar a região, pergunte antes). Se for pergunta, responda direto.`;
+Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. ${naSede ? "Se for um pedido de clientes ou leads, use iniciar_prospeccao (se faltar a região, pergunte antes). " : ""}Se for pergunta, responda direto.`;
 
   try {
-    setAgentStatus(HELENA, "trabalhando", "Respondendo ao CEO");
+    setAgentStatus(HELENA_, "trabalhando", "Respondendo ao CEO");
     const r = await rodarAgente({
       client,
-      modelo: agentById[HELENA]!.modelo,
-      sistema: sistemaHelena(),
+      modelo: agentById[HELENA_]!.modelo,
+      sistema: sistemaHelena(escritorio),
       mensagem,
       ferramentas: [
         ferramentaMemoria,
         criarCards,
-        prospectar,
-        ...ferramentasDeConectores(agentById[HELENA]!, null),
-        ...(podeUsarMaquina(agentById[HELENA]!, "terminal") ? [ferramentaDeTerminal(agentById[HELENA]!, null)] : []),
+        // Prospecção e conectores são da empresa: só pela sede.
+        ...(naSede ? [prospectar] : []),
+        ...ferramentasDeConectores(agentById[HELENA_]!, null),
+        ...(podeUsarMaquina(agentById[HELENA_]!, "terminal") ? [ferramentaDeTerminal(agentById[HELENA_]!, null)] : []),
       ],
       imagens,
       arquivos,
       lembrete: "Responda ao CEO agora, em poucas linhas.",
       exigeFerramenta: false,
-      onTexto: (parcial) => emit({ type: "chat.parcial", de: HELENA, texto: parcial }),
+      onTexto: (parcial) => emit({ type: "chat.parcial", de: HELENA_, texto: parcial }),
       maxRodadas: 4,
     });
-    emit({ type: "chat.parcial", de: HELENA, texto: "" });
+    emit({ type: "chat.parcial", de: HELENA_, texto: "" });
     const resposta = r.texto.trim() || (criados.length ? `Feito. Criei e distribuí:\n${criados.map((c) => `- ${c}`).join("\n")}` : "");
-    postChat(HELENA, resposta || "Não consegui responder agora. Pode repetir?");
+    postChat(HELENA_, resposta || "Não consegui responder agora. Pode repetir?");
   } catch (err) {
-    emit({ type: "chat.parcial", de: HELENA, texto: "" });
-    postChat(HELENA, `Tive um problema para responder: ${err instanceof Error ? err.message : String(err)}`);
+    emit({ type: "chat.parcial", de: HELENA_, texto: "" });
+    postChat(HELENA_, `Tive um problema para responder: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    setAgentStatus(HELENA, "ocioso", null);
+    setAgentStatus(HELENA_, "ocioso", null);
   }
 }

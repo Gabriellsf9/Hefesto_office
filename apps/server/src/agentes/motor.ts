@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   colunaDe, colunaDeEntrada, colunaDeTrabalho, colunaDeValidacao, etapaDoCodigo, etapasDoCodigo, fluxoDaSala, fluxos, prioridades, type Agent, type Card, type EstadoMotor,
-  type FluxoId, type RoomId, type TrabalhoEmAndamento, fluxoPadrao } from "@empresa/shared";
-import { agentById, roomById, nomeDaSala } from "@empresa/org";
+  type FluxoId, type RoomId, type TrabalhoEmAndamento, fluxoPadrao, colunaDoCeo } from "@empresa/shared";
+import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe, SEDE } from "@empresa/org";
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude, custoHoje } from "../custo.ts";
 import { getSetting, setSetting } from "../db.ts";
@@ -421,7 +421,11 @@ const importante = (c: Card) => c.nivel === "N2" || c.nivel === "N3" || c.tipo =
 function escolherAdvogado(card: Card, validador: Agent): Agent | undefined {
   const tecnica = ["arquitetura", "desenvolvimento", "code-review", "qa", "seguranca", "devops", "dados", "infraestrutura"].includes(card.sala);
   const negocio = ["marketing", "comercial", "cs"].includes(card.sala);
-  const candidatos = tecnica ? ["cto", "arquiteto", "appsec"] : negocio ? ["cmo", "pmm", "financeiro"] : ["chief-of-staff", "cto", "cmo"];
+  const escritorio = escritorioDe(card.sala);
+  // Escritórios criados pelo CEO: os líderes e o coordenador de lá fazem o papel de advogado do diabo.
+  const candidatos = escritorio !== SEDE
+    ? agentesDe(escritorio).filter((a) => a.lider || a.papel === "coordenador").map((a) => a.id)
+    : tecnica ? ["cto", "arquiteto", "appsec"] : negocio ? ["cmo", "pmm", "financeiro"] : ["chief-of-staff", "cto", "cmo"];
   return candidatos.map((id) => agentById[id]).find((a) => a && a.id !== card.dono && a.id !== validador.id);
 }
 
@@ -537,8 +541,9 @@ ${c.patch.slice(0, 20_000)}
     postFeed(card.sala, validador.id, `${validador.nome} devolveu o ${card.chave} (rodada ${devolvido.devolucoes})`);
     // O código passa por 4 etapas: tem mais rodadas antes de subir para o CEO.
     if (devolvido.devolucoes >= (etapaDoCodigo(card) !== null ? MAX_RODADAS + 2 : MAX_RODADAS)) {
-      comentar(card.id, "chief-of-staff", "comentario", `Sem consenso depois de ${MAX_RODADAS} rodadas entre o autor e ${validador.nome}. Decida você: aprove a última versão ou devolva com a sua orientação.`);
-      mover(card.id, "aguardando-ceo", "chief-of-staff");
+      const coord = coordenadorDe(escritorioDe(card.sala))?.id ?? "chief-of-staff";
+      comentar(card.id, coord, "comentario", `Sem consenso depois de ${MAX_RODADAS} rodadas entre o autor e ${validador.nome}. Decida você: aprove a última versão ou devolva com a sua orientação.`);
+      mover(card.id, colunaDoCeo(card.fluxo), coord);
     }
     return;
   }
@@ -568,7 +573,7 @@ function finalizar(card: Card, quem: string) {
     postFeed(card.sala, quem, `${card.chave} concluído (N0, não precisa do CEO)`);
     void extrairLicao(concluido).catch((e) => console.error("Falha ao extrair lição:", e));
   } else {
-    mover(card.id, "aguardando-ceo", quem);
+    mover(card.id, colunaDoCeo(card.fluxo), quem);
     postFeed(card.sala, quem, `${card.chave} validado. Aguardando sua aprovação.`);
   }
 }

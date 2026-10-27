@@ -1,7 +1,7 @@
 // Tipos compartilhados entre o escritório 3D (web) e o servidor.
 
 export * from "./board.ts";
-import type { Ata, Card, Comentario, ConfigCritica, Conquista, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, Previa, MensagemWhatsapp, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, EstadoMotor, ItemConhecimento, Lead, Meta, Monitor, Peca, Projeto, RitualInfo } from "./board.ts";
+import type { Ata, Card, Comentario, ConfigCritica, Conquista, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, Previa, MensagemWhatsapp, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, EstadoMotor, ItemConhecimento, Lead, Meta, Monitor, Peca, Projeto, RitualInfo } from "./board.ts";
 
 /** Id de uma sala. As do escritório principal são fixas (diretoria, produto…); escritórios criados por você têm ids próprios. */
 export type RoomId = string;
@@ -10,6 +10,8 @@ export const SALAS_DA_SEDE = ["diretoria", "produto", "design", "arquitetura", "
 
 export type ModelTier = "claude-opus-5-5" | "claude-sonnet-5-5" | "claude-haiku-5-5";
 
+/** Ferramentas que um agente pode ter (a mesma lista vale para escritórios criados pelo CEO). */
+export const FERRAMENTAS_DE_AGENTE = ["arquivos", "terminal", "git", "navegador", "playwright", "celular", "k6", "web", "imagens", "redes-sociais", "anuncios", "planilhas", "banco-de-dados", "ssh"] as const;
 export type AgentTool =
   | "arquivos"
   | "terminal"
@@ -175,11 +177,13 @@ export type ServerEvent =
       controle: SessaoControle[];
       whatsapp: EstadoWhatsapp;
       telegram: EstadoTelegram;
+      escritorios: EscritorioDef[];
       contatosWhatsapp: ContatoWhatsapp[];
     }
   | { type: "whatsapp"; estado: EstadoWhatsapp }
   | { type: "telegram"; estado: EstadoTelegram }
   | { type: "previa"; previa: Previa }
+  | { type: "escritorios"; definicoes: EscritorioDef[] }
   | { type: "whatsapp_contato"; contato: ContatoWhatsapp }
   | { type: "whatsapp_mensagem"; mensagem: MensagemWhatsapp }
   | { type: "controle"; sessao: SessaoControle }
@@ -219,7 +223,7 @@ export type ServerEvent =
   | { type: "chave"; configurada: boolean };
 
 export type ClientEvent =
-  | { type: "command"; texto: string; imagens?: string[]; arquivos?: string[] }
+  | { type: "command"; texto: string; imagens?: string[]; arquivos?: string[]; escritorio?: string }
   | { type: "demo"; ativo: boolean }
   | { type: "onboarding.iniciar" }
   | { type: "onboarding.responder"; texto: string };
