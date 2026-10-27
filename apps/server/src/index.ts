@@ -18,6 +18,7 @@ import { calcularSimples } from "./areas/financas.ts";
 import { iniciarConquistas, listarConquistas } from "./conquistas.ts";
 import { definirConfigBackup, estadoBackup, fazerBackup, iniciarBackup } from "./backup.ts";
 import { buscarNaMemoria } from "./memoria.ts";
+import { configurarTelegram, desparear, enviar as enviarTelegram, esquecerTelegram, estadoTelegram, iniciarTelegram } from "./telegram.ts";
 import {
   aprovarResposta, atualizarContato, configurarWhatsapp, descartarResposta, enviarModelo, enviarTexto, esquecerWhatsapp, estadoWhatsapp,
   iniciarWhatsapp, listarContatos, listarMensagens, listarModelos, pararWhatsapp, testarConexao,
@@ -273,6 +274,15 @@ app.patch<{ Params: { tel: string }; Body: { humano?: boolean; lido?: boolean; e
 app.post<{ Params: { id: string }; Body: { texto?: string } }>("/api/whatsapp/mensagens/:id/aprovar", async (req) => aprovarResposta(idDe(req.params.id), req.body?.texto));
 app.post<{ Params: { id: string } }>("/api/whatsapp/mensagens/:id/descartar", async (req) => descartarResposta(idDe(req.params.id)));
 app.get<{ Querystring: { q?: string } }>("/api/memoria", async (req) => buscarNaMemoria(String(req.query.q ?? "").slice(0, 200), 12));
+app.get("/api/telegram", async () => estadoTelegram());
+app.put<{ Body: Record<string, unknown> }>("/api/telegram", async (req) => configurarTelegram(req.body ?? {}));
+app.post("/api/telegram/desparear", async () => desparear());
+app.post("/api/telegram/esquecer", async () => esquecerTelegram());
+app.post("/api/telegram/teste", async () => {
+  const id = await enviarTelegram("Teste do Hefesto: está tudo certo. Os avisos e aprovações chegam aqui.");
+  if (!id) throw new ErroCard("Não enviou: confira se o bot está ligado e pareado.");
+  return { ok: true };
+});
 app.get("/api/backup", async () => estadoBackup());
 app.put<{ Body: { ativo?: boolean; pasta?: string; manter?: number } }>("/api/backup", async (req) => definirConfigBackup(req.body ?? {}));
 app.post("/api/backup/agora", async () => fazerBackup());
@@ -459,6 +469,7 @@ app.get("/ws", { websocket: true }, (socket) => {
     pedidosMcp: listarPedidos(),
     controle: listarSessoesControle(),
     whatsapp: estadoWhatsapp(),
+    telegram: estadoTelegram(),
     contatosWhatsapp: listarContatos(),
   });
   const unsubscribe = subscribe(send);
@@ -496,6 +507,7 @@ iniciarConquistas();
 iniciarConectores();
 iniciarBackup();
 iniciarWhatsapp();
+iniciarTelegram();
 for (const sinal of ["SIGINT", "SIGTERM"] as const) process.once(sinal, () => {
   pararWhatsapp();
   process.exit(0);

@@ -685,6 +685,21 @@ export interface SessaoControle {
   acoes: { ts: number; acao: string; detalhe: string; ok: boolean }[];
 }
 
+/* ---------- Telegram (aprovar pelo celular) ---------- */
+
+export interface EstadoTelegram {
+  ativo: boolean;
+  chatId: number | null;
+  nomeChat: string | null;
+  bot: string | null;
+  /** Código de pareamento (só enquanto não há chat pareado). */
+  codigo: string | null;
+  notificar: { aprovacoes: boolean; perguntas: boolean; acoes: boolean; whatsapp: boolean; incidentes: boolean };
+  temToken: boolean;
+  status: "desligado" | "conectado" | "erro";
+  erro: string | null;
+}
+
 /* ---------- WhatsApp (API oficial da Meta) ---------- */
 
 /** aprovar: cada resposta da agente espera o seu OK; automatico: responde sozinha a quem escreveu (janela de 24 h). */
