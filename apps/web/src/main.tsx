@@ -1,9 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
-import { App } from "./App.tsx";
-import { connect } from "./ws.ts";
-import { iniciarVoz } from "./voz/controle.ts";
+import { prepararEscritorio } from "./escritorio.ts";
+
+// O escritório ativo (salas, equipe, planta) precisa estar no registro antes de carregar o 3D e as telas.
+prepararEscritorio();
+
+const [{ App }, { connect }, { iniciarVoz }] = await Promise.all([import("./App.tsx"), import("./ws.ts"), import("./voz/controle.ts")]);
 
 connect();
 iniciarVoz();

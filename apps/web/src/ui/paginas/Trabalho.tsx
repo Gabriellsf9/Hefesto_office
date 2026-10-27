@@ -75,7 +75,7 @@ export default function PaginaTrabalho() {
   });
   const nFiltros = [f.sala, f.pessoa, f.tipo, f.prioridade].filter(Boolean).length + [f.ocultarDemo, f.soProjeto].filter(Boolean).length;
   const temFiltro = JSON.stringify(f) !== JSON.stringify(INICIAIS);
-  const temDemo = todos.some((c) => c.demo);
+  const temDemo = todos.some((c) => c.demo && doEscritorio.includes(c.fluxo));
 
   const soltar = async (card: Card, destino: Coluna) => {
     if (card.coluna === destino.id) return;

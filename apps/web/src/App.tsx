@@ -28,6 +28,7 @@ const PaginaEquipe = lazy(() => import("./ui/paginas/Equipe.tsx"));
 const PaginaEmpresa = lazy(() => import("./ui/paginas/Empresa.tsx"));
 const PaginaOperacao = lazy(() => import("./ui/paginas/Operacao.tsx"));
 const PaginaConfig = lazy(() => import("./ui/paginas/Configuracoes.tsx"));
+const PaginaEscritorios = lazy(() => import("./ui/paginas/Escritorios.tsx"));
 
 export function App() {
   const rota = useNav((s) => s.rota);
@@ -72,6 +73,7 @@ export function App() {
                 {rota.area === "empresa" && <PaginaEmpresa />}
                 {rota.area === "operacao" && <PaginaOperacao />}
                 {rota.area === "config" && <PaginaConfig />}
+                {rota.area === "escritorios" && <PaginaEscritorios />}
               </Suspense>
             </div>
           )}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Activity, ArrowLeft, ChevronDown, ChevronUp, FileCheck2, KanbanSquare, LayoutList, MessageSquare, Minus, ShieldCheck, Users, Volume2, X } from "lucide-react";
 import { colunaDe, type Agent, type RoomId } from "@empresa/shared";
-import { agentById, agentsByRoom, roomById, rooms, nomeDaSala, salaDe } from "@empresa/org";
+import { agentById, agentsByRoom, roomById, rooms, nomeDaSala, salaDe, escritorioAtivo, escritorioDe } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { statusInfo } from "../../status.ts";
 import { usePaineis } from "../../paineis.ts";
@@ -70,7 +70,9 @@ export function TickerAtividade() {
   const [aberto, setAberto] = useState(false);
   // Com uma sala aberta, a atividade dela já aparece na gaveta à direita.
   const salaAberta = useStore((s) => s.salaSelecionada !== null);
-  const itens = feed.slice(-8).reverse();
+  // Só o que aconteceu neste escritório.
+  const aqui = escritorioAtivo();
+  const itens = feed.filter((f) => escritorioDe(f.sala) === aqui).slice(-8).reverse();
   if (!itens.length || salaAberta) return null;
   const ultimo = itens[0]!;
   return (

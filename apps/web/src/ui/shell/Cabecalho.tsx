@@ -20,6 +20,7 @@ export const NOMES_AREA: Record<Area, string> = {
   empresa: "Empresa",
   operacao: "Operação",
   config: "Configurações",
+  escritorios: "Escritórios",
 };
 
 const NOMES_SUB: Record<string, string> = {

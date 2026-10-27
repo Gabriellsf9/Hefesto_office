@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -19,6 +19,7 @@ export interface EstadoVoz {
 }
 import { agentById } from "@empresa/org";
 import { definirCardNaRota, navegar, useNav } from "./nav.ts";
+import { receberEscritorios } from "./escritorio.ts";
 
 export interface CameraRequest {
   sala: RoomId | null;
@@ -100,6 +101,8 @@ interface Store {
   telegram: EstadoTelegram | null;
   /** Prévias do app por card (chegam ao vivo). */
   previas: Record<number, Previa>;
+  /** Definições de todos os escritórios (para a página Escritórios e o editor). */
+  escritorios: EscritorioDef[];
   contatosWa: Record<string, ContatoWhatsapp>;
   /** Mensagens das conversas já abertas (as outras a tela busca na API). */
   mensagensWa: Record<string, MensagemWhatsapp[]>;
@@ -194,6 +197,7 @@ export const useStore = create<Store>((set, get) => ({
   whatsapp: null,
   telegram: null,
   previas: {},
+  escritorios: [],
   contatosWa: {},
   mensagensWa: {},
   setMensagensWa: (tel, m) => set((s) => ({ mensagensWa: { ...s.mensagensWa, [tel]: m } })),
@@ -228,14 +232,20 @@ export const useStore = create<Store>((set, get) => ({
           controle: Object.fromEntries(e.controle.map((c) => [c.cardId, c])),
           whatsapp: e.whatsapp,
           telegram: e.telegram,
+          escritorios: e.escritorios,
           contatosWa: Object.fromEntries(e.contatosWhatsapp.map((c) => [c.telefone, c])),
         });
+        receberEscritorios(e.escritorios);
         break;
       case "whatsapp":
         set({ whatsapp: e.estado });
         break;
       case "telegram":
         set({ telegram: e.estado });
+        break;
+      case "escritorios":
+        set({ escritorios: e.definicoes });
+        receberEscritorios(e.definicoes);
         break;
       case "previa":
         set((s) => ({ previas: { ...s.previas, [e.previa.cardId]: e.previa } }));

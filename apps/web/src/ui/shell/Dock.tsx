@@ -8,6 +8,7 @@ import { AvisosVoz, BotoesVoz } from "../Voz.tsx";
 import { arquivosDe, enviarDocumento, enviarImagem } from "../anexos.ts";
 import { BotaoIcone, Gaveta, cx } from "../kit/index.ts";
 import { Avatarzinho, hora } from "../comum.tsx";
+import { escritorioAtivo } from "../../escritorio.ts";
 
 // Conversa com a empresa (DESIGN-INTERFACE.md §6.8): barra no rodapé de todas as páginas.
 // As respostas aparecem por alguns segundos acima da barra; o histórico abre numa folha lateral.
@@ -65,7 +66,7 @@ export function Dock() {
   const enviar = () => {
     const t = texto.trim();
     if ((!t && !anexos.length && !documentos.length) || subindo || !conectado) return;
-    send({ type: "command", texto: t, ...(anexos.length ? { imagens: anexos } : {}), ...(documentos.length ? { arquivos: documentos.map((d) => d.url) } : {}) });
+    send({ type: "command", texto: t, escritorio: escritorioAtivo(), ...(anexos.length ? { imagens: anexos } : {}), ...(documentos.length ? { arquivos: documentos.map((d) => d.url) } : {}) });
     setTexto("");
     setAnexos([]);
     setDocumentos([]);

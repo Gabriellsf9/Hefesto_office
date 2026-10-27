@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { BookOpen, Building2, Inbox, KanbanSquare, LineChart, MessagesSquare, PanelLeftClose, PanelLeftOpen, Settings, Users, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BookOpen, Building2, Check, ChevronsUpDown, Inbox, Plus, KanbanSquare, LineChart, MessagesSquare, PanelLeftClose, PanelLeftOpen, Settings, Users, type LucideIcon } from "lucide-react";
 import { navegar, useNav, type Area } from "../../nav.ts";
 import { useStore } from "../../store.ts";
-import { cx } from "../kit/index.ts";
+import { ItemMenu, Popover, cx } from "../kit/index.ts";
+import { escritorioAtivo, trocarEscritorio } from "../../escritorio.ts";
 import { usePendencias } from "./pendencias.ts";
 
 // Barra lateral fixa (DESIGN-INTERFACE.md §3): 64 px só ícones, 232 px com nomes; lembra a escolha.
@@ -56,23 +57,7 @@ export function BarraLateral() {
 
   return (
     <nav aria-label="Navegação principal" className={cx("relative z-[1200] flex h-full shrink-0 flex-col border-r border-line bg-surface-2 transition-[width] duration-200", expandida ? "w-[232px]" : "w-16")}>
-      <button
-        type="button"
-        onClick={() => navegar("escritorio")}
-        className={cx("flex h-14 shrink-0 items-center gap-2.5 border-b border-line", expandida ? "px-4" : "justify-center")}
-        title={`Hefesto · ${conectado ? "conectado" : "reconectando ao servidor…"}`}
-      >
-        <span className="relative size-8 shrink-0">
-          <img src="/hefesto.svg" alt="" className="size-8" />
-          <span className={cx("absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-surface-2", conectado ? "bg-success" : "pulsar bg-warning")} />
-        </span>
-        {expandida && (
-          <span className="min-w-0 text-left leading-tight">
-            <span className="block text-corpo font-semibold text-fg">Hefesto</span>
-            <span className="block truncate text-legenda text-fg-3">Escritório de agentes</span>
-          </span>
-        )}
-      </button>
+      <SeletorEscritorio expandida={expandida} conectado={conectado} />
 
       <ul className="scroll-fino flex-1 space-y-0.5 overflow-y-auto p-2">
         {ITENS_NAV.map((i) => (
@@ -122,5 +107,50 @@ function ItemNav({ item, ativo, expandida, contador }: { item: Item; ativo: bool
           <span className={cx("tabular absolute right-1.5 top-1 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10.5px] font-semibold text-white", item.area === "entrada" ? "bg-danger" : "bg-whatsapp")}>{contador > 99 ? "99+" : contador}</span>
         ))}
     </button>
+  );
+}
+
+/** Topo da barra lateral: o escritório aberto e a troca para outro (cada projeto pode ter o seu). */
+function SeletorEscritorio({ expandida, conectado }: { expandida: boolean; conectado: boolean }) {
+  const defs = useStore((s) => s.escritorios);
+  const [aberto, setAberto] = useState(false);
+  const ancora = useRef<HTMLButtonElement>(null);
+  const ativo = escritorioAtivo();
+  const atual = defs.find((d) => d.id === ativo);
+  const nome = atual?.nome ?? "Sede";
+  return (
+    <>
+      <button
+        ref={ancora}
+        type="button"
+        onClick={() => setAberto(!aberto)}
+        className={cx("flex h-14 shrink-0 items-center gap-2.5 border-b border-line transition-colors hover:bg-hover", expandida ? "px-3" : "justify-center")}
+        title={`${nome} · ${conectado ? "conectado" : "reconectando ao servidor…"}`}
+      >
+        <span className="relative size-8 shrink-0">
+          <img src="/hefesto.svg" alt="" className="size-8" />
+          <span className={cx("absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-surface-2", conectado ? "bg-success" : "pulsar bg-warning")} />
+        </span>
+        {expandida && (
+          <>
+            <span className="min-w-0 flex-1 text-left leading-tight">
+              <span className="block truncate text-corpo font-semibold text-fg">{nome}</span>
+              <span className="block truncate text-legenda text-fg-3">Hefesto · escritório</span>
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-fg-3" />
+          </>
+        )}
+      </button>
+      <Popover aberto={aberto} fechar={() => setAberto(false)} ancora={ancora} largura={280} lado="direita">
+        <div className="px-2.5 pb-1 pt-1.5 text-legenda font-semibold text-fg-3">Escritórios</div>
+        {(defs.length ? defs : [{ id: "sede", nome: "Sede", descricao: "" }]).map((d) => (
+          <ItemMenu key={d.id} icone={d.id === ativo ? Check : Building2} ativo={d.id === ativo} descricao={"agentes" in d ? `${d.agentes.length} agentes · ${d.fluxos.length} fluxos` : undefined} onClick={() => { setAberto(false); if (d.id !== ativo) trocarEscritorio(d.id); }}>
+            {d.nome}
+          </ItemMenu>
+        ))}
+        <div className="my-1 border-t border-line" />
+        <ItemMenu icone={Plus} onClick={() => { setAberto(false); navegar("escritorios"); }}>Gerenciar e criar escritórios</ItemMenu>
+      </Popover>
+    </>
   );
 }

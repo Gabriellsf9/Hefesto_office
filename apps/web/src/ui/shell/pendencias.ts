@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { colunaDe, prioridades, type Card, type ContatoWhatsapp, type ItemConhecimento, type PedidoMcp } from "@empresa/shared";
 import { useStore } from "../../store.ts";
+import { escritorioAtivo, escritorioDoFluxoId } from "@empresa/org";
 
 // Tudo o que espera o CEO, num lugar só (Caixa de entrada). Ordem: urgência, depois antiguidade.
 
@@ -20,7 +21,10 @@ export function usePendencias(): Pendencia[] {
   const conhecimento = useStore((s) => s.conhecimento);
   return useMemo(() => {
     const lista: Pendencia[] = [];
+    const aqui = escritorioAtivo();
     for (const c of Object.values(cards)) {
+      // Cards de outros escritórios aparecem quando você entra neles.
+      if (escritorioDoFluxoId(c.fluxo) !== aqui) continue;
       if (colunaDe(c.fluxo, c.coluna)?.tipo === "ceo") lista.push({ tipo: "aprovacao", chave: `card-${c.id}`, card: c, ts: c.atualizadoEm, peso: 20 + pesoPrioridade(c.prioridade) });
       else if (c.bloqueado) lista.push({ tipo: "bloqueado", chave: `bloq-${c.id}`, card: c, ts: c.atualizadoEm, peso: 10 + pesoPrioridade(c.prioridade) });
     }

@@ -49,6 +49,7 @@ const PAGINAS: { area: Area; sub?: string; nome: string; termos?: string }[] = [
   { area: "operacao", sub: "monitoramento", nome: "Monitoramento de sites" },
   { area: "operacao", sub: "financas", nome: "Finanças e custos", termos: "simples nacional das custo ia" },
   { area: "operacao", sub: "backup", nome: "Backup dos dados" },
+  { area: "escritorios", nome: "Escritórios", termos: "projeto equipe salas fluxos modelo planta" },
   { area: "config", sub: "geral", nome: "Configurações gerais", termos: "chave api orçamento" },
   { area: "config", sub: "voz", nome: "Voz e sons", termos: "música volume" },
   { area: "config", sub: "escritorio", nome: "Escritório e aparência", termos: "tema escuro claro noite iluminação demonstração" },
@@ -162,7 +163,7 @@ export function Paleta() {
           },
         })),
       );
-      r.push({ id: "helena", grupo: "Pedir", titulo: `Pedir à Helena: "${q.trim()}"`, icone: Sparkles, fazer: () => { send({ type: "command", texto: q.trim() }); avisar("Pedido enviado à Helena", "info"); } });
+      r.push({ id: "helena", grupo: "Pedir", titulo: `Pedir à Helena: "${q.trim()}"`, icone: Sparkles, fazer: () => { send({ type: "command", texto: q.trim(), escritorio: escritorioAtivo() }); avisar("Pedido enviado à Helena", "info"); } });
     }
     return r;
   }, [q, cards, leads, contatos, motor.pausado, memoria]);
