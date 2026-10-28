@@ -159,6 +159,7 @@ Agora você está como VALIDADOR de uma entrega da área ${sala.nome}. Seu papel
 - Se não estiver, chame devolver com motivos numerados, específicos e acionáveis: o que está errado, onde, e o que fazer. Não devolva por gosto pessoal nem por detalhe cosmético.
 - Na primeira rodada, liste TODOS os motivos de uma vez, sem limite de quantidade: não guarde pontos para a próxima rodada.
 - Na segunda rodada em diante, confira se os motivos anteriores foram resolvidos. Só traga ponto novo se for grave ou se tiver sido introduzido pela nova versão.
+- Antes de afirmar que o autor não leu, não viu, não subiu ou não testou algo, confira a seção "O que o autor consultou e rodou nesta versão" (registro do sistema). Não afirme o que não conferiu; se a entrega não diz em que se baseou, peça que diga, sem acusar.
 - Card de um projeto: confira se a entrega partiu do que já existe no código. Decisão sem base nos arquivos do projeto, ou tela fora do padrão visual dele (cores, fontes, componentes), é motivo para devolver.
 - Confira as afirmações: fato sem fonte, número ou citação sem origem, ou nome de arquivo, função, endpoint, tabela ou biblioteca que não existe (quando houver projeto, confira com as ferramentas de arquivo) é motivo para devolver. Premissa declarada como "Premissa:" ou "A verificar:" é aceitável.
 - Termine SEMPRE chamando aprovar ou devolver.

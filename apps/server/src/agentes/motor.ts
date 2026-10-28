@@ -14,6 +14,7 @@ import { conferirEntregaDeLead, ferramentasDeProspeccao } from "../prospeccao.ts
 import { codigoDoCard, commitar, g as gitEm, garantirCopiaDeReferencia, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
 import { ferramentaDeComando, ferramentaDeDiff, ferramentasDeEscrita } from "../fabrica/ferramentas.ts";
 import { ferramentaDeCaptura, ferramentaGerarImagem } from "../fabrica/capturas.ts";
+import { execucoesDoCard } from "../confianca/execucoes.ts";
 import { ambienteAtivo, ferramentasDeAmbiente, HOST_DO_AMBIENTE } from "../fabrica/ambiente.ts";
 import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
 import { imagensDoTexto } from "../imagens.ts";
@@ -111,8 +112,8 @@ function esperandoEntrega(cardId: number) {
 function ferramentaLerCard(daqui: Card): Ferramenta {
   return ferramenta(
     "ler_card",
-    "Lê outro card pelo número (ex.: EMP-12): título, coluna, descrição, critérios de aceite e a ÚLTIMA ENTREGA COMPLETA. Use quando precisar do texto inteiro de um plano, contrato, schema ou entrega de outra área (a busca na memória só traz trechos).",
-    { chave: { type: "string", description: "Número do card, ex.: EMP-12 ou 12" } },
+    "Lê outro card pelo número (ex.: EMP-12): título, coluna, descrição, critérios de aceite e a ÚLTIMA ENTREGA COMPLETA. Use quando precisar do texto inteiro de um plano, contrato, schema ou entrega de outra área (a busca na memória só traz trechos). Entregas longas vêm em partes de 60 mil caracteres: continue com a_partir_de.",
+    { chave: { type: "string", description: "Número do card, ex.: EMP-12 ou 12" }, a_partir_de: { type: "integer", minimum: 0, description: "Caractere da entrega onde começar (para ler o resto de uma entrega longa)" } },
     ["chave"],
     (e) => {
       const n = Number(texto(e, "chave", 20).replace(/\D/g, ""));
@@ -125,8 +126,15 @@ function ferramentaLerCard(daqui: Card): Ferramenta {
       if (escritorioDe(alvo.sala) !== escritorioDe(daqui.sala)) throw new ErroEntrada("Esse card é de outro escritório.");
       const ent = ultimaEntrega(alvo.id);
       const col = colunaDe(alvo.fluxo, alvo.coluna)?.nome ?? alvo.coluna;
+      // Entrega longa em partes, avisando o que falta (antes era cortada em silêncio e o agente não sabia).
+      const PARTE = 60_000;
+      const ini = Math.min(Math.max(0, Number(e.a_partir_de) || 0), ent?.conteudo.length ?? 0);
+      const trecho = ent ? ent.conteudo.slice(ini, ini + PARTE) : "";
+      const resto = ent && ini + PARTE < ent.conteudo.length ? `\n\n(A entrega tem ${ent.conteudo.length} caracteres; você leu de ${ini} a ${ini + PARTE}. Para continuar, chame ler_card com a_partir_de: ${ini + PARTE}.)` : "";
+      const cabecalho = `# ${alvo.chave} · ${alvo.titulo}\nColuna: ${col} · Responsável: ${alvo.dono ? (agentById[alvo.dono]?.nome ?? alvo.dono) : "—"}`;
+      if (ini > 0) return { texto: `${cabecalho}\n\n## Última entrega (versão ${ent!.versao}), a partir do caractere ${ini}\n${trecho}${resto}` };
       return {
-        texto: `# ${alvo.chave} · ${alvo.titulo}\nColuna: ${col} · Responsável: ${alvo.dono ? (agentById[alvo.dono]?.nome ?? alvo.dono) : "—"}\n\n## Descrição\n${alvo.descricao || "(vazia)"}\n\n## Critérios de aceite\n${alvo.criterios || "(nenhum)"}\n\n## Última entrega${ent ? ` (versão ${ent.versao}): ${ent.resumo}\n${ent.conteudo.slice(0, 60_000)}` : "\n(ainda sem entrega)"}`,
+        texto: `${cabecalho}\n\n## Descrição\n${alvo.descricao || "(vazia)"}\n\n## Critérios de aceite\n${alvo.criterios || "(nenhum)"}\n\n## Última entrega${ent ? ` (versão ${ent.versao}): ${ent.resumo}\n${trecho}${resto}` : "\n(ainda sem entrega)"}`,
       };
     },
   );
@@ -377,6 +385,31 @@ export function prontoParaExecutar(card: Card, porId: Map<number, Card>) {
 /** Card que escreve no repositório: código da sala de código, ou trabalho de quem mexe em arquivos com git (Dados, DevOps, Cloud). */
 const escreveCodigo = (card: Card, agente: Agent) =>
   ehCardDeCodigo(card) || (agente.ferramentas.includes("git") && agente.ferramentas.includes("arquivos") && card.sala !== "arquitetura" && agente.sala === card.sala);
+
+/** Ferramentas de consulta e verificação que o validador precisa saber se o autor usou. */
+const CONSULTAS = new Set(["ler_arquivo", "ver_imagem", "buscar_no_codigo", "listar_arquivos", "mapa_do_codigo", "ler_card", "capturar_telas", "ambiente_subir", "ambiente_comando", "rodar_comando", "gerar_imagem", "navegador"]);
+
+/**
+ * O que o autor consultou e rodou para fazer a versão atual, tirado do replay (registro do sistema, não da defesa
+ * dele): o validador confere fatos antes de afirmar que algo não foi lido, visto ou testado.
+ */
+export function consultasDoAutor(card: Card): string {
+  const desde = listarEntregas(card.id).at(-2)?.ts ?? 0;
+  const linhas = execucoesDoCard(card.id)
+    .filter((x) => x.agente === card.dono && x.fim >= desde)
+    .flatMap((x) => x.passos)
+    .filter((p) => p.tipo === "ferramenta" && p.nome && CONSULTAS.has(p.nome))
+    .map((p) => {
+      let alvo = "";
+      try {
+        const e = JSON.parse(p.entrada ?? "{}") as Record<string, unknown>;
+        alvo = String(e.caminho ?? e.texto ?? e.chave ?? e.comando ?? e.nome ?? e.arquivo ?? e.servico ?? "");
+      } catch { /* entrada que não é JSON */ }
+      return `- ${p.nome}${alvo ? `: ${alvo.replace(/\s+/g, " ").slice(0, 140)}` : ""}${p.erro ? " (deu erro)" : ""}`;
+    });
+  if (!linhas.length) return "";
+  return `\n\n## O que o autor consultou e rodou nesta versão (registro do sistema)\n${[...new Set(linhas)].slice(0, 60).join("\n")}`;
+}
 
 const NOTA_DA_REFERENCIA = `
 
@@ -1021,7 +1054,7 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   // Fora do código (que já traz o diff da branch), o validador vê o que mudou entre a versão anterior e a atual.
   const versoes = listarEntregas(card.id);
   const mudancas = !worktreeDoCard(card) && versoes.length >= 2 ? await diferencaDeTexto(versoes.at(-2)!.conteudo, versoes.at(-1)!.conteudo) : "";
-  let mensagem = mensagemValidar(card, mudancas);
+  let mensagem = mensagemValidar(card, mudancas) + consultasDoAutor(card);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ferramentaDeDiff(card.id));
     if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));

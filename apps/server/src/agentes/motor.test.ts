@@ -65,3 +65,22 @@ describe("esperaParente", () => {
     assert.equal(esperaParente(outro, porId, [rodando(pai.id), rodando(filho.id)]), false);
   });
 });
+
+describe("o validador julga com o registro do sistema", () => {
+  test("lista o que o autor consultou na versão atual (ex.: viu os prints com ver_imagem)", async () => {
+    const { criarCard, registrarEntrega } = await import("../tarefas.ts");
+    const { novaExecucao, registrarPasso } = await import("../confianca/execucoes.ts");
+    const { consultasDoAutor } = await import("./motor.ts");
+    const card = criarCard({ titulo: "Protótipo", sala: "design", dono: "ui-designer", validador: "pm" });
+    registrarEntrega(card.id, "ui-designer", "v1", "primeira");
+    const run = novaExecucao(card.id, "ui-designer", "claude-sonnet-5-5");
+    registrarPasso(run, { rodada: 0, tipo: "ferramenta", nome: "ver_imagem", entrada: { caminho: "frontend/public/site/vibra/mural.webp" }, saida: "Imagem" });
+    registrarPasso(run, { rodada: 1, tipo: "ferramenta", nome: "ler_arquivo", entrada: { caminho: "frontend/app/globals.css" }, saida: "..." });
+    registrarPasso(run, { rodada: 2, tipo: "ferramenta", nome: "entregar", entrada: { conteudo: "x" }, saida: "ok" });
+    registrarEntrega(card.id, "ui-designer", "v2", "segunda");
+    const lista = consultasDoAutor(card);
+    assert.match(lista, /ver_imagem: frontend\/public\/site\/vibra\/mural\.webp/);
+    assert.match(lista, /ler_arquivo: frontend\/app\/globals\.css/);
+    assert.doesNotMatch(lista, /entregar/, "só consultas e verificações");
+  });
+});

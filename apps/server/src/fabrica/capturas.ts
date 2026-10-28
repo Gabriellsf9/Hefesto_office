@@ -111,7 +111,7 @@ const HTML_MAX = 300_000;
  * Renderiza uma tela, wireframe ou diagrama escrito em HTML/CSS/SVG e salva o print no card. Sem rede (nada externo
  * é carregado nem enviado) e sem JavaScript: só o que vier no próprio HTML, como imagem estática.
  */
-export async function desenharImagem(cardId: number, html: string, nome: string, legenda: string, largura = 1280): Promise<string> {
+export async function desenharImagem(cardId: number, html: string, nome: string, legenda: string, largura = 1280, alturaDaTela?: number): Promise<string> {
   if (!html.trim()) throw new ErroEntrada("Envie o HTML da imagem.");
   if (html.length > HTML_MAX) throw new ErroEntrada("HTML grande demais (máximo 300 mil caracteres).");
   const pasta = pastaDeMidia(cardId);
@@ -124,8 +124,9 @@ export async function desenharImagem(cardId: number, html: string, nome: string,
   }
   try {
     const w = Math.min(1920, Math.max(320, Math.round(largura)));
-    // Altura mínima: o print acompanha a altura do conteúdo, sem faixa vazia embaixo.
-    const contexto = await navegador.newContext({ viewport: { width: w, height: 200 }, javaScriptEnabled: false });
+    // A janela tem a altura de uma tela (telas de app usam 100% dela); conteúdo mais alto que isso estica o print.
+    const h = Math.min(4000, Math.max(200, Math.round(alturaDaTela ?? (w <= 500 ? 844 : 800))));
+    const contexto = await navegador.newContext({ viewport: { width: w, height: h }, javaScriptEnabled: false });
     await contexto.route("**/*", (r) => (/^(data|about):/.test(r.request().url()) ? r.continue() : r.abort()));
     const pagina = await contexto.newPage();
     await pagina.setContent(html, { waitUntil: "load", timeout: 20_000 });
@@ -149,10 +150,11 @@ export function ferramentaGerarImagem(cardId: number): Ferramenta {
       nome: { type: "string", description: "Nome curto do arquivo (ex.: tela-de-integracoes)" },
       legenda: { type: "string", description: "O que a imagem mostra (aparece embaixo dela)" },
       largura: { type: "number", description: "Largura em pixels: 1280 (desktop, padrão) ou 390 (celular)" },
+      altura: { type: "number", description: "Altura da tela em pixels (padrão 800 no desktop, 844 no celular). Conteúdo mais alto estica a imagem." },
     },
     ["html", "nome", "legenda"],
     async (e) => ({
-      texto: `Imagem salva. Coloque esta linha na entrega:\n${await desenharImagem(cardId, String(e.html ?? ""), String(e.nome ?? "imagem"), String(e.legenda ?? ""), Number(e.largura) || 1280)}`,
+      texto: `Imagem salva. Coloque esta linha na entrega:\n${await desenharImagem(cardId, String(e.html ?? ""), String(e.nome ?? "imagem"), String(e.legenda ?? ""), Number(e.largura) || 1280, Number(e.altura) || undefined)}`,
     }),
   );
 }
