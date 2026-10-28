@@ -77,6 +77,8 @@ function Corpo({ card }: { card: Card }) {
   const comentarios = useStore((s) => s.comentarios);
   const entregas = useStore((s) => s.entregas);
   const trabalho = useStore((s) => s.motor.emAndamento.find((t) => t.cardId === card.id));
+  // Por que não está rodando (o motor diz: provedor fora do ar, vez do modelo local, dependência…).
+  const espera = useStore((s) => s.motor.esperas?.[card.id]);
   const coluna = colunaDe(card.fluxo, card.coluna);
   const bugs = Object.values(cards).filter((c) => c.bugDe === card.id);
   const origem = card.bugDe ? cards[card.bugDe] : undefined;
@@ -89,6 +91,14 @@ function Corpo({ card }: { card: Card }) {
           <p className="flex items-center gap-2 rounded-card bg-accent-soft px-3.5 py-2.5 text-pequeno text-accent-fg">
             <span className="pulsar size-2 rounded-full bg-accent" />
             {agentById[trabalho.agenteId]?.nome} está {trabalho.tipo === "validar" ? "validando" : "trabalhando"} neste card agora.
+          </p>
+        )}
+        {!trabalho && espera && !(card.bloqueado && card.etiquetas.includes("limite-de-gasto")) && (
+          <p className="flex items-center gap-2 rounded-card bg-sunken px-3.5 py-2.5 text-pequeno text-fg-2">
+            <span className="size-2 shrink-0 rounded-full bg-warning" />
+            <span>
+              <span className="font-semibold text-fg">Por que não está rodando:</span> {espera}
+            </span>
           </p>
         )}
         {card.bloqueado && card.etiquetas.includes("limite-de-gasto") ? (

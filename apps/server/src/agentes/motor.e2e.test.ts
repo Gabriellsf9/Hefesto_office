@@ -58,3 +58,53 @@ test("motor de ponta a ponta: card N0 no modelo local vai da fila ao concluído 
     setSetting("modelos_agentes", "{}");
   }
 });
+
+test("ensaio de falha: o Gemini do agente está sem cota e a reserva é o modelo local; o card conclui no local e o local nunca fica 'fora do ar'", async () => {
+  const { salvarSegredo } = await import("../secrets.ts");
+  const { provedorForaDoAr } = await import("../provedores.ts");
+  const chamadasLocais: string[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const nomes = new Set(((JSON.parse(corpo) as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name));
+      const chamada = nomes.has("entregar")
+        ? { name: "entregar", arguments: { resumo: "Pronto", conteudo: `# Entrega\n${"Conteúdo da entrega com os critérios atendidos. ".repeat(12)}`, autocritica: "Conferi." } }
+        : nomes.has("aprovar") ? { name: "aprovar", arguments: { parecer: "Ok." } } : null;
+      chamadasLocais.push(chamada?.name ?? "texto");
+      res.end(`${JSON.stringify({ message: chamada ? { content: "", tool_calls: [{ function: chamada }] } : { content: "ok" } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  // Quem escreve está no Gemini (sem cota); todos os outros no local, que também é a reserva.
+  setSetting("modelos_agentes", JSON.stringify({ ...Object.fromEntries(agents.map((a) => [a.id, "ollama:modelo-teste"])), pm: "gemini:gemini-teste", po: "gemini:gemini-teste" }));
+  salvarSegredo("gemini_api_key", "chave-gemini-falsa"); // só no banco temporário dos testes
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: { message: "You exceeded your current quota" } }), { status: 429 })) as typeof fetch;
+  try {
+    // Dois cards no Gemini falhando juntos: a segunda falha chega com o agente já apontando para a reserva (o bug).
+    const card = criarCard({ titulo: "Histórias do cadastro", sala: "produto", dono: "pm", nivel: "N0", criterios: "Gherkin", coluna: colunaDeEntrada(fluxoPadrao("produto")) });
+    const outro = criarCard({ titulo: "Critérios do login", sala: "produto", dono: "po", nivel: "N0", criterios: "Gherkin", coluna: colunaDeEntrada(fluxoPadrao("produto")) });
+    iniciarMotor();
+    let atual = lerCard(card.id);
+    const feito = (c: typeof atual) => colunaDe(c.fluxo, c.coluna)?.tipo === "feito";
+    for (let i = 0; i < 400 && !(feito(atual) && feito(lerCard(outro.id))); i++) {
+      repassadosEm.clear();
+      assert.equal(provedorForaDoAr("ollama"), false, "o modelo local (a reserva) nunca pode ser marcado fora do ar pela falha do Gemini");
+      await esperar(100);
+      atual = lerCard(card.id);
+    }
+    assert.equal(colunaDe(atual.fluxo, atual.coluna)?.tipo, "feito", `terminou em ${atual.coluna}; locais: ${chamadasLocais.join(", ")}`);
+    assert.ok(feito(lerCard(outro.id)), "o segundo card também concluiu");
+    assert.equal(provedorForaDoAr("gemini"), true, "o Gemini sem cota fica fora");
+    assert.ok(chamadasLocais.includes("entregar"), "a entrega saiu do modelo local");
+  } finally {
+    globalThis.fetch = original;
+    await encerrarMotor(5000);
+    servidor.close();
+    setSetting("provedores", "{}");
+    setSetting("modelos_agentes", "{}");
+  }
+});

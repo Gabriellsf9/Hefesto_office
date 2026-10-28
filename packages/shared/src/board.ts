@@ -348,6 +348,8 @@ export interface EstadoMotor {
   limiteCardUsd?: number;
   /** O mesmo, para cards de código (custam mais). */
   limiteCodigoUsd?: number;
+  /** Por que cada card que deveria andar não está rodando agora (id do card → motivo). */
+  esperas?: Record<number, string>;
 }
 
 /* ---------- Projetos da sua máquina ---------- */

@@ -42,6 +42,8 @@ export function SaudeDoTrabalho() {
       <p className="mb-3 text-pequeno text-fg-2">
         O vigia confere a cada minuto: card rodando sem avançar, a mesma falha voltando, ferramenta em loop, chamada de IA lenta, gasto do dia e fila parada. Avisa no chat e no Telegram uma vez; o alerta some sozinho quando o problema passa.
       </p>
+      <Provedores />
+      <FilaComMotivos />
       {erro && <p className="mb-2 text-pequeno text-danger-fg">{erro}</p>}
       {!alertas.length ? (
         <p className="rounded-xl border border-dashed border-line py-6 text-center text-pequeno text-fg-3">Tudo andando: nenhum alerta aberto.</p>
@@ -60,6 +62,65 @@ export function SaudeDoTrabalho() {
         </ul>
       )}
     </section>
+  );
+}
+
+/** Cards que deveriam andar e não estão rodando, com o motivo que o motor dá. */
+function FilaComMotivos() {
+  const esperas = useStore((s) => s.motor.esperas ?? {});
+  const cards = useStore((s) => s.cards);
+  const itens = Object.entries(esperas);
+  if (!itens.length) return null;
+  return (
+    <ul className="mb-3 space-y-1">
+      {itens.map(([id, motivo]) => {
+        const c = cards[Number(id)];
+        return (
+          <li key={id} className="flex gap-2 text-pequeno">
+            <span className="shrink-0 font-semibold text-fg">{c?.chave ?? `#${id}`}</span>
+            <span className="truncate text-fg-2" title={c?.titulo}>{c?.titulo}</span>
+            <span className="ml-auto shrink-0 text-fg-3">{motivo}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Provedores de IA: quem está fora do ar e até quando, com "tentar agora" (ex.: você recarregou o crédito). */
+function Provedores() {
+  const motor = useStore((s) => s.motor);
+  const [fora, setFora] = useState<Record<string, number | null>>({});
+  const carregar = () => void api<Record<string, number | null>>("/api/provedores/fora").then(setFora).catch(() => null);
+  // Recarrega quando o motor muda (falha, volta) e a cada 30 s.
+  useEffect(() => {
+    carregar();
+    const t = setInterval(carregar, 30_000);
+    return () => clearInterval(t);
+  }, [motor.esperandoApiAte, motor.naFila]);
+  const nomes: Record<string, string> = { claude: "Claude", gemini: "Gemini", openai: "OpenAI", ollama: "Modelo local" };
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {Object.entries(nomes).map(([p, nome]) => {
+        const ate = fora[p];
+        return (
+          <span key={p} className="flex items-center gap-2 rounded-full px-3 py-1 text-pequeno ring-1 ring-line">
+            <span className={`size-2 rounded-full ${ate ? "bg-danger" : "bg-success"}`} />
+            {nome}
+            {ate ? (
+              <>
+                <span className="text-fg-3">fora até {new Date(ate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+                <button className="font-semibold text-fg underline" onClick={() => void api(`/api/provedores/${p}/tentar`, "POST").then(carregar)}>
+                  tentar agora
+                </button>
+              </>
+            ) : (
+              <span className="text-fg-3">no ar</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
   );
 }
 

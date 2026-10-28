@@ -126,3 +126,15 @@ test("modo plano: sem plano, propor; com plano proposto, executar com os ajustes
   assert.deepEqual(estadoDoPlano(c), { fase: "executar", plano: "1. Ler a tela atual\n2. Desenhar a nova", ajustes: ["Use o mesmo menu lateral."] });
   assert.equal(estadoDoPlano(criarCard({ titulo: "Sem plano", sala: "design", dono: "ui-designer" })), null);
 });
+
+test("por que o card não anda: bloqueado, esperando dependência, esperando partes ou nada (está na fila)", async () => {
+  const { porQueNaoAnda } = await import("./motor.ts");
+  const dep = card({ coluna: "em-dev", chave: "EMP-50" });
+  const esperando = card({ coluna: "a-fazer", dependeDe: dep.id });
+  const bloqueado = card({ coluna: "em-dev", bloqueado: true });
+  const livre = card({ coluna: "a-fazer" });
+  const porId = mapa(dep, esperando, bloqueado, livre);
+  assert.match(porQueNaoAnda(esperando, porId, [])!, /Esperando EMP-50 terminar/);
+  assert.match(porQueNaoAnda(bloqueado, porId, [])!, /Bloqueado/);
+  assert.equal(porQueNaoAnda(livre, porId, []), null, "pronto: o motivo (se houver) vem da fila");
+});
