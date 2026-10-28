@@ -68,6 +68,7 @@ import { testarCard } from "./fabrica/testes.ts";
 import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
 import { listarEvals, rodarEvals, tarefasDeEval } from "./evals.ts";
 import { testarModelo } from "./agentes/compat.ts";
+import { conferirReplanejamento, definirOrcamentoDoProjeto, fixarLinhaDeBase, iniciarPlanejamento, planoDoProjeto } from "./planejamento.ts";
 import { auditarRequisicao, listarAuditoria, verificarAuditoria } from "./confianca/auditoria.ts";
 import { execucoesDoCard, limparPassosAntigos } from "./confianca/execucoes.ts";
 import { aplicarSugestao, configurarAprendizado, definirABAutomatico, encerrarAB, estadoAprendizado, iniciarAB, iniciarAprendizado, proporCandidata } from "./aprendizado.ts";
@@ -202,6 +203,21 @@ app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => confi
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
 app.post("/api/evals", async () => rodarEvals());
+
+/* ---------- Planejamento por projeto ---------- */
+
+app.get<{ Params: { id: string } }>("/api/projetos/:id/plano", async (req) => planoDoProjeto(idDe(req.params.id)));
+app.post<{ Params: { id: string } }>("/api/projetos/:id/plano/base", async (req) => fixarLinhaDeBase(idDe(req.params.id)));
+app.post<{ Params: { id: string } }>("/api/projetos/:id/plano/conferir", async (req) => ({ card: conferirReplanejamento(idDe(req.params.id)) }));
+app.put<{ Params: { id: string }; Body: { orcamentoUsd?: number | null } }>("/api/projetos/:id/orcamento", async (req, reply) => {
+  const v = req.body?.orcamentoUsd;
+  if (v !== null && v !== undefined && (typeof v !== "number" || !Number.isFinite(v) || v < 0)) return reply.code(400).send({ erro: "Orçamento inválido." });
+  try {
+    return definirOrcamentoDoProjeto(idDe(req.params.id), v ?? null);
+  } catch (e) {
+    return reply.code(404).send({ erro: (e as Error).message });
+  }
+});
 
 /* ---------- Confiança: replay das execuções e auditoria ---------- */
 
@@ -669,6 +685,7 @@ await app.listen({ host: HOST, port: PORT });
 iniciarMotor();
 iniciarRelatorioDiario();
 iniciarAprendizado();
+iniciarPlanejamento();
 limparPassosAntigos();
 setInterval(limparPassosAntigos, 24 * 3600_000).unref();
 void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));

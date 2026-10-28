@@ -33,7 +33,7 @@ import {
   ultimaEntrega,
 } from "../tarefas.ts";
 import { NO_MAC, podeRodarComandos } from "../plataforma.ts";
-import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
+import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
 import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
 import { comandoDeTestes, testarCard, verificarCopia } from "../fabrica/testes.ts";
 import { fecharSessao } from "../fabrica/navegador.ts";
@@ -41,6 +41,7 @@ import { modeloEscalonado, modeloMaisBarato, registrarResultadoAB, registrarSomb
 import { arquivosDoDiff, relatorioVarredura, varrerSegredos, verificarLicencas } from "../confianca/varredura.ts";
 import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confianca/atacante.ts";
 import { auditar } from "../confianca/auditoria.ts";
+import { ETIQUETA_ORCAMENTO_PROJETO, projetoSemOrcamento } from "../planejamento.ts";
 import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
@@ -408,6 +409,8 @@ async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "v
   naFila = Math.max(0, naFila - 1);
   publicar();
   try {
+    // Projeto sem orçamento: nem começa (o card para e espera você aumentar o orçamento).
+    if (projetoSemOrcamento(card.id)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
     if (tipo === "executar") await executar(client, card, agentById[agenteId]!, controle.signal);
     else await validar(client, card, agentById[agenteId]!, controle.signal);
     falhas.delete(card.id);
@@ -464,6 +467,13 @@ function tratarFalha(card: Card, agenteId: string, err: unknown) {
   }
   if (err instanceof ErroSemOrcamento) {
     comentar(card.id, agenteId, "comentario", "Parei: o orçamento de IA de hoje acabou. Retomo quando houver orçamento.");
+    return;
+  }
+  if (err instanceof ErroOrcamentoProjeto) {
+    const c = lerCard(card.id);
+    const o = projetoSemOrcamento(card.id);
+    editarCard(card.id, { bloqueado: true, etiquetas: [...new Set([...c.etiquetas, ETIQUETA_ORCAMENTO_PROJETO])] });
+    comentar(card.id, agenteId, "comentario", `Parei: o projeto${o ? ` ${o.projeto} já gastou US$ ${o.gasto.toFixed(2)} do orçamento de US$ ${o.orcamento.toFixed(2)}` : " chegou ao orçamento"}. Aumente o orçamento em Operação → Projetos e eu continuo de onde parei.`);
     return;
   }
   if (passageiro(err)) {

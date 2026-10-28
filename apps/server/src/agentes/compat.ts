@@ -5,7 +5,8 @@ import { blocosDeImagem } from "../imagens.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
 import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, precoDe, provedorDe } from "../provedores.ts";
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
-import { ErroInterrompido, ErroLimiteCard, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente } from "./loop.ts";
+import { projetoSemOrcamento } from "../planejamento.ts";
+import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente } from "./loop.ts";
 
 // O laço do agente para modelos fora do Claude: Ollama (API nativa, para controlar o
 // tamanho do contexto) e OpenAI e Gemini (API de chat no formato da OpenAI). Mesmas
@@ -291,6 +292,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.sinal?.aborted) throw interrompido();
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
+    if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
     aparar(msgs, limiteTokens);
     const onTexto = (t: string) => o.onTexto?.(t);
     let r: Resposta;

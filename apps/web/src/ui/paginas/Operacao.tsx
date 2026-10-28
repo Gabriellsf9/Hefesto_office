@@ -10,6 +10,7 @@ import { CalculadoraSimples, Monitoramento } from "../Operacao.tsx";
 import { ChamadasIA, PainelHoje } from "./Hoje.tsx";
 import { Qualidade } from "./Qualidade.tsx";
 import { Auditoria } from "./Auditoria.tsx";
+import { PlanoProjeto } from "./PlanoProjeto.tsx";
 import { BotaoEscolherPasta } from "../SeletorDePastas.tsx";
 import { Backup } from "./Configuracoes.tsx";
 import { Avatarzinho, usd } from "../comum.tsx";
@@ -170,6 +171,9 @@ function ItemProjeto({ p, ativo }: { p: Projeto; ativo: boolean }) {
             {url !== (p.urlLocal ?? "") && <Botao tamanho="p" onClick={() => void api(`/api/projetos/${p.id}/url-local`, "PUT", { urlLocal: url || null }).then(() => avisar("Endereço salvo")).catch(avisarErro)}>Salvar</Botao>}
           </div>
           <p className="mt-1 text-legenda text-fg-3">Para os prints do Treinamento e os testes de tela do QA.</p>
+        </div>
+        <div className="md:col-span-2">
+          <PlanoProjeto projetoId={p.id} />
         </div>
         <div className="md:col-span-2">
           <BancoDoProjeto p={p} />

@@ -8,6 +8,7 @@ import { blocosDeImagem } from "../imagens.ts";
 import { registrarChamada } from "../chamadas.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
+import { conferirOrcamentoDoProjeto, projetoSemOrcamento } from "../planejamento.ts";
 
 // Laço de um agente: chama a API, executa as ferramentas pedidas e repete até o
 // agente chamar uma ferramenta final (entregar, aprovar, devolver…) ou parar.
@@ -34,6 +35,8 @@ export class ErroInterrompido extends Error {}
 export class ErroSemOrcamento extends Error {}
 /** O card chegou ao limite de gasto por card. */
 export class ErroLimiteCard extends Error {}
+/** O projeto do card chegou ao orçamento dele. */
+export class ErroOrcamentoProjeto extends Error {}
 /** O agente parou sem entregar nada que se aproveite (vale uma nova tentativa antes de bloquear). */
 export class ErroSemEntrega extends Error {}
 
@@ -158,7 +161,7 @@ export async function executarFerramenta(porNome: Map<string, Ferramenta>, nome:
     if (!f?.executar) throw new ErroEntrada(`Ferramenta desconhecida: ${nome}`);
     return await f.executar(entrada);
   } catch (e) {
-    if (e instanceof ErroInterrompido || e instanceof ErroSemOrcamento || e instanceof ErroLimiteCard) throw e;
+    if (e instanceof ErroInterrompido || e instanceof ErroSemOrcamento || e instanceof ErroLimiteCard || e instanceof ErroOrcamentoProjeto) throw e;
     // Falha inesperada da ferramenta (git, disco, rede…): o agente fica sabendo e decide, sem perder o trabalho.
     if (!(e instanceof ErroEntrada)) console.error(`Ferramenta ${nome} falhou:`, e);
     return { texto: e instanceof ErroEntrada ? e.message : `A ferramenta ${nome} falhou: ${e instanceof Error ? e.message : String(e)}`, erro: true };
@@ -195,6 +198,10 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) {
       o.aoPausar?.(mensagens);
       throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
+    }
+    if (o.cardId && projetoSemOrcamento(o.cardId)) {
+      o.aoPausar?.(mensagens);
+      throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
     }
     let parcial = "";
     const t0 = Date.now();
@@ -254,7 +261,10 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
       parada: msg.stop_reason ?? null,
     });
     custoUsd += usd;
-    if (o.cardId) somarCusto(o.cardId, usd);
+    if (o.cardId) {
+      somarCusto(o.cardId, usd);
+      conferirOrcamentoDoProjeto(o.cardId);
+    }
 
     const usos = msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
     if (msg.stop_reason === "refusal") throw new Error("O modelo recusou esta tarefa (filtro de segurança).");
