@@ -32,7 +32,8 @@ import {
   comentar, criarCard, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
   ultimaEntrega,
 } from "../tarefas.ts";
-import { NO_MAC, podeRodarComandos } from "../plataforma.ts";
+import { NO_MAC } from "../plataforma.ts";
+import { podeVerificar } from "../fabrica/nuvem.ts";
 import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
 import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
 import { comandoDeTestes, testarCard, verificarCopia } from "../fabrica/testes.ts";
@@ -649,12 +650,12 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   const wtDoPai = wt ? null : worktreeDoCard(card);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ...ferramentasDeEscrita(wt));
-    if (podeRodarComandos() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+    if (podeVerificar() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
   else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
-  if (podeRodarComandos() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
+  if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
   const urlDoApp = (wt ? urlDaPrevia(card.id, card) : null) ?? projeto?.urlLocal ?? null;
   if (urlDoApp && agente.ferramentas.includes("playwright")) ferramentas.push(ferramentaDeCaptura(card.id, urlDoApp));
   // Navegador do sistema: quem pesquisa na web, testa telas ou usa o navegador.
@@ -668,7 +669,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
 
   // Melhor de N (card marcado, de código, com verificação, primeira versão): tentativas em cópias paralelas;
   // tipos, lint e testes escolhem a vencedora, que vira a entrega (as outras cópias são apagadas).
-  if (wt && card.etiquetas.includes(ETIQUETA_MELHOR_DE) && podeRodarComandos() && comandoDeTestes(wt.caminho) && !ultimaEntrega(card.id)) {
+  if (wt && card.etiquetas.includes(ETIQUETA_MELHOR_DE) && podeVerificar() && comandoDeTestes(wt.caminho) && !ultimaEntrega(card.id)) {
     const venc = await melhorDeN(client, card, agente, wt, 3, sinal);
     if (venc) {
       registrarEntrega(card.id, agente.id, venc.resumo, await comCodigo(wt, agente.id, card, venc.resumo, venc.conteudo));
@@ -677,7 +678,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   }
 
   // Escalonamento: o modelo sobe conforme o card falha; com "local primeiro", código verificável começa no local.
-  const esc = modeloEscalonado(agente, "autor", card, !!wt && podeRodarComandos() && !!comandoDeTestes(wt.caminho));
+  const esc = modeloEscalonado(agente, "autor", card, !!wt && podeVerificar() && !!comandoDeTestes(wt.caminho));
   const modeloAutor = esc.modelo;
   if (esc.motivo) postFeed(card.sala, agente.id, `${card.chave}: ${esc.motivo}`);
   const r = entregou ? { texto: "", terminou: true, custoUsd: 0 } : await rodarAgente({
@@ -726,7 +727,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   }
   // Verificação determinística (tipos → lint → testes) na branch antes de qualquer revisor gastar com o card:
   // se falhar, o erro real volta para o autor corrigir. Três falhas seguidas: para e pede ajuda ao CEO.
-  if (wt && podeRodarComandos() && comandoDeTestes(wt.caminho)) {
+  if (wt && podeVerificar() && comandoDeTestes(wt.caminho)) {
     const v = await testarCard(card.id, agente.id).catch((e: unknown) => {
       comentar(card.id, agente.id, "comentario", `Não consegui rodar a verificação: ${e instanceof Error ? e.message : String(e)}`);
       return null;
@@ -953,7 +954,7 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   let mensagem = mensagemValidar(card, mudancas);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ferramentaDeDiff(card.id));
-    if (podeRodarComandos() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+    if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
     if (projeto?.urlLocal && validador.id.startsWith("qa")) ferramentas.push(ferramentaDeNavegador(card.id, validador.id, projeto.urlLocal));
     const c = await codigoDoCard(card);
     if (c) mensagem += `
@@ -965,7 +966,7 @@ ${c.stat}
 
 \`\`\`diff
 ${c.patch.slice(0, 20_000)}
-\`\`\`${podeRodarComandos() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
+\`\`\`${podeVerificar() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
   } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
 
   const modeloValidador = modeloDoAgente(validador, etapaDoCodigoDe(card) !== null ? "validador-codigo" : "validador");

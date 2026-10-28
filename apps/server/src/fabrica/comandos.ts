@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename } from "node:path";
 import { DATA_DIR } from "../paths.ts";
 import { comoAgente, NO_MAC, podeRodarComandos, SO_NO_MAC } from "../plataforma.ts";
+import { nuvemAtiva, rodarNaNuvem } from "./nuvem.ts";
 
 // Comandos dos agentes na fábrica de software (Fase 4): testes, build, lint e instalação
 // de dependências, rodando DENTRO da cópia isolada do projeto (git worktree).
@@ -123,7 +124,7 @@ export interface ResultadoComando {
 /** Roda um comando permitido dentro da pasta (cópia isolada), na sandbox. */
 export async function rodarComando(pasta: string, comando: string): Promise<ResultadoComando> {
   // Só com sandbox: a do macOS ou a Linux do contêiner (sem ela, leriam os dados do próprio servidor).
-  if (!podeRodarComandos()) throw new ErroComando(SO_NO_MAC);
+  if (!podeRodarComandos() && !nuvemAtiva()) throw new ErroComando(SO_NO_MAC);
   const args = dividir(comando);
   const prog = args.shift()!;
   if (prog.includes("/") && !prog.startsWith("./")) throw new ErroComando("Use o nome do programa, não um caminho.");
@@ -133,6 +134,14 @@ export async function rodarComando(pasta: string, comando: string): Promise<Resu
   if (prog === "git" && !GIT_LEITURA.has(args[0] ?? "")) throw new ErroComando("git só para leitura (status, diff, log, show). O commit é feito pelo servidor.");
   if (args.some((a) => a.startsWith("/") || a.includes(".."))) throw new ErroComando("Use só caminhos relativos dentro do projeto (sem / no início e sem ..).");
   const rede = ehInstalacao(prog, args);
+  // Sandbox na nuvem ligada (por você): o mesmo comando, já conferido acima, roda no executor remoto.
+  if (nuvemAtiva()) {
+    try {
+      return await rodarNaNuvem(pasta, [prog, ...args], rede, TEMPO_MAX_MS);
+    } catch (e) {
+      throw new ErroComando((e as Error).message);
+    }
+  }
   const inicio = Date.now();
   const env = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",

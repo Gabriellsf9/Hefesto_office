@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
+import { Download,
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, Check, Copy, LayoutGrid, LogIn, Pencil, Plus, Save, Trash2, Undo2, Users, Workflow, X,
 } from "lucide-react";
 import type { AgenteDef, Coluna, EscritorioDef, Fluxo, ModeloEscritorio, ModeloFluxo, SalaDef } from "@empresa/shared";
@@ -9,6 +9,7 @@ import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
 import { navegar, useNav } from "../../nav.ts";
 import { escritorioAtivo, trocarEscritorio } from "../../escritorio.ts";
+import { BotaoExportar, BotaoImportar, PessoasDoTime, baixarPacote } from "./Pacotes.tsx";
 import {
   Abas, AreaTexto, Botao, BotaoIcone, CabecalhoPagina, Campo, Caixa, Etiqueta, EstadoVazio, Interruptor, Janela, Pagina, Seletor, avisar, avisarErro, confirmar, cx,
 } from "../kit/index.ts";
@@ -35,7 +36,7 @@ function Lista() {
         icone={Building2}
         titulo="Escritórios"
         descricao="Um escritório para cada projeto, com as salas, a equipe e os fluxos de trabalho que você quiser. A sede guarda as funções da empresa (prospecção, WhatsApp, rituais)."
-        acoes={<Botao variante="principal" icone={Plus} onClick={() => setNovo(true)}>Novo escritório</Botao>}
+        acoes={<><BotaoImportar /><Botao variante="principal" icone={Plus} onClick={() => setNovo(true)}>Novo escritório</Botao></>}
       />
       <div className="grid gap-3 md:grid-cols-2">
         {todos.map((d) => {
@@ -62,6 +63,7 @@ function Lista() {
               <div className="mt-4 flex flex-wrap gap-2">
                 {!ehAtivo && <Botao tamanho="p" variante="principal" icone={LogIn} onClick={() => trocarEscritorio(d.id)}>Entrar</Botao>}
                 <Botao tamanho="p" icone={Pencil} onClick={() => navegar("escritorios", d.id)}>Editar</Botao>
+                <BotaoExportar id={d.id} nome={d.nome} />
                 {d.id !== SEDE && (
                   <Botao
                     tamanho="p"
@@ -80,6 +82,7 @@ function Lista() {
           );
         })}
       </div>
+      <PessoasDoTime />
       <NovoEscritorio aberta={novo} fechar={() => setNovo(false)} />
     </Pagina>
   );
@@ -400,6 +403,7 @@ function EditorAgente({ a, d, atualizar, remover }: { a: AgenteDef; d: Escritori
         </Seletor>
         {a.papel === "coordenador" && <Etiqueta tom="acento">coordenador</Etiqueta>}
         <BotaoIcone icone={Pencil} rotulo={aberto ? "Recolher" : "Editar perfil"} tamanho="p" ativo={aberto} onClick={() => setAberto(!aberto)} />
+        <BotaoIcone icone={Download} rotulo="Exportar agente" tamanho="p" onClick={() => void baixarPacote(`/api/escritorios/${d.id}/agentes/${a.id}/exportar`, `agente-${a.nome}`)} />
         <BotaoIcone icone={Trash2} rotulo="Remover agente" tamanho="p" onClick={remover} />
       </div>
       {aberto && (
@@ -484,6 +488,7 @@ function AbaFluxos({ d, setD, usados }: PropsAba) {
             <Seletor rotulo="Quando você devolve, volta para" value={f.devolverPara} onChange={(e) => atualizar(f.id, (x) => ({ ...x, devolverPara: e.target.value }))}>
               {f.colunas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </Seletor>
+            <BotaoIcone icone={Download} rotulo="Exportar fluxo" onClick={() => void baixarPacote(`/api/escritorios/${d.id}/fluxos/${f.id}/exportar`, `fluxo-${f.nome}`)} />
             <BotaoIcone icone={Trash2} rotulo="Excluir fluxo" onClick={() => setD((x) => ({ ...x, fluxos: x.fluxos.filter((y) => y.id !== f.id), fluxoDaSala: Object.fromEntries(Object.entries(x.fluxoDaSala).filter(([, v]) => v !== f.id)) }))} />
           </div>
           <div className="scroll-fino flex gap-2 overflow-x-auto pb-1">

@@ -4,6 +4,7 @@ import {
 import { agentById, etapaDoCodigoDe, etapasDoCodigoDe, roomById, salaDe } from "@empresa/org";
 import { db, garantirColuna, getSetting, setSetting } from "./db.ts";
 import { limitePorCard, limitePorCardDeCodigo } from "./custo.ts";
+import { ehPessoa } from "./pessoas.ts";
 import { emit, focus, postFeed } from "./bus.ts";
 
 // Backlog central (PLANO.md, seção 4.2-B): nada é feito sem um card.
@@ -138,7 +139,8 @@ function validar(dados: CardEditavel) {
   if (dados.sala !== undefined && !roomById[dados.sala]) throw new ErroCard("Sala inválida.");
   for (const k of ["dono", "validador"] as const) {
     const v = dados[k];
-    if (v && !agentById[v]) throw new ErroCard(`Agente inválido em ${k}.`);
+    // Dono pode ser uma pessoa do time (o motor não roda o card dela); validador é sempre agente.
+    if (v && !agentById[v] && !(k === "dono" && ehPessoa(v))) throw new ErroCard(`Agente inválido em ${k}.`);
   }
   if (dados.prioridade && !["P0", "P1", "P2", "P3"].includes(dados.prioridade)) throw new ErroCard("Prioridade inválida.");
   if (dados.nivel && !["N0", "N1", "N2", "N3"].includes(dados.nivel)) throw new ErroCard("Nível de autonomia inválido.");

@@ -73,6 +73,33 @@ A barra lateral leva às áreas; **⌘K** busca e executa qualquer coisa (inclus
 - **Dependências múltiplas** (um card espera vários), pedidos a outras áreas que enxergam o código do card que pediu, e o pedido espera o resultado.
 - Botões **Rodar testes**, **Fazer merge** e **Abrir pull request** (GitHub, com o seu token cifrado); o QA grava **vídeo** do teste no navegador.
 
+### A equipe aprende (Operação → Qualidade → Aprendizado)
+- **A/B de instruções por agente:** a partir das suas devoluções, um modelo escreve regras novas para o agente; metade dos cards usa a versão nova e ela só fica se for aprovada de primeira mais vezes (8 cards de cada lado). Automático uma vez por dia ou sob demanda.
+- **Escada de modelos:** o card sobe um nível de modelo a cada 2 falhas (devolução, verificação, entrega vazia); com "modelo local primeiro", código com testes começa no Ollama e só sobe se a verificação falhar.
+- **Testes sombra:** parte dos cards aprovados (sem código) é refeita por um modelo mais barato, só leitura, e um juiz compara; quando o barato empata em 80% de 5+ casos, aparece a sugestão de troca para você aplicar.
+
+### Confiança
+- **Replay:** cada execução de cada agente no card, passo a passo (texto e ferramentas, com entrada e resultado), com segredos mascarados.
+- **Auditoria à prova de adulteração (Operação → Auditoria):** as suas ações pela API e as dos agentes (entregas, aprovações, comandos, ataques, merges) numa corrente de hashes; a verificação aponta o registro alterado ou apagado.
+- **Atacante (red team):** em código importante ou que mexe em login, permissões, SQL, uploads ou rotas, a segurança tenta explorar o diff antes da revisão; achado crítico ou alto volta ao autor.
+- **Varredura do diff:** chave, token, chave privada ou `.env` no código barra a entrega; dependência nova com licença copyleft (GPL, AGPL, SSPL…) vira aviso para a sua aprovação.
+
+### Planejamento (Operação → Projetos)
+- **Plano do projeto:** estimativa de cada card pelo histórico, cronograma simulado (dependências e um card por agente), previsão de término e **caminho crítico**.
+- **Orçamento por projeto:** aviso em 80%; no teto, os cards do projeto param e voltam quando você aumenta.
+- **Replanejamento automático:** se a previsão escorrega do combinado, o custo projetado passa do orçamento ou um card crítico trava, o coordenador recebe um card para propor o novo plano.
+
+### Da entrega à produção
+- **Prévia na Vercel por card** (seu clique): a branch vai para o GitHub, a Vercel faz o deploy de prévia e o link aparece no card e no Telegram. Precisa do token do GitHub, do token da Vercel e do projeto ligado (Operação → Projetos → Produção).
+- **Sentry depois do merge:** por 48 h, erro novo no projeto vira card de bug ligado ao card que mudou o código (severidade pelos usuários afetados). Precisa do token do Sentry e de `organização/projeto`.
+- **Métrica de sucesso por card:** o que deve mudar, o alvo e quando medir; no prazo, o Hefesto pergunta o resultado e compara com o alvo.
+
+### Ecossistema
+- **Exportar e importar** um escritório inteiro, um agente ou um fluxo em JSON (Escritórios); ids repetidos ganham sufixo e as referências acompanham. Nada de segredo vai no arquivo.
+- **Pessoas do time** como donas de cards: o motor não roda os cards delas e elas são avisadas no chat do Telegram pareado (pareie um grupo do time, com a menção de cada um). O painel continua só no seu Mac.
+- **Aprovar pelo celular** com o resumo da entrega, os arquivos que mudaram, a prévia publicada, os avisos de licença e o custo.
+- **Sandbox na nuvem** (opcional, desligada): os comandos dos agentes rodam num executor seu. Protocolo: `POST {url}/v1/executar` com `Authorization: Bearer {token}` e `{ "comando": ["npm","test"], "rede": false, "tempoMaxS": 300, "arquivos": "<tar.gz em base64>" }`; resposta `{ "codigo": 0, "saida": "…", "ms": 1234 }`. O executor deve abrir os arquivos num diretório novo, rodar sem shell e sem rede (exceto `rede: true`, na instalação de dependências), respeitar o tempo e apagar tudo no fim.
+
 ### Segurança, em resumo
 - A chave da API, os tokens e os segredos ficam cifrados neste Mac e nunca voltam para o navegador.
 - O servidor só atende o próprio Mac: pedidos com outro Host (DNS rebinding), de outra origem ou entre sites são recusados, inclusive o WebSocket.

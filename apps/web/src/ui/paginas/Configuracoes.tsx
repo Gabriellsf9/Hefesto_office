@@ -15,6 +15,7 @@ import {
 import { ConteudoConectores } from "../Conectores.tsx";
 import { CampoOrcamento } from "../CampoOrcamento.tsx";
 import { definirTema, useTema, type Tema } from "../shell/tema.ts";
+import { SandboxNuvem } from "./SandboxNuvem.tsx";
 import ModelosIa from "./ModelosIa.tsx";
 
 // Configurações (DESIGN-INTERFACE.md §6.9): tudo o que estava no menu ⋯, organizado por seção.
@@ -50,7 +51,7 @@ export default function PaginaConfiguracoes() {
           {secao === "modelos" && <ModelosIa />}
           {secao === "voz" && <VozESons />}
           {secao === "escritorio" && <Escritorio />}
-          {secao === "permissoes" && <Permissoes />}
+          {secao === "permissoes" && <><Permissoes /><SandboxNuvem /></>}
           {secao === "conectores" && <ConteudoConectores />}
           {secao === "whatsapp" && <ConfigWhatsapp />}
           {secao === "celular" && <ConfigTelegram />}

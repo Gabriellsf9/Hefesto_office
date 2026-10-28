@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { comentar, ErroCard, lerCard } from "../tarefas.ts";
-import { podeRodarComandos } from "../plataforma.ts";
+import { podeVerificar } from "./nuvem.ts";
 import { rodarComando, type ResultadoComando } from "./comandos.ts";
 import { g, worktreeDoCard } from "./workspace.ts";
 
@@ -126,7 +126,7 @@ export async function verificarCopia(wt: { repo: string; caminho: string; base: 
 
 /** Roda os testes do projeto na cópia isolada do card e registra o resultado no card. */
 export async function testarCard(cardId: number, autor = "devops"): Promise<ResultadoTestes> {
-  if (!podeRodarComandos()) throw new ErroCard("Os testes precisam da sandbox (no Mac, ou no Docker com a sandbox ligada).");
+  if (!podeVerificar()) throw new ErroCard("Os testes precisam da sandbox (no Mac, ou no Docker com a sandbox ligada).");
   const card = lerCard(cardId);
   const wt = worktreeDoCard(card);
   if (!wt) throw new ErroCard("Este card não tem cópia isolada do projeto.");

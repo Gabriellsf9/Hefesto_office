@@ -4,7 +4,10 @@ import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { getSetting, setSetting } from "./db.ts";
 import { emit, subscribe } from "./bus.ts";
 import { apagarSegredo, lerSegredo, salvarSegredo } from "./secrets.ts";
-import { aprovar, devolver, ErroCard, lerCard, listarCards, ETIQUETA_LIMITE, liberarGasto, limiteDoCard } from "./tarefas.ts";
+import { aprovar, devolver, ErroCard, lerCard, listarCards, listarComentarios, ultimaEntrega, ETIQUETA_LIMITE, liberarGasto, limiteDoCard } from "./tarefas.ts";
+import { codigoDoCard } from "./fabrica/workspace.ts";
+import { previaPublicadaDo } from "./fabrica/producao.ts";
+import { ehPessoa as isPessoa, lerPessoa } from "./pessoas.ts";
 import { aprovarPedido, recusarPedido } from "./mcp/ferramentas.ts";
 import { aprovarResposta, descartarResposta, lerContato } from "./whatsapp/whatsapp.ts";
 import { pedirParaHelena } from "./agentes/helena.ts";
@@ -130,16 +133,37 @@ export async function enviar(texto: string, botoes?: Botao[][], forcarResposta =
 
 const avisados = new Set<string>();
 const uma = (chave: string) => (avisados.has(chave) ? false : (avisados.add(chave), true));
-const nomeDe = (id: string | null) => (id ? agentById[id]?.nome ?? id : "");
+const nomeDe = (id: string | null) => (id ? agentById[id]?.nome ?? lerPessoa(id)?.nome ?? id : "");
+
+/** O que ajuda a decidir pelo celular: o resumo da entrega, o que mudou no código e a prévia publicada. */
+async function detalhesDaAprovacao(card: Card): Promise<string> {
+  const partes: string[] = [];
+  const e = ultimaEntrega(card.id);
+  if (e?.resumo) partes.push(`📝 ${escapar(e.resumo.slice(0, 300))}`);
+  const codigo = await codigoDoCard(card).catch(() => null);
+  if (codigo?.stat) {
+    const total = codigo.stat.trim().split("\n").at(-1) ?? "";
+    const arquivos = codigo.arquivos.slice(0, 6).map((a) => `${a.status} ${a.caminho}`).join("\n");
+    partes.push(`💻 <b>Código</b> (${escapar(codigo.branch)}): ${escapar(total.trim())}\n<code>${escapar(arquivos)}${codigo.arquivos.length > 6 ? `\n… e mais ${codigo.arquivos.length - 6}` : ""}</code>`);
+  }
+  const previa = previaPublicadaDo(card.id);
+  if (previa?.status === "pronta" && previa.url) partes.push(`🌐 Prévia: ${escapar(previa.url)}`);
+  const alertas = listarComentarios(card.id).filter((c) => c.ts >= (e?.ts ?? 0) && /^(⚖️|🛡️ Ataque: nada grave)/.test(c.texto)).map((c) => escapar(c.texto.split("\n")[0]!.slice(0, 160)));
+  if (alertas.length) partes.push(alertas.join("\n"));
+  partes.push(`💸 US$ ${card.custoUsd.toFixed(2)}`);
+  return partes.join("\n");
+}
 
 function avisoCard(card: Card) {
   const c = config();
   const tipo = colunaDe(card.fluxo, card.coluna)?.tipo;
   if (card.demo) return;
   if (tipo === "ceo" && c.notificar.aprovacoes && uma(`ap-${card.id}-${card.atualizadoEm}-${card.devolucoes}`)) {
-    void enviar(
-      `✅ <b>Pronto para aprovar</b> · ${card.chave} (${card.nivel}, ${card.prioridade})\n${escapar(card.titulo)}\n<i>${escapar(nomeDaSala(card.sala))} · ${escapar(nomeDe(card.dono))}${card.validador ? `, validado por ${escapar(nomeDe(card.validador))}` : ""}</i>`,
-      [[{ text: "Aprovar", callback_data: `ap:${card.id}` }, { text: "Devolver", callback_data: `dv:${card.id}` }]],
+    void detalhesDaAprovacao(card).then((det) =>
+      enviar(
+        `✅ <b>Pronto para aprovar</b> · ${card.chave} (${card.nivel}, ${card.prioridade})\n${escapar(card.titulo)}\n<i>${escapar(nomeDaSala(card.sala))} · ${escapar(nomeDe(card.dono))}${card.validador ? `, validado por ${escapar(nomeDe(card.validador))}` : ""}</i>\n\n${det}`,
+        [[{ text: "Aprovar", callback_data: `ap:${card.id}` }, { text: "Devolver", callback_data: `dv:${card.id}` }]],
+      ),
     );
   } else if (card.bloqueado && card.etiquetas.includes(ETIQUETA_LIMITE) && uma(`lg-${card.id}-${card.custoUsd.toFixed(2)}`)) {
     const lim = limiteDoCard(card);
@@ -149,6 +173,11 @@ function avisoCard(card: Card) {
     );
   } else if (card.bloqueado && c.notificar.perguntas && uma(`bq-${card.id}-${card.atualizadoEm}`)) {
     void enviar(`❓ <b>Pergunta para você</b> · ${card.chave}\n${escapar(card.titulo)}\n<i>Responda aqui citando ${card.chave} ou abra o card no Mac.</i>`);
+  }
+  // Card de uma pessoa do time: avisa no chat pareado (num grupo, com a menção dela).
+  const pessoa = card.dono && isPessoa(card.dono) ? lerPessoa(card.dono) : null;
+  if (pessoa && tipo !== "feito" && tipo !== "perdido" && uma(`ps-${card.id}-${card.dono}`)) {
+    void enviar(`👤 <b>Card para ${escapar(pessoa.nome)}</b>${pessoa.telegram ? ` (@${escapar(pessoa.telegram)})` : ""} · ${card.chave}\n${escapar(card.titulo)}\n<i>${escapar(nomeDaSala(card.sala))} · ${card.prioridade}</i>`);
   }
   if (card.prioridade === "P0" && c.notificar.incidentes && uma(`p0-${card.id}`)) {
     void enviar(`🚨 <b>P0</b> · ${card.chave}\n${escapar(card.titulo)}`);

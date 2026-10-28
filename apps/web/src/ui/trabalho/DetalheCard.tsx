@@ -15,6 +15,7 @@ import { arquivosCitados } from "../anexos.ts";
 import { ListaArquivos } from "../shell/Dock.tsx";
 import { Replay } from "./Replay.tsx";
 import { MetricaDoCard } from "./Metrica.tsx";
+import { usePessoas } from "../paginas/Pacotes.tsx";
 
 // Detalhe do card (DESIGN-INTERFACE.md §6.3): gaveta larga; à esquerda o conteúdo (pendência, descrição,
 // entrega, debate), à direita as propriedades num painel compacto. Abre por cima de qualquer página.
@@ -162,7 +163,7 @@ function Propriedades({ card, editar }: { card: Card; editar: (d: CardEditavel) 
           {niveis.map((n) => <option key={n.id} value={n.id}>{n.id} · {n.nome}</option>)}
         </Seletor>
       </div>
-      <SeletorAgente rotulo="Responsável" valor={card.dono} onChange={(dono) => void editar({ dono })} />
+      <SeletorAgente rotulo="Responsável" comPessoas valor={card.dono} onChange={(dono) => void editar({ dono })} />
       <SeletorAgente rotulo="Validador" valor={card.validador} onChange={(validador) => void editar({ validador })} />
       <div className="grid grid-cols-2 gap-2">
         <Seletor rotulo="Tipo" tamanho="p" value={card.tipo} onChange={(e) => void editar({ tipo: e.target.value as Card["tipo"] })}>
@@ -198,10 +199,16 @@ function Propriedades({ card, editar }: { card: Card; editar: (d: CardEditavel) 
   );
 }
 
-function SeletorAgente({ rotulo, valor, onChange }: { rotulo: string; valor: string | null; onChange: (v: string | null) => void }) {
+function SeletorAgente({ rotulo, valor, onChange, comPessoas }: { rotulo: string; valor: string | null; onChange: (v: string | null) => void; comPessoas?: boolean }) {
+  const pessoas = usePessoas();
   return (
     <Seletor rotulo={rotulo} tamanho="p" value={valor ?? ""} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">Ninguém</option>
+      {comPessoas && pessoas.length > 0 && (
+        <optgroup label="Pessoas do time">
+          {pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}{p.papel ? ` · ${p.papel}` : ""}</option>)}
+        </optgroup>
+      )}
       {rooms.map((r) => {
         const membros = agents.filter((a) => a.sala === r.id);
         return membros.length ? (

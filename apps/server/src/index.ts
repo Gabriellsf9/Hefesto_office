@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { ROOT } from "./paths.ts";
 import websocket from "@fastify/websocket";
+import { colunaDe } from "@empresa/shared";
 import type { CardEditavel, ClientEvent, ConfigCritica, ItemConhecimento, Meta, RitualId, ServerEvent, StatusResponse } from "@empresa/shared";
 import { estados, emit, subscribe } from "./bus.ts";
 import { recentChat, recentFeed } from "./db.ts";
@@ -19,6 +20,9 @@ import { calcularSimples } from "./areas/financas.ts";
 import { iniciarConquistas, listarConquistas } from "./conquistas.ts";
 import { definirConfigBackup, estadoBackup, fazerBackup, iniciarBackup } from "./backup.ts";
 import { buscarNaMemoria } from "./memoria.ts";
+import { configurarNuvem, estadoNuvem } from "./fabrica/nuvem.ts";
+import { listarPessoas, removerPessoa, salvarPessoa } from "./pessoas.ts";
+import { exportarAgente, exportarEscritorio, exportarFluxo, importarPacote } from "./escritoriosPacote.ts";
 import { carregarEscritorios, excluirEscritorio, listarEscritorios, restaurarSede, salvarEscritorio } from "./escritorios.ts";
 import { escritorioDoModelo, MODELOS_FLUXO, modelosDeEscritorio } from "@empresa/org";
 import { configurarTelegram, desparear, enviar as enviarTelegram, esquecerTelegram, estadoTelegram, iniciarTelegram } from "./telegram.ts";
@@ -463,6 +467,38 @@ app.delete<{ Params: { id: string } }>("/api/escritorios/:id", async (req) => {
   return { ok: true };
 });
 app.post("/api/escritorios/sede/restaurar", async () => restaurarSede());
+app.get<{ Params: { id: string } }>("/api/escritorios/:id/exportar", async (req) => exportarEscritorio(req.params.id));
+app.get<{ Params: { id: string; agente: string } }>("/api/escritorios/:id/agentes/:agente/exportar", async (req) => exportarAgente(req.params.id, req.params.agente));
+app.get<{ Params: { id: string; fluxo: string } }>("/api/escritorios/:id/fluxos/:fluxo/exportar", async (req) => exportarFluxo(req.params.id, req.params.fluxo));
+app.post<{ Body: { pacote?: unknown; escritorioId?: string; sala?: string } }>("/api/escritorios/importar", { bodyLimit: 4 * 1024 * 1024 }, async (req) =>
+  importarPacote(req.body?.pacote, { escritorioId: req.body?.escritorioId, sala: req.body?.sala }),
+);
+app.get("/api/nuvem", async () => estadoNuvem());
+app.put<{ Body: { ativo?: boolean; url?: string | null; token?: string | null } }>("/api/nuvem", async (req, reply) => {
+  try {
+    return configurarNuvem(req.body ?? {});
+  } catch (e) {
+    return reply.code(400).send({ erro: (e as Error).message });
+  }
+});
+app.get("/api/pessoas", async () => listarPessoas());
+app.post<{ Body: { id?: string; nome: string; papel?: string; telegram?: string } }>("/api/pessoas", async (req, reply) => {
+  try {
+    return salvarPessoa(req.body ?? { nome: "" });
+  } catch (e) {
+    return reply.code(400).send({ erro: (e as Error).message });
+  }
+});
+app.delete<{ Params: { id: string } }>("/api/pessoas/:id", async (req, reply) => {
+  try {
+    const aberto = listarCards().find((c) => c.dono === req.params.id && !["feito", "perdido"].includes(colunaDe(c.fluxo, c.coluna)?.tipo ?? ""));
+    if (aberto) throw new Error(`Esta pessoa ainda é dona de cards abertos (ex.: ${aberto.chave}): troque o dono antes.`);
+    removerPessoa(req.params.id);
+    return { ok: true };
+  } catch (e) {
+    return reply.code(400).send({ erro: (e as Error).message });
+  }
+});
 app.get("/api/telegram", async () => estadoTelegram());
 app.put<{ Body: Record<string, unknown> }>("/api/telegram", async (req) => configurarTelegram(req.body ?? {}));
 app.post("/api/telegram/desparear", async () => desparear());
