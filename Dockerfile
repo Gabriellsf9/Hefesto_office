@@ -17,13 +17,22 @@ FROM dependencias AS build
 COPY . .
 RUN pnpm --filter @empresa/web build
 
+# Fontes Geist (licença OFL) para as telas desenhadas pelos agentes ficarem com a cara dos apps de verdade.
+FROM node:26-trixie-slim AS fontes
+WORKDIR /f
+RUN npm pack geist@1.8.2 --silent && tar xzf geist-*.tgz \
+  && mkdir -p /fontes && cp package/dist/fonts/geist-sans/*.ttf package/dist/fonts/geist-mono/*.ttf package/LICENSE.txt /fontes/
+
 FROM node:26-trixie-slim
 # Chromium (navegador dos agentes, prints e PDF), pandoc (Word), git (cópias isoladas dos projetos), unzip (PowerPoint),
 # iptables e sudo (sandbox dos comandos dos agentes), make e o cliente do Postgres (build e banco dos projetos).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji tini iptables sudo tzdata make postgresql-client \
+  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji fonts-inter fonts-noto-core fontconfig tini iptables sudo tzdata make postgresql-client \
   && rm -rf /var/lib/apt/lists/* \
   && git config --system safe.directory '*'
+COPY --from=fontes /fontes /usr/share/fonts/truetype/geist
+COPY scripts/docker/fontes.conf /etc/fonts/local.conf
+RUN fc-cache -f
 # Go, para compilar e testar projetos em Go (ex.: backends) na sandbox.
 COPY --from=golang:1.26-trixie /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buscarNoCodigo, listarArquivos } from "./arquivos.ts";
+import { buscarNoCodigo, lerImagem, listarArquivos } from "./arquivos.ts";
 import { maxTokensQueCabe } from "../custo.ts";
 
 test("busca e listagem ignoram as cópias do projeto que ferramentas de IA guardam em .claude/worktrees", async () => {
@@ -18,6 +18,18 @@ test("busca e listagem ignoram as cópias do projeto que ferramentas de IA guard
   assert.match(achados, /src[\\/]app\.ts/);
   assert.doesNotMatch(achados, /worktrees/, "a cópia antiga não pode aparecer na busca");
   assert.doesNotMatch(await listarArquivos(raiz, ".", 4), /worktrees/);
+});
+
+test("ver_imagem: o agente vê os prints do projeto, sem sair da pasta dele", async () => {
+  const raiz = mkdtempSync(join(tmpdir(), "projeto-"));
+  mkdirSync(join(raiz, "public", "site"), { recursive: true });
+  writeFileSync(join(raiz, "public", "site", "mural-claro.webp"), Buffer.from("RIFF0000WEBPVP8 "));
+  const img = await lerImagem(raiz, "public/site/mural-claro.webp");
+  assert.equal(img.media, "image/webp");
+  assert.ok(img.base64.length > 0);
+  await assert.rejects(lerImagem(raiz, "../fora.png"), /Não existe|fora do projeto/);
+  writeFileSync(join(raiz, "notas.txt"), "texto");
+  await assert.rejects(lerImagem(raiz, "notas.txt"), /Só imagens/);
 });
 
 test("a saída de uma chamada cabe no que resta do limite do card", () => {

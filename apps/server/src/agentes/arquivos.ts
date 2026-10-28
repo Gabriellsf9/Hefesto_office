@@ -17,6 +17,19 @@ const SEGREDO = /^\.env|\.(pem|key|p12|pfx|keystore|jks)$|^id_(rsa|ed25519|ecdsa
 export const ehSegredo = (nome: string) => SEGREDO.test(basename(nome));
 
 const MAX_LEITURA = 120_000;
+const MAX_IMAGEM = 5 * 1024 * 1024;
+const TIPO_IMAGEM: Record<string, "image/png" | "image/jpeg" | "image/webp" | "image/gif"> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
+
+/** Uma imagem do projeto (prints da interface, telas de referência) para o agente VER, não só ler o código. */
+export async function lerImagem(raiz: string, rel: string): Promise<{ media: (typeof TIPO_IMAGEM)[string]; base64: string }> {
+  const { alvo } = await dentro(raiz, rel);
+  const media = TIPO_IMAGEM[alvo.split(".").pop()!.toLowerCase()];
+  if (!media) throw new ErroArquivo("Só imagens PNG, JPG, WEBP ou GIF.");
+  if (ehSegredo(alvo)) throw new ErroArquivo("Arquivo protegido.");
+  const info = await stat(alvo);
+  if (info.size > MAX_IMAGEM) throw new ErroArquivo("Imagem grande demais (máximo 5 MB).");
+  return { media, base64: (await readFile(alvo)).toString("base64") };
+}
 
 export class ErroArquivo extends Error {}
 
