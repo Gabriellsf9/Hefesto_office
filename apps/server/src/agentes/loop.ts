@@ -228,9 +228,10 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     const t0 = Date.now();
     // O limite do card só é conferido entre chamadas: a saída de cada uma fica dentro do que ainda resta.
     const restante = o.cardId ? (() => { const c = lerCard(o.cardId!); return tetoDoCard(c) - c.custoUsd; })() : Infinity;
+    const tetoDeSaida = maxTokensQueCabe(o.modelo, restante);
     const stream = client.beta.messages.stream({
       model: o.modelo,
-      max_tokens: maxTokensQueCabe(o.modelo, restante),
+      max_tokens: tetoDeSaida,
       betas: [...(fallback ? ["server-side-fallback-2026-07-01"] : []), "context-management-2025-06-27", ...(vinculo ? ["thinking-binding-controls-2026-08-01"] : [])],
       ...(fallback ? { fallbacks: "default" as const } : {}),
       // Retomada: o sistema do agente muda entre uma vez e outra (livro, lições, comentários). O raciocínio salvo
@@ -296,7 +297,15 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
 
     const usos = msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
     if (msg.stop_reason === "refusal") throw new Error("O modelo recusou esta tarefa (filtro de segurança).");
-    if (msg.stop_reason === "max_tokens" && usos.length) throw new Error("A resposta ficou longa demais e foi cortada.");
+    if (msg.stop_reason === "max_tokens" && usos.length) {
+      // Cortada porque a saída foi reduzida para caber no limite do card: é limite de gasto, não erro. Pausa com a
+      // conversa salva (sem a resposta cortada); ao liberar mais, o agente refaz esta resposta com espaço inteiro.
+      if (o.cardId && tetoDeSaida < 64000) {
+        o.aoPausar?.(mensagens);
+        throw new ErroLimiteCard("A resposta não coube no que resta do limite do card.");
+      }
+      throw new Error("A resposta ficou longa demais e foi cortada.");
+    }
 
     const textoRodada = msg.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
     if (textoRodada.trim()) registrarPasso(replay, { rodada, tipo: "texto", saida: textoRodada });

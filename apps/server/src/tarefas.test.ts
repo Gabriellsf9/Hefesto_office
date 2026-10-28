@@ -22,3 +22,15 @@ test("liberar gasto não zera as contagens de rodadas e falhas; um comentário d
   comentarComoCeo(card.id, "Pode seguir sem o critério Y.");
   assert.equal(falhasDoCard(card.id), 0, "a orientação do CEO recomeça a contagem");
 });
+
+test("card parado porque a resposta não coube no que restava: Liberar mais soma um limite (não só destrava)", async () => {
+  const { editarCard, lerCard, tetoDoCard, somarCusto, destravarCardsNoTeto, listarCards } = await import("./tarefas.ts");
+  const card = criarCard({ titulo: "Modelagem", sala: "dados", dono: "dba", validador: "arquiteto" });
+  somarCusto(card.id, 2.6); // sobra US$ 0,40 de US$ 3: menos que uma resposta inteira
+  editarCard(card.id, { bloqueado: true, etiquetas: ["limite-de-gasto"] });
+  assert.equal(destravarCardsNoTeto(listarCards()), 0, "não destrava sozinho sem folga (seria cortado de novo)");
+  const teto = tetoDoCard(lerCard(card.id));
+  liberarGasto(card.id);
+  assert.ok(tetoDoCard(lerCard(card.id)) > teto, "somou mais um limite");
+  assert.equal(lerCard(card.id).bloqueado, false);
+});

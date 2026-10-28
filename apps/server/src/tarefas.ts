@@ -416,11 +416,16 @@ export const tetoDoCard = (card: Card) => limiteDoCard(card) + Number(getSetting
  */
 export const decisaoDoCeo = (c: Comentario) => c.autor === "voce" && !/^(Liberou mais US\$|O teto deste card agora é US\$)/.test(c.texto);
 
+/** Folga mínima para uma resposta inteira do modelo mais caro (64 mil tokens de saída no Opus custam ~US$ 1,30). */
+const FOLGA_MINIMA_USD = 1.5;
+
 /** Libera mais um limite para o card parado (botão Liberar, comentário ou Telegram) e ele continua de onde parou. */
 export function liberarGasto(id: number, autor = "voce"): Card {
   const card = lerCard(id);
   // O limite já subiu desde que o card parou (Configurações): só destrava, sem somar mais um limite.
-  if (card.etiquetas.includes(ETIQUETA_LIMITE) && card.custoUsd < tetoDoCard(card)) return destravarDentroDoTeto(card, autor);
+  // Já cabe no teto (você subiu o limite): só destrava. Com folga pequena demais para uma resposta inteira
+  // (o agente parou porque a resposta não coube), soma mais um limite.
+  if (card.etiquetas.includes(ETIQUETA_LIMITE) && tetoDoCard(card) - card.custoUsd >= FOLGA_MINIMA_USD) return destravarDentroDoTeto(card, autor);
   const lim = limiteDoCard(card);
   const extra = Number(getSetting(`card_${id}_liberado_usd`) ?? 0);
   setSetting(`card_${id}_liberado_usd`, String(Math.max(extra, card.custoUsd - lim) + lim));
@@ -437,7 +442,8 @@ function destravarDentroDoTeto(card: Card, autor: string): Card {
 
 /** Cards parados no limite de gasto que voltaram a caber no teto (você subiu o limite): destrava sozinho. */
 export function destravarCardsNoTeto(cards: Card[]): number {
-  const voltaram = cards.filter((c) => c.bloqueado && c.etiquetas.includes(ETIQUETA_LIMITE) && c.custoUsd < tetoDoCard(c));
+  // Só com folga para uma resposta inteira: senão o agente seria cortado de novo, gastando uma chamada a cada volta.
+  const voltaram = cards.filter((c) => c.bloqueado && c.etiquetas.includes(ETIQUETA_LIMITE) && tetoDoCard(c) - c.custoUsd >= FOLGA_MINIMA_USD);
   for (const c of voltaram) destravarDentroDoTeto(c, "devops");
   return voltaram.length;
 }
