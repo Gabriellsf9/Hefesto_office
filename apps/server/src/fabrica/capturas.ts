@@ -5,6 +5,7 @@ import { chromium } from "playwright-core";
 import { DATA_DIR } from "../paths.ts";
 import { opcoesDoChrome } from "../plataforma.ts";
 import { ErroEntrada, ferramenta, type Ferramenta } from "../agentes/loop.ts";
+import { ambienteAtivo, HOST_DO_AMBIENTE } from "./ambiente.ts";
 
 // Prints (e vídeo, quando possível) das telas do app do CEO para treinamento e QA (Fase 4).
 // Usa o Google Chrome instalado no Mac, com um perfil temporário (sem os seus cookies e logins),
@@ -18,7 +19,9 @@ export const pastaDeMidia = (cardId: number) => join(DATA_DIR, "midia", String(c
 export function urlLocalValida(url: string): boolean {
   try {
     const u = new URL(url);
-    return (u.protocol === "http:" || u.protocol === "https:") && (HOSTS_LOCAIS.has(u.hostname) || u.hostname.endsWith(".localhost"));
+    // O app que os agentes sobem no Docker deles (ambiente do card) também é local.
+    const doAmbiente = ambienteAtivo() && u.hostname === HOST_DO_AMBIENTE;
+    return (u.protocol === "http:" || u.protocol === "https:") && (HOSTS_LOCAIS.has(u.hostname) || u.hostname.endsWith(".localhost") || doAmbiente);
   } catch {
     return false;
   }
@@ -100,6 +103,58 @@ export async function capturar(cardId: number, urlBase: string, passos: Passo[],
     await navegador.close();
   }
   return saida.join("\n\n") || "Nenhum print feito (inclua passos com acao \"print\").";
+}
+
+const HTML_MAX = 300_000;
+
+/**
+ * Renderiza uma tela, wireframe ou diagrama escrito em HTML/CSS/SVG e salva o print no card. Sem rede (nada externo
+ * é carregado nem enviado) e sem JavaScript: só o que vier no próprio HTML, como imagem estática.
+ */
+export async function desenharImagem(cardId: number, html: string, nome: string, legenda: string, largura = 1280): Promise<string> {
+  if (!html.trim()) throw new ErroEntrada("Envie o HTML da imagem.");
+  if (html.length > HTML_MAX) throw new ErroEntrada("HTML grande demais (máximo 300 mil caracteres).");
+  const pasta = pastaDeMidia(cardId);
+  mkdirSync(pasta, { recursive: true });
+  let navegador;
+  try {
+    navegador = await chromium.launch({ ...opcoesDoChrome(), headless: true, timeout: 30_000 });
+  } catch (e) {
+    throw new ErroEntrada(`Não consegui abrir o navegador para desenhar: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+  }
+  try {
+    const w = Math.min(1920, Math.max(320, Math.round(largura)));
+    // Altura mínima: o print acompanha a altura do conteúdo, sem faixa vazia embaixo.
+    const contexto = await navegador.newContext({ viewport: { width: w, height: 200 }, javaScriptEnabled: false });
+    await contexto.route("**/*", (r) => (/^(data|about):/.test(r.request().url()) ? r.continue() : r.abort()));
+    const pagina = await contexto.newPage();
+    await pagina.setContent(html, { waitUntil: "load", timeout: 20_000 });
+    const altura = Math.min(6000, await pagina.evaluate("document.documentElement.scrollHeight").catch(() => 800) as number);
+    const arquivo = `img-${Date.now().toString(36)}-${slug(nome)}.png`;
+    await pagina.screenshot({ path: join(pasta, arquivo), clip: { x: 0, y: 0, width: w, height: Math.max(200, altura) } });
+    await contexto.close();
+    return `![${legenda.replace(/[\[\]\n]/g, " ").trim() || nome}](/api/midia/${cardId}/${arquivo})`;
+  } finally {
+    await navegador.close();
+  }
+}
+
+/** Ferramenta para todos: desenha a tela, o fluxo ou o diagrama e devolve a imagem pronta para a entrega. */
+export function ferramentaGerarImagem(cardId: number): Ferramenta {
+  return ferramenta(
+    "gerar_imagem",
+    `Desenha uma imagem e salva no card: tela ou wireframe (HTML com CSS), fluxo, diagrama de arquitetura ou gráfico (SVG dentro do HTML). Escreva um documento HTML completo, com todo o CSS no próprio arquivo: nada externo carrega (sem CDN, fontes ou imagens da web) e JavaScript não roda. Devolve a linha da imagem em Markdown: coloque-a sozinha numa linha da entrega, para o CEO e os próximos agentes verem.`,
+    {
+      html: { type: "string", description: "Documento HTML completo (CSS em <style>, SVG inline)" },
+      nome: { type: "string", description: "Nome curto do arquivo (ex.: tela-de-integracoes)" },
+      legenda: { type: "string", description: "O que a imagem mostra (aparece embaixo dela)" },
+      largura: { type: "number", description: "Largura em pixels: 1280 (desktop, padrão) ou 390 (celular)" },
+    },
+    ["html", "nome", "legenda"],
+    async (e) => ({
+      texto: `Imagem salva. Coloque esta linha na entrega:\n${await desenharImagem(cardId, String(e.html ?? ""), String(e.nome ?? "imagem"), String(e.legenda ?? ""), Number(e.largura) || 1280)}`,
+    }),
+  );
 }
 
 /** Ferramenta para Treinamento e QA: abre o app local, segue os passos e tira prints (e vídeo). */

@@ -7,6 +7,9 @@ import { basename, join, relative, sep } from "node:path";
 const IGNORAR = new Set([
   "node_modules", ".git", "dist", "build", ".next", ".nuxt", "out", "target", "vendor", ".venv", "venv", "__pycache__",
   ".turbo", ".cache", "coverage", ".idea", ".vscode", "Pods", ".gradle", ".dart_tool",
+  // Ferramentas de IA guardam ali cópias inteiras do projeto em outras branches (worktrees): ler essas
+  // cópias faz o agente citar código desatualizado como se fosse o atual.
+  ".claude", ".codex", ".cursor", ".worktrees",
 ]);
 
 const SEGREDO = /^\.env|\.(pem|key|p12|pfx|keystore|jks)$|^id_(rsa|ed25519|ecdsa|dsa)|^credentials|secret|^\.npmrc$|^\.netrc$|^\.pgpass$/i;

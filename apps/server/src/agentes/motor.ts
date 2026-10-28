@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
   colunaDe, colunaDeEntrada, colunaDeTrabalho, colunaDeValidacao, ehCardDeCodigo, fluxoDaSala, fluxos, prioridades, type Agent, type Card, type EstadoMotor,
-  type FluxoId, type RoomId, type TrabalhoEmAndamento, fluxoPadrao, colunaDoCeo } from "@empresa/shared";
+  type FluxoId, type ProvedorIa, type RoomId, type TrabalhoEmAndamento, fluxoPadrao, colunaDoCeo } from "@empresa/shared";
 import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe, etapaDoCodigoDe, etapasDoCodigoDe, projetoDoCard, SEDE } from "@empresa/org";
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude, custoHoje, limitePorCard, modoCusto, orcamentoDiario, limitePorCardDeCodigo } from "../custo.ts";
-import { modeloDisponivel, modeloDoAgente } from "../provedores.ts";
+import { foraDoArAte, marcarForaDoAr, modeloDisponivel, modeloDoAgente, provedorDe, provedorForaDoAr } from "../provedores.ts";
 import { ErroProvedor } from "./compat.ts";
 import { db, getSetting, setSetting } from "../db.ts";
 import { fichaDoProjeto } from "../projetos.ts";
@@ -13,7 +13,8 @@ import { configCritica, criarConhecimento, extrairLicao } from "../conhecimento.
 import { conferirEntregaDeLead, ferramentasDeProspeccao } from "../prospeccao.ts";
 import { codigoDoCard, commitar, g as gitEm, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
 import { ferramentaDeComando, ferramentaDeDiff, ferramentasDeEscrita } from "../fabrica/ferramentas.ts";
-import { ferramentaDeCaptura } from "../fabrica/capturas.ts";
+import { ferramentaDeCaptura, ferramentaGerarImagem } from "../fabrica/capturas.ts";
+import { ambienteAtivo, ferramentasDeAmbiente, HOST_DO_AMBIENTE } from "../fabrica/ambiente.ts";
 import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
 import { imagensDoTexto } from "../imagens.ts";
 import { arquivosDoTexto, ferramentaGerarArquivo } from "../arquivos.ts";
@@ -29,7 +30,7 @@ import { ferramentasDeInfra } from "../areas/infra.ts";
 import { ferramentasDeFinancas } from "../areas/financas.ts";
 import { ferramentasDeAtendimento } from "../areas/atendimento.ts";
 import {
-  comentar, criarCard, destravarCardsNoTeto, PREFIXO_PILOTO, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
+  comentar, criarCard, decisaoDoCeo, destravarCardsNoTeto, PREFIXO_PILOTO, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
   ultimaEntrega,
 } from "../tarefas.ts";
 import { NO_MAC } from "../plataforma.ts";
@@ -61,9 +62,12 @@ const MAX_PROFUNDIDADE = 2;
 const emAndamento = new Map<number, TrabalhoEmAndamento>();
 const controles = new Map<number, AbortController>();
 const falhas = new Map<number, number>();
-/** A API pediu para esperar (limite de uso ou sobrecarga): ninguém começa nada até lá. */
-let esperarAte = 0;
-let esperaMs = 0;
+/**
+ * O provedor pediu para esperar (limite de uso ou sobrecarga): fica fora do ar até lá, por provedor, e os agentes
+ * dele usam o modelo reserva (modeloDoAgente). Só espera quem não tem reserva disponível.
+ */
+const esperaMs = new Map<ProvedorIa, number>();
+const provedorDoAgente = (agenteId: string): ProvedorIa => provedorDe(modeloDoAgente(agentById[agenteId]!, "autor")).provedor;
 let naFila = 0;
 let semOrcamentoAntes = false;
 let timer: NodeJS.Timeout | null = null;
@@ -79,7 +83,8 @@ export function estadoMotor(): EstadoMotor {
     maxSimultaneos: Number(getSetting("motor_max_simultaneos") ?? "3"),
     emAndamento: [...emAndamento.values()],
     naFila,
-    esperandoApiAte: esperarAte > Date.now() ? esperarAte : null,
+    // O cabeçalho mostra "Esperando a API" quando o principal (Claude) espera; os outros avisam no feed.
+    esperandoApiAte: foraDoArAte("claude"),
     modoCusto: modoCusto(),
     limiteCardUsd: limitePorCard(),
     limiteCodigoUsd: limitePorCardDeCodigo(),
@@ -151,7 +156,7 @@ function lerRetomada(cardId: number, tipo: "executar" | "validar", agente: strin
   if (!r || r.agente !== agente || r.modelo !== modelo || Date.now() - r.ts > RETOMADA_VALE_MS) return null;
   const mensagens = JSON.parse(r.mensagens) as Anthropic.Beta.BetaMessageParam[];
   // O que você comentou depois da pausa (ex.: "contorne o problema") entra na conversa retomada.
-  const novos = listarComentarios(cardId).filter((c) => c.autor === "voce" && c.ts > r.ts && c.tipo === "comentario");
+  const novos = listarComentarios(cardId).filter((c) => decisaoDoCeo(c) && c.ts > r.ts && c.tipo === "comentario");
   if (novos.length) mensagens.push({ role: "user", content: `Comentários do CEO desde a pausa:\n${novos.map((c) => `- ${c.texto}`).join("\n")}` });
   return mensagens;
 }
@@ -257,6 +262,8 @@ async function testeSombra(cardId: number, agenteId: string) {
     ],
     lembrete: "Chame entregar com o trabalho completo.",
     maxRodadas: 8,
+    // Sombra no modelo local: contexto maior só aqui, e sem cair para o Claude (a sombra não pode gastar).
+    ...(barato.startsWith("ollama:") ? { contexto: 65_536, semReserva: true } : {}),
   });
   if (!sombra) return;
   let veredito: { resultado: "melhor" | "empate" | "pior"; justificativa: string } | null = null;
@@ -371,6 +378,16 @@ export function prontoParaExecutar(card: Card, porId: Map<number, Card>) {
 const escreveCodigo = (card: Card, agente: Agent) =>
   ehCardDeCodigo(card) || (agente.ferramentas.includes("git") && agente.ferramentas.includes("arquivos") && card.sala !== "arquitetura" && agente.sala === card.sala);
 
+/**
+ * Imagens que o agente vê: as que você pôs no card, os prints da última entrega dele (o validador confere a tela,
+ * o autor refaz em cima dela) e os dos cards de que ele depende (o frontend vê o protótipo). Até 6, as mais próximas primeiro.
+ */
+export function imagensDoCard(card: Card): string[] {
+  const deps = [...(card.dependeDe ? [card.dependeDe] : []), ...(card.dependencias ?? [])];
+  const textos = [card.descricao, ultimaEntrega(card.id)?.conteudo ?? "", ...deps.map((id) => ultimaEntrega(id)?.conteudo ?? "")];
+  return imagensDoTexto(textos.join("\n"));
+}
+
 export function prontoParaValidar(card: Card) {
   return !card.demo && !card.bloqueado && card.emValidacao && !!card.validador;
 }
@@ -408,7 +425,7 @@ async function ciclo() {
   const mudouFila = naFila !== trabalhos.length || semOrcamentoAntes !== estado.semOrcamento;
   naFila = trabalhos.length;
   semOrcamentoAntes = estado.semOrcamento;
-  if (estado.pausado || estado.semOrcamento || Date.now() < esperarAte) {
+  if (estado.pausado || estado.semOrcamento) {
     if (mudouFila) publicar();
     return;
   }
@@ -417,6 +434,8 @@ async function ciclo() {
   for (const t of trabalhos) {
     if (emAndamento.size >= estado.maxSimultaneos) break;
     if (ocupados.has(t.agente) || !agentById[t.agente]) continue; // um card por agente de cada vez
+    // O provedor deste agente está fora do ar e não há reserva disponível: espera.
+    if (provedorForaDoAr(provedorDoAgente(t.agente))) continue;
     // De novo aqui: o pai pode ter começado neste mesmo ciclo, depois que a lista foi montada.
     if (t.tipo === "executar" && esperaParente(t.card, porId, emAndamento.values())) continue;
     // Sem chave do provedor do agente (Claude sem chave, OpenAI sem chave…): o card espera.
@@ -439,7 +458,7 @@ async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "v
     if (tipo === "executar") await executar(client, card, agentById[agenteId]!, controle.signal);
     else await validar(client, card, agentById[agenteId]!, controle.signal);
     falhas.delete(card.id);
-    esperaMs = 0;
+    esperaMs.delete(provedorDoAgente(agenteId));
     apagarRetomada(card.id);
   } catch (err) {
     if (controle.signal.aborted || err instanceof ErroInterrompido) avisarInterrupcao(card.id, agenteId, String(controle.signal.reason ?? "interrompido"));
@@ -502,13 +521,19 @@ function tratarFalha(card: Card, agenteId: string, err: unknown) {
     return;
   }
   if (passageiro(err)) {
-    // Espera para todos (respeitando o retry-after da API), com recuo exponencial; o card não é penalizado.
+    // O provedor fica fora do ar (respeitando o retry-after, com recuo exponencial) e os agentes dele seguem no
+    // modelo reserva; o card não é penalizado. ErroProvedor só vem de fora do Claude; os erros da Anthropic são do Claude.
+    const p: ProvedorIa = err instanceof ErroProvedor ? provedorDoAgente(agenteId) : "claude";
     const pedido = Number((err as { headers?: { get?: (k: string) => string | null } }).headers?.get?.("retry-after"));
-    esperaMs = Math.min(Math.max(esperaMs * 2, 15_000), 5 * 60_000);
-    const ms = Number.isFinite(pedido) && pedido > 0 ? Math.max(pedido * 1000, esperaMs) : esperaMs;
-    const avisar = esperarAte < Date.now();
-    esperarAte = Math.max(esperarAte, Date.now() + ms);
-    if (avisar) postFeed(card.sala, agenteId, `O provedor de IA pediu para esperar (${msg.slice(0, 80)}). A equipe retoma em ${Math.round(ms / 1000)} s.`);
+    const recuo = Math.min(Math.max((esperaMs.get(p) ?? 0) * 2, 15_000), 5 * 60_000);
+    esperaMs.set(p, recuo);
+    const ms = Number.isFinite(pedido) && pedido > 0 ? Math.max(pedido * 1000, recuo) : recuo;
+    const avisar = !provedorForaDoAr(p);
+    marcarForaDoAr(p, Date.now() + ms);
+    const agente = agentById[agenteId];
+    const reserva = agente ? modeloDoAgente(agente, "autor") : null;
+    const enquanto = reserva && provedorDe(reserva).provedor !== p ? `${agente!.nome} segue com ${reserva.replace(/^(ollama|gemini|openai):/, "")} até lá` : "quem não tem reserva espera";
+    if (avisar) postFeed(card.sala, agenteId, `O provedor de IA pediu para esperar (${msg.slice(0, 80)}). Volta a ser usado em ${Math.round(ms / 1000)} s; ${enquanto}.`);
     publicar();
     return;
   }
@@ -677,19 +702,21 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ...ferramentasDeEscrita(wt));
     if (podeVerificar() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+    // Ambiente do card: o app inteiro rodando no Docker dos agentes, com autonomia para instalar e preparar o que precisar.
+    if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
   else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
   if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
-  const urlDoApp = (wt ? urlDaPrevia(card.id, card) : null) ?? projeto?.urlLocal ?? null;
+  const urlDoApp = (wt ? urlDaPrevia(card.id, card) : null) ?? projeto?.urlLocal ?? (wt && ambienteAtivo() ? `http://${HOST_DO_AMBIENTE}` : null);
   if (urlDoApp && agente.ferramentas.includes("playwright")) ferramentas.push(ferramentaDeCaptura(card.id, urlDoApp));
   // Navegador do sistema: quem pesquisa na web, testa telas ou usa o navegador.
   if (["navegador", "web", "playwright"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) {
     ferramentas.push(ferramentaDeNavegador(card.id, agente.id, urlDoApp));
   }
-  // Documentos de verdade (DOCX, PDF, XLSX, CSV) para anexar à entrega.
-  ferramentas.push(ferramentaGerarArquivo(card.id));
+  // Documentos de verdade (DOCX, PDF, XLSX, CSV) para anexar à entrega, e imagens (telas, fluxos, diagramas).
+  ferramentas.push(ferramentaGerarArquivo(card.id), ferramentaGerarImagem(card.id));
   // Celular de teste (iPhone no Simulador, Android no emulador): QA, Mobile e Treinamento.
   if (NO_MAC && agente.ferramentas.includes("celular")) ferramentas.push(ferramentaDeCelular(agente, card, [wt?.caminho, projeto?.caminho].filter((c): c is string => !!c)));
 
@@ -718,7 +745,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     modelo: modeloAutor,
     sistema: sistemaAutor(agente),
     mensagem: mensagemExecutar(card),
-    imagens: imagensDoTexto(card.descricao),
+    imagens: imagensDoCard(card),
     arquivos: arquivosDoTexto(card.descricao),
     ferramentas,
     cardId: card.id,
@@ -803,7 +830,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
 function voltarParaCorrigir(card: Card, agente: Agent) {
   let seguidas = 0;
   for (const c of listarComentarios(card.id).reverse()) {
-    if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || c.autor === "voce" || c.texto.startsWith(PREFIXO_PILOTO)) break;
+    if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || decisaoDoCeo(c) || c.texto.startsWith(PREFIXO_PILOTO)) break;
     if (c.texto.startsWith("❌ Verificação falhou")) seguidas++;
   }
   if (seguidas >= 3) {
@@ -870,7 +897,7 @@ function revisorAlternativo(card: Card, autor: string): string | null {
 function rodadasDaEtapa(cardId: number, validadorId: string) {
   let n = 0;
   for (const c of listarComentarios(cardId).reverse()) {
-    if (c.autor === "voce" || c.tipo === "aprovacao") break;
+    if (decisaoDoCeo(c) || c.tipo === "aprovacao") break;
     if (c.tipo === "devolucao" && c.autor === validadorId) n++;
   }
   return n;
@@ -928,7 +955,8 @@ async function advogadoDoDiabo(client: Anthropic | null, card: Card, validador: 
     });
     const critica = r.texto.trim();
     if (critica) {
-      comentar(card.id, advogado.id, "critica", critica.slice(0, 8000));
+      // Sem limite de pontos: todos os questionamentos vêm de uma vez e não podem ser cortados.
+      comentar(card.id, advogado.id, "critica", critica.slice(0, 30000));
       postFeed(card.sala, advogado.id, `${advogado.nome} questionou as premissas do ${card.chave} antes da validação`);
     }
   } finally {
@@ -981,7 +1009,10 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ferramentaDeDiff(card.id));
     if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
-    if (projeto?.urlLocal && validador.id.startsWith("qa")) ferramentas.push(ferramentaDeNavegador(card.id, validador.id, projeto.urlLocal));
+    // QA sobe o app de verdade no ambiente do card (banco, backend, frontend) e testa no navegador.
+    if (validador.id.startsWith("qa") && ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
+    const urlQa = projeto?.urlLocal ?? (ambienteAtivo() ? `http://${HOST_DO_AMBIENTE}` : null);
+    if (urlQa && validador.id.startsWith("qa")) ferramentas.push(ferramentaDeNavegador(card.id, validador.id, urlQa));
     const c = await codigoDoCard(card);
     if (c) mensagem += `
 
@@ -1006,7 +1037,7 @@ ${c.patch.slice(0, 20_000)}
     modelo: modeloValidador,
     sistema: sistemaValidador(validador, card.sala, focoDaEtapa(card), card.dono),
     mensagem,
-    imagens: imagensDoTexto(card.descricao),
+    imagens: imagensDoCard(card),
     arquivos: arquivosDoTexto(card.descricao),
     maxRodadas: wt ? 24 : undefined,
     ferramentas,

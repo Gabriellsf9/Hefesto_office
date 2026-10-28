@@ -36,6 +36,12 @@ export function registrarUso(modelo: string, usage: Anthropic.Beta.BetaUsage): n
 }
 
 /** Custo de uma resposta de outro provedor (OpenAI, Gemini) pelo preço por milhão configurado. Local (Ollama) é 0. */
+/** Teto de saída de uma chamada que cabe no que ainda resta de gasto (US$): uma resposta só não estoura o limite do card. */
+export function maxTokensQueCabe(modelo: string, restanteUsd: number, piso = 8000, teto = 64000): number {
+  const p = PRECOS[modelo] ?? PRECOS["claude-opus-5-5"]!;
+  return Math.max(piso, Math.min(teto, Math.floor((Math.max(0, restanteUsd) / p.saida) * 1_000_000)));
+}
+
 export function registrarUsoTokens(entrada: number, saida: number, preco: { precoEntrada: number; precoSaida: number }): number {
   const usd = (entrada * preco.precoEntrada + saida * preco.precoSaida) / 1_000_000;
   if (usd > 0) {

@@ -174,7 +174,9 @@ export async function mesclar(cardId: number): Promise<{ branchDestino: string; 
   const destino = await g(wt.repo, "rev-parse", "--abbrev-ref", "HEAD");
   if (destino === "HEAD") throw new ErroCard("O seu projeto está em detached HEAD. Mude para uma branch antes do merge.");
   try {
-    await git("git", ["-C", wt.repo, "-c", "user.name=Hefesto", "-c", "user.email=ceo@hefesto.local", "merge", "--no-ff", "-m", `${card.chave}: ${card.titulo} (Hefesto)`, wt.branch], {
+    // O merge é decisão do CEO: sai no nome dele quando a identidade está configurada (GIT_COMMITTER_* no contêiner).
+    const ceo = { nome: process.env.GIT_COMMITTER_NAME || "Hefesto", email: process.env.GIT_COMMITTER_EMAIL || "ceo@hefesto.local" };
+    await git("git", ["-C", wt.repo, "-c", `user.name=${ceo.nome}`, "-c", `user.email=${ceo.email}`, "merge", "--no-ff", "-m", `${card.chave}: ${card.titulo} (Hefesto)`, wt.branch], {
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
   } catch (e) {

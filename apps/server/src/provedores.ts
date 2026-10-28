@@ -67,9 +67,36 @@ export function escolhas(): Record<string, string> {
   }
 }
 
-/** O modelo que o agente usa neste papel: a sua escolha, se houver; senão o Claude do modo de custo. */
+/* ---------- Reserva automática: provedor fora do ar ---------- */
+
+// Quando um provedor limita ou fica sobrecarregado, os agentes dele passam sozinhos para um modelo reserva
+// e voltam ao escolhido quando a espera acaba: nenhum card fica parado esperando um provedor só.
+const foraAte = new Map<ProvedorIa, number>();
+export const provedorForaDoAr = (p: ProvedorIa) => (foraAte.get(p) ?? 0) > Date.now();
+export const foraDoArAte = (p: ProvedorIa) => (provedorForaDoAr(p) ? foraAte.get(p)! : null);
+export function marcarForaDoAr(p: ProvedorIa, ate: number) {
+  foraAte.set(p, Math.max(foraAte.get(p) ?? 0, ate));
+}
+
+/**
+ * Reserva, em ordem: o Claude do agente (melhor ou igual ao que caiu); se o Claude caiu, um modelo do Gemini e
+ * depois um do Ollama que você já escolheu para algum agente (só modelos que você configurou e que chamam ferramentas).
+ */
+function modeloReserva(agente: Agent, papel: Papel, original: string): string | null {
+  const escolhidos = Object.values(escolhas());
+  const candidatos = [
+    modeloPara(agente.modelo, papel),
+    escolhidos.find((m) => m.startsWith("gemini:")),
+    escolhidos.find((m) => m.startsWith("ollama:")),
+  ];
+  return candidatos.find((m): m is string => !!m && m !== original && !provedorForaDoAr(provedorDe(m).provedor) && modeloDisponivel(m)) ?? null;
+}
+
+/** O modelo que o agente usa neste papel: a sua escolha, se houver; senão o Claude do modo de custo. Com o provedor fora do ar, a reserva. */
 export function modeloDoAgente(agente: Agent, papel: Papel): string {
-  return escolhas()[agente.id] ?? modeloPara(agente.modelo, papel);
+  const base = escolhas()[agente.id] ?? modeloPara(agente.modelo, papel);
+  if (!provedorForaDoAr(provedorDe(base).provedor)) return base;
+  return modeloReserva(agente, papel, base) ?? base;
 }
 
 const MODELO_VALIDO = /^((ollama|openai|gemini):[\w.:/-]{1,120}|claude-[\w.-]{1,60})$/;
