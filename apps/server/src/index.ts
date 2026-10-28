@@ -68,6 +68,7 @@ import { testarCard } from "./fabrica/testes.ts";
 import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
 import { listarEvals, rodarEvals, tarefasDeEval } from "./evals.ts";
 import { testarModelo } from "./agentes/compat.ts";
+import { aplicarSugestao, configurarAprendizado, definirABAutomatico, encerrarAB, estadoAprendizado, iniciarAB, iniciarAprendizado, proporCandidata } from "./aprendizado.ts";
 
 const PORT = Number(process.env.API_PORT ?? 4317);
 
@@ -195,6 +196,37 @@ app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => confi
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
 app.post("/api/evals", async () => rodarEvals());
+
+/* ---------- Aprendizado: A/B de instruções, escada de modelos e testes sombra ---------- */
+
+app.get("/api/aprendizado", async () => estadoAprendizado());
+app.put<{ Body: { localPrimeiro?: string | null; sombraPct?: number; abAutomatico?: boolean } }>("/api/aprendizado", async (req) => {
+  const b = req.body ?? {};
+  if (typeof b.abAutomatico === "boolean") definirABAutomatico(b.abAutomatico);
+  configurarAprendizado({ localPrimeiro: b.localPrimeiro, sombraPct: b.sombraPct });
+  return estadoAprendizado();
+});
+app.post<{ Params: { agente: string }; Body: { texto?: string } }>("/api/aprendizado/ab/:agente", async (req, reply) => {
+  try {
+    const texto = typeof req.body?.texto === "string" ? req.body.texto.trim() : "";
+    // Com texto, você escreve a candidata; sem texto, um modelo escreve a partir das devoluções.
+    const v = texto ? iniciarAB(req.params.agente, texto) : await proporCandidata(req.params.agente);
+    if (!v) return reply.code(400).send({ erro: "Ainda não há devoluções suficientes para esse agente (mínimo 3)." });
+    return v;
+  } catch (e) {
+    return reply.code(400).send({ erro: (e as Error).message });
+  }
+});
+app.delete<{ Params: { agente: string } }>("/api/aprendizado/ab/:agente", async (req) => {
+  encerrarAB(req.params.agente);
+  return estadoAprendizado();
+});
+app.post<{ Body: { agente?: string; modelo?: string } }>("/api/aprendizado/sugestao", async (req, reply) => {
+  const { agente, modelo } = req.body ?? {};
+  if (!agente || !modelo) return reply.code(400).send({ erro: "Agente e modelo são obrigatórios." });
+  aplicarSugestao(agente, modelo);
+  return estadoAprendizado();
+});
 
 /* ---------- Painel, chamadas de IA, modelos de projeto e relatórios ---------- */
 
@@ -622,6 +654,7 @@ if (existsSync(join(WEB_DIST, "index.html"))) {
 await app.listen({ host: HOST, port: PORT });
 iniciarMotor();
 iniciarRelatorioDiario();
+iniciarAprendizado();
 void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));
 // Limpeza de cópias isoladas abandonadas (cards apagados ou perdidos), uma vez por hora; a branch fica.
 setInterval(() => void limparCopiasAntigas().catch((e) => console.error("Limpeza de cópias:", e)), 3600_000);

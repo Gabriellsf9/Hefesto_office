@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, FlaskConical, XCircle } from "lucide-react";
 import { api } from "../../api.ts";
+import { Aprendizado } from "./Aprendizado.tsx";
 import { Botao, EstadoVazio, Etiqueta, Indicador, avisarErro, confirmar } from "../kit/index.ts";
 
 // Operação → Qualidade: avaliações (evals). Tarefas fixas, com respostas que dá para conferir, rodadas
@@ -109,6 +110,7 @@ export function Qualidade() {
           )}
         </>
       )}
+      <Aprendizado />
     </div>
   );
 }

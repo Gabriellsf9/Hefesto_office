@@ -7,6 +7,7 @@ import { contextoDaPeca } from "../marketing.ts";
 import { registroDoCard, worktreeDoCard } from "../fabrica/workspace.ts";
 import { metasEmTexto } from "../metas.ts";
 import { fichaDoProjeto } from "../projetos.ts";
+import { instrucoesAprendidas } from "../aprendizado.ts";
 import { lerCard, listarCards, listarComentarios, listarDevolucoesDoAgente, listarEntregas, ultimaEntrega } from "../tarefas.ts";
 
 // Só os pedidos a outras áreas (etiqueta "pedido"); leads, chamados e bugs também têm pai, mas não são pedidos.
@@ -354,6 +355,7 @@ export function mensagemExecutar(card: Card): string {
     contextoExtra(card),
     resultadoDosPedidos(card),
     memoriaDoAgente(card),
+    card.dono ? instrucoesAprendidas(card.dono, card.id) : "",
     blocoMetas(),
     anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${anterior.conteudo}` : "",
     debate ? `## Comentários e devoluções\n${debate}\n\nResolva todos os pontos das devoluções e da conversa com o CEO nesta nova versão.` : "",

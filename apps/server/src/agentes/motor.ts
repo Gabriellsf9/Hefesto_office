@@ -37,6 +37,7 @@ import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroSemEntrega, ErroSemO
 import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
 import { comandoDeTestes, testarCard, verificarCopia } from "../fabrica/testes.ts";
 import { fecharSessao } from "../fabrica/navegador.ts";
+import { modeloEscalonado, modeloMaisBarato, registrarResultadoAB, registrarSombra, sombraPct } from "../aprendizado.ts";
 import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
@@ -218,6 +219,73 @@ async function melhorDeN(client: Anthropic | null, card: Card, agente: Agent, wt
     if (erro) throw erro.reason;
   }
   return venc?.entrega ?? null;
+}
+
+/**
+ * Teste sombra: um modelo mais barato refaz o card (já aprovado) só com ferramentas de leitura, e um juiz compara
+ * as duas entregas contra os critérios. Não mexe em nada; só gera a estatística para sugerir economia.
+ */
+async function testeSombra(cardId: number, agenteId: string) {
+  const card = lerCard(cardId);
+  const agente = agentById[agenteId]!;
+  const real = ultimaEntrega(cardId);
+  const modeloReal = modeloDoAgente(agente, "autor");
+  const barato = modeloMaisBarato(modeloReal);
+  if (!real || !barato) return;
+  let sombra = "";
+  const r = await rodarAgente({
+    modelo: barato,
+    agenteId,
+    sistema: sistemaAutor(agente),
+    mensagem: mensagemExecutar({ ...card, devolucoes: 0 }).split("## Sua entrega anterior")[0]!,
+    ferramentas: [
+      ferramentaMemoria,
+      ferramentaLerCard(card),
+      ferramenta("entregar", "Entrega o trabalho.", { resumo: { type: "string" }, conteudo: { type: "string" } }, ["resumo", "conteudo"], (e) => {
+        sombra = texto(e, "conteudo", 100_000);
+        return { texto: "Ok.", fim: true };
+      }),
+    ],
+    lembrete: "Chame entregar com o trabalho completo.",
+    maxRodadas: 8,
+  });
+  if (!sombra) return;
+  let veredito: { resultado: "melhor" | "empate" | "pior"; justificativa: string } | null = null;
+  // As duas entregas vão sem dizer qual é qual (A e B em ordem sorteada), para o juiz não favorecer a "oficial".
+  const inverte = Math.random() < 0.5;
+  const [a, b] = inverte ? [sombra, real.conteudo] : [real.conteudo, sombra];
+  await rodarAgente({
+    modelo: "claude-sonnet-5-5",
+    agenteId: "chief-of-staff",
+    esforco: "low",
+    sistema: "Você compara duas entregas para o mesmo card, contra a descrição e os critérios de aceite. Seja objetivo: qualidade, completude e correção. Português do Brasil.",
+    mensagem: `# ${card.titulo}
+${card.descricao.slice(0, 4000)}
+
+## Critérios
+${card.criterios || "(nenhum)"}
+
+## Entrega A
+${a.slice(0, 30_000)}
+
+## Entrega B
+${b.slice(0, 30_000)}
+
+Chame comparar dizendo se B é melhor, igual ou pior que A.`,
+    ferramentas: [
+      ferramenta("comparar", "Compara B contra A.", { b_em_relacao_a_a: { type: "string", enum: ["melhor", "empate", "pior"] }, justificativa: { type: "string" } }, ["b_em_relacao_a_a", "justificativa"], (e) => {
+        const v = String(e.b_em_relacao_a_a) as "melhor" | "empate" | "pior";
+        // Resultado sempre do ponto de vista da sombra (o modelo barato).
+        const daSombra = inverte ? ({ melhor: "pior", empate: "empate", pior: "melhor" } as const)[v] : v;
+        veredito = { resultado: daSombra ?? "empate", justificativa: texto(e, "justificativa", 2000) };
+        return { texto: "Ok.", fim: true };
+      }),
+    ],
+    lembrete: "Chame comparar.",
+    maxRodadas: 3,
+  });
+  const v = veredito as { resultado: "melhor" | "empate" | "pior"; justificativa: string } | null;
+  if (v) registrarSombra({ cardId, agente: agenteId, modeloReal, modeloBarato: barato, resultado: v.resultado, custoBarato: r.custoUsd, justificativa: v.justificativa });
 }
 
 const ocupado = (agenteId: string) => [...emAndamento.values()].some((t) => t.agenteId === agenteId);
@@ -595,7 +663,10 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     }
   }
 
-  const modeloAutor = modeloDoAgente(agente, "autor");
+  // Escalonamento: o modelo sobe conforme o card falha; com "local primeiro", código verificável começa no local.
+  const esc = modeloEscalonado(agente, "autor", card, !!wt && podeRodarComandos() && !!comandoDeTestes(wt.caminho));
+  const modeloAutor = esc.modelo;
+  if (esc.motivo) postFeed(card.sala, agente.id, `${card.chave}: ${esc.motivo}`);
   const r = entregou ? { texto: "", terminou: true, custoUsd: 0 } : await rodarAgente({
     client,
     agenteId: agente.id,
@@ -935,6 +1006,9 @@ ${c.patch.slice(0, 20_000)}
 
 /** Depois da validação: N0 conclui; o resto vai para a aprovação do CEO. Código sempre passa por você. */
 function finalizar(card: Card, quem: string) {
+  // Aprendizado: conta o resultado para a variante de instruções usada (A/B) e, às vezes, roda um teste sombra.
+  registrarResultadoAB(lerCard(card.id));
+  if (Math.random() * 100 < sombraPct() && !registroDoCard(card.id) && card.dono && agentById[card.dono]) void testeSombra(card.id, card.dono).catch((e) => console.error("Teste sombra:", e));
   if (card.nivel === "N0" && !ehCardDeCodigo(card) && registroDoCard(card.id)?.status !== "ativo") {
     const concluido = mover(card.id, fluxos[card.fluxo]!.aprovarPara, quem);
     postFeed(card.sala, quem, `${card.chave} concluído (N0, não precisa do CEO)`);
