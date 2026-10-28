@@ -80,3 +80,19 @@ test("Helena sabe quem trabalha no modelo local e cria cards pequenos para eles"
   assert.match(t, /uma tela, um endpoint/);
   setSetting("modelos_agentes", "{}");
 });
+
+test("memória do projeto: o que o CEO pediu em outro card do mesmo projeto chega ao próximo; avisos automáticos, não", async () => {
+  const { licoesDoProjeto } = await import("./prompts.ts");
+  const { db } = await import("../db.ts");
+  const projetoId = Number(db.prepare("INSERT INTO projetos (nome, caminho, git, branch, sinais, criado_em) VALUES ('p', '/tmp/p-licoes', 0, NULL, '[]', 0)").run().lastInsertRowid);
+  const antigo = criarCard({ titulo: "Endpoint de tickets", sala: "desenvolvimento", dono: "dev-backend", projetoId });
+  comentar(antigo.id, "voce", "comentario", "Use sempre o padrão de handlers de auth/, com validação de workspace.");
+  comentar(antigo.id, "voce", "comentario", "Aprovado pelo CEO (aprovação automática autorizada por ele).");
+  comentar(antigo.id, "voce", "comentario", "Liberou mais US$ 3.00 para este card.");
+  const outroProjeto = criarCard({ titulo: "Outro", sala: "desenvolvimento", dono: "dev-backend" });
+  comentar(outroProjeto.id, "voce", "comentario", "Isto é de outro projeto e não pode aparecer.");
+  const novo = criarCard({ titulo: "Endpoint de sprints", sala: "desenvolvimento", dono: "dev-frontend", projetoId });
+  const t = licoesDoProjeto(novo);
+  assert.match(t, /padrão de handlers de auth\//);
+  assert.doesNotMatch(t, /Aprovado pelo CEO|Liberou mais|outro projeto/);
+});

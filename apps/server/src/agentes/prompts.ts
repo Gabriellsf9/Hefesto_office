@@ -418,6 +418,24 @@ function memoriaDoAgente(card: Card): string {
   return `## O que já te devolveram em outros cards (não repita)\n${devolucoes.map((d) => `- ${d.chave}: ${d.texto.replace(/\s+/g, " ").slice(0, 400)}`).join("\n")}`;
 }
 
+/**
+ * Memória do projeto: o que o CEO já pediu em outros cards do mesmo projeto (comentários e notas por linha do diff).
+ * Vale para qualquer agente: "use o padrão de auth/" dito num card não pode ser esquecido no seguinte.
+ */
+export function licoesDoProjeto(card: Card, max = 8): string {
+  if (card.projetoId === null) return "";
+  const outros = new Map(listarCards().filter((c) => c.projetoId === card.projetoId && c.id !== card.id && !c.demo).map((c) => [c.id, c]));
+  const pedidos = [...outros.keys()]
+    .flatMap((id) => listarComentarios(id).filter((c) => c.autor === "voce" && c.tipo === "comentario").map((c) => ({ ...c, chave: outros.get(id)!.chave })))
+    // Não são orientação: aprovação automática, liberação de gasto e avisos do sistema escritos em nome do CEO.
+    .filter((c) => c.texto.trim().length >= 20 && !/^(Aprovado pelo CEO|Liberou mais US\$|O teto deste card|A conta da Anthropic|A falha "terminated"|Aviso técnico)/.test(c.texto.trim()))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, max);
+  if (!pedidos.length) return "";
+  return `## O que o CEO já pediu em outros cards deste projeto (vale aqui também)
+${pedidos.map((c) => `- ${c.chave}: ${c.texto.replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`;
+}
+
 const blocoMetas = () => `## Metas do trimestre\n${metasEmTexto()}`;
 
 /** local: o autor roda no modelo local (mensagem enxuta); podeDividir: ele tem a ferramenta dividir_em_partes. */
@@ -431,6 +449,7 @@ export function mensagemExecutar(card: Card, o: { local?: boolean; podeDividir?:
     contextoExtra(card),
     resultadoDosPedidos(card, o.local),
     memoriaDoAgente(card),
+    licoesDoProjeto(card, o.local ? 4 : 8),
     card.dono ? instrucoesAprendidas(card.dono, card.id) : "",
     o.local ? "" : blocoMetas(),
     anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${trechoDaEntregaAnterior(card, anterior.conteudo, o.local ? LIMITE_ENTREGA_ANTERIOR_LOCAL : LIMITE_ENTREGA_ANTERIOR)}` : "",

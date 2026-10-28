@@ -62,8 +62,9 @@ import {
 } from "./tarefas.ts";
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
 import { HOST } from "./plataforma.ts";
-import { configurarProvedores, estadoProvedores, marcarNoAr } from "./provedores.ts";
+import { configurarProvedores, estadoProvedores, foraDoArAte, marcarNoAr } from "./provedores.ts";
 import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
+import { criarRaioX, vincularPasta } from "./projetoNovo.ts";
 import { apagarConversa, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
@@ -574,6 +575,14 @@ app.post("/api/telegram/teste", async () => {
   return { ok: true };
 });
 app.get("/api/provedores", async () => estadoProvedores());
+// Quem está fora do ar e até quando (Operação → Saúde do trabalho); "tentar agora" volta o provedor na hora.
+app.get("/api/provedores/fora", async () => Object.fromEntries((["claude", "gemini", "openai", "ollama"] as const).map((p) => [p, foraDoArAte(p)])));
+app.post<{ Params: { p: string } }>("/api/provedores/:p/tentar", async (req, reply) => {
+  const p = req.params.p;
+  if (p !== "claude" && p !== "gemini" && p !== "openai" && p !== "ollama") return reply.code(400).send({ erro: "Provedor inválido." });
+  marcarNoAr(p);
+  return { ok: true };
+});
 app.put<{ Body: Record<string, unknown> }>("/api/provedores", async (req) => configurarProvedores(req.body ?? {}));
 app.post<{ Body: { modelo?: string } }>("/api/provedores/testar", async (req) => {
   const modelo = String(req.body?.modelo ?? "");
@@ -669,42 +678,14 @@ app.post("/api/projetos/escolher", async () => {
   const caminho = await escolherPasta();
   return caminho ? adicionarProjeto(caminho) : { cancelado: true };
 });
-app.post<{ Body: { caminho: string } }>("/api/projetos", async (req) => adicionarProjeto(req.body?.caminho));
+// Projeto novo: perfil automático na ficha, índice do código e o card de raio-x (qualquer stack).
+app.post<{ Body: { caminho: string } }>("/api/projetos", async (req) => vincularPasta(req.body?.caminho));
 app.put<{ Body: { id: number | null } }>("/api/projetos/ativo", async (req) => {
   definirAtivo(req.body?.id ?? null);
   return { ok: true };
 });
 // Raio-x: o Arquiteto lê o projeto (somente leitura) e escreve a Ficha do Projeto.
-app.post<{ Params: { id: string } }>("/api/projetos/:id/raio-x", async (req) => {
-  const id = idDe(req.params.id);
-  const projeto = listarProjetos().find((p) => p.id === id);
-  if (!projeto) throw new ErroCard("Projeto não encontrado.", 404);
-  return criarCard(
-    {
-      titulo: `Raio-x do projeto ${projeto.nome}`,
-      sala: "arquitetura",
-      fluxo: "software",
-      coluna: "a-fazer",
-      tipo: "tarefa",
-      dono: "arquiteto",
-      nivel: "N1",
-      prioridade: "P1",
-      projetoId: id,
-      etiquetas: ["raio-x"],
-      descricao: `Leia o projeto em ${projeto.caminho} (somente leitura) e escreva a Ficha do Projeto, que todos os agentes vão usar como contexto.`,
-      criterios: [
-        "- Stack, linguagens, frameworks e versões principais",
-        "- Estrutura de pastas e responsabilidade de cada parte",
-        "- Como rodar, testar e fazer build (comandos)",
-        "- Funcionalidades e regras de negócio encontradas no código",
-        "- Integrações externas e dados sensíveis tratados",
-        "- Qualidade: testes existentes, pontos de atenção e riscos (incluindo segurança)",
-        "- Tudo citando os arquivos onde foi visto",
-      ].join("\n"),
-    },
-    "voce",
-  );
-});
+app.post<{ Params: { id: string } }>("/api/projetos/:id/raio-x", async (req) => criarRaioX(idDe(req.params.id)));
 app.put<{ Params: { id: string }; Body: { urlLocal: string | null } }>("/api/projetos/:id/url-local", async (req) => {
   definirUrlLocal(idDe(req.params.id), req.body?.urlLocal ?? null);
   return { ok: true };

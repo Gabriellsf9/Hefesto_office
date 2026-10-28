@@ -54,3 +54,43 @@ Este plano parte do inventário do que já existe (out/2026). Cada item diz o qu
 - Recarregar a Anthropic e ativar o faturamento do Gemini.
 - Tirar o Parliamo de produção desta máquina.
 - Placa de vídeo com 16 a 24 GB.
+
+---
+
+# Fase 6 — Melhor que o mercado, e só com IA local
+
+Objetivo do CEO: o Hefesto bom o bastante para não precisar de assinatura (Claude, Codex, etc.), rodando só com IA local, e melhor que os outros orquestradores.
+
+## Onde o Hefesto já está à frente
+- Uma empresa inteira de agentes com revisão em camadas: autor, autocrítica, validador, advogado do diabo e CEO.
+- Troca automática entre provedores (Claude → Gemini → local) com orçamento por card, por projeto e por dia.
+- Ambiente real por projeto (Docker dos agentes), prints das telas, verificação em qualquer linguagem.
+- Vigia de saúde, motivo de cada card parado, avaliações com cards reais e memória por agente e por projeto.
+
+## A conta honesta do "só local"
+Medido em 28/10/2026 nesta máquina (RTX 3060 Ti 8 GB, 32 GB de RAM, com o Parliamo de produção rodando junto):
+
+| Modelo | Escrita | Memória | Pesquisa no Parliamo (3 arquivo:linha) | Código 1 (8 testes) | Código 2 (4 testes) |
+|---|---|---|---|---|---|
+| qwen3.5 9b (o atual) | 21 tok/s | 5,6 GB na placa, sobram 7,7 GB de RAM | 1 arquivo certo, 0 linhas | 4/8 | 4/4 |
+| gpt-oss 20b | 22 tok/s | 6 GB na placa, sobram 3,1 GB | entregou o plano em vez da resposta | **8/8** | 4/4 (2× mais rápido) |
+| Qwen3-Coder 30B-A3B | 19 tok/s | 6,3 GB na placa, **sobram 0,3 GB** | não testado | não testado | não testado |
+
+O Qwen3-Coder 30B não cabe com folga: descartado nesta máquina.
+
+Com uma amostra pequena, a direção é clara: modelos locais desse tamanho acertam bem tarefas **pequenas e verificáveis** e erram tarefas longas de exploração. Um modelo de ponta na nuvem é bem melhor nas tarefas longas. Para o local chegar perto, o sistema precisa compensar com processo:
+
+| Item | O que muda |
+|---|---|
+| **6.1 Verificação obrigatória** | Todo card de código nasce com uma checagem objetiva (teste, typecheck ou print comparado). O modelo local repete até passar: sai de graça, então vale insistir |
+| **6.2 Melhor de N à noite** | Com a máquina ociosa, o local tenta N versões do mesmo card, e os testes escolhem a que passa com o menor diff |
+| **6.3 Modelo por papel** | Código no gpt-oss 20b (8/8 contra 4/8); leitura, resumo e pesquisa no 9b; classificação e triagem no 4b. Troca de modelo só entre trabalhos, nunca no meio |
+| **6.4 Pesquisa em etapas fixas** | No local, a exploração vira um roteiro: índice → ler trecho → confirmar. Não fica a critério do modelo (o 20b se perdeu exatamente aí) |
+| **6.5 Vários computadores** | Qualquer PC ou notebook com Ollama entra como trabalhador; a fila distribui pelo que cada um aguenta. É o paralelismo que o Codex tem na nuvem |
+| **6.6 Integrações de desenvolvedor** | Issue do GitHub vira card; comentário de revisão no PR vira devolução; CI vermelho vira card de correção; extensão ou servidor MCP para usar o Hefesto de dentro do editor |
+| **6.7 Acesso de qualquer lugar** | O app instalável (feito) com acesso seguro pela internet (ex.: Tailscale), sem abrir porta |
+
+## O que é decisão sua (e muda o jogo)
+- **Placa de 24 GB** (ex.: RTX 3090 usada): o Qwen3-Coder 30B, que já escreve a 19 tok/s mesmo espremido, roda inteiro na placa, ~3× mais rápido e sem apertar a RAM. É a diferença entre "dá para usar" e "substitui a assinatura" em código.
+- **Nuvem só para o difícil**: em vez de assinatura, crédito pago por uso para os ~5% de cards que o local não resolve depois da verificação (o motor já sabe trocar sozinho).
+- **Tirar o Parliamo de produção desta máquina**: libera RAM para um modelo maior.

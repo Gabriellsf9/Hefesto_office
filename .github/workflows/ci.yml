@@ -1,0 +1,33 @@
+# Verificações de todo PR e de todo push na main: tipos de todos os pacotes, testes do servidor (com o motor de
+# ponta a ponta e provedores falsos) e o build da interface. Um PR só entra se tudo passar.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Tipos (todos os pacotes)
+        run: pnpm -r typecheck
+      - name: Testes do servidor
+        run: pnpm --filter @empresa/server test
+      - name: Build da interface
+        run: pnpm --filter @empresa/web build

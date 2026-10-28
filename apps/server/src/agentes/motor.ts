@@ -92,6 +92,7 @@ export function estadoMotor(): EstadoMotor {
     modoCusto: modoCusto(),
     limiteCardUsd: limitePorCard(),
     limiteCodigoUsd: limitePorCardDeCodigo(),
+    esperas: Object.fromEntries(esperas),
   };
 }
 
@@ -391,6 +392,7 @@ export function configurarMotor(c: { pausado?: boolean; orcamentoDiarioUsd?: num
 }
 
 export function iniciarMotor() {
+  encerrando = false;
   if (!timer) timer = setInterval(() => void ciclo(), INTERVALO_MS);
 }
 
@@ -516,6 +518,29 @@ export function esperaParente(card: Card, porId: Map<number, Card>, rodando: Ite
   return false;
 }
 
+/* ---------- Por que o card está parado ---------- */
+
+/** Por que cada card que deveria andar não está rodando agora (a tela mostra no card e na fila). */
+const esperas = new Map<number, string>();
+export const motivoDeEspera = (cardId: number) => esperas.get(cardId) ?? null;
+const hhmm = (ts: number) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const nomeProvedor: Record<ProvedorIa, string> = { claude: "Claude", gemini: "Gemini", openai: "OpenAI", ollama: "modelo local" };
+
+/** Motivo de um card em coluna de trabalho que não entrou na fila (bloqueio, dependência, partes, espera). */
+export function porQueNaoAnda(card: Card, porId: Map<number, Card>, rodando: Iterable<TrabalhoEmAndamento>): string | null {
+  const tipo = tipoColuna(card);
+  if (card.demo || !card.dono || card.emValidacao || !["fila", "trabalho", "bug"].includes(tipo ?? "") || !antesDoCeo(card)) return null;
+  if (card.bloqueado) return card.etiquetas.includes(ETIQUETA_LIMITE) ? "Parado no limite de gasto: clique em Liberar mais." : "Bloqueado: esperando você responder no card.";
+  const deps = [...(card.dependeDe ? [card.dependeDe] : []), ...(card.dependencias ?? [])].map((id) => porId.get(id)).filter((d): d is Card => !!d && tipoColuna(d) !== "feito");
+  if (deps.length) return `Esperando ${deps.map((d) => d.chave).join(", ")} terminar.`;
+  const filhos = filhosAbertos(card.id, porId.values());
+  if (filhos.length) return `Esperando ${filhos.length > 1 ? "as partes/pedidos" : "o pedido"} ${filhos.map((c) => c.chave).join(", ")}.`;
+  const liberaEm = repassadosEm.get(card.id);
+  if (liberaEm && liberaEm > Date.now()) return `Esperando até ${hhmm(liberaEm)} (repasse ou espera por um modelo com espaço).`;
+  if (esperaParente(card, porId, rodando)) return "Esperando o card pai (ou outra parte) terminar a rodada: eles mexem na mesma cópia.";
+  return null;
+}
+
 async function ciclo() {
   if (encerrando) return;
   const estado = estadoMotor();
@@ -534,31 +559,61 @@ async function ciclo() {
     // Validações primeiro (destravam o fluxo), depois por prioridade e idade.
     .sort((a, b) => (a.tipo === b.tipo ? 0 : a.tipo === "validar" ? -1 : 1) || peso(a.card) - peso(b.card) || a.card.criadoEm - b.card.criadoEm);
 
+  // Motivo de quem não vai rodar: primeiro o dos que nem entraram na fila; os da fila vêm no laço abaixo.
+  const antes = JSON.stringify([...esperas]);
+  esperas.clear();
+  for (const c of cards) {
+    if (emAndamento.has(c.id)) continue;
+    const m = porQueNaoAnda(c, porId, emAndamento.values());
+    if (m) esperas.set(c.id, m);
+  }
   const mudouFila = naFila !== trabalhos.length || semOrcamentoAntes !== estado.semOrcamento;
   naFila = trabalhos.length;
   semOrcamentoAntes = estado.semOrcamento;
   if (estado.pausado || estado.semOrcamento) {
-    if (mudouFila) publicar();
+    for (const t of trabalhos) esperas.set(t.card.id, estado.pausado ? "A empresa está pausada." : "O orçamento de IA de hoje acabou.");
+    if (mudouFila || antes !== JSON.stringify([...esperas])) publicar();
     return;
   }
 
   const ocupados = new Set([...emAndamento.values()].map((t) => t.agenteId));
   for (const t of trabalhos) {
-    if (emAndamento.size >= estado.maxSimultaneos) break;
-    if (ocupados.has(t.agente) || !agentById[t.agente]) continue; // um card por agente de cada vez
+    const espera = (m: string) => void esperas.set(t.card.id, m);
+    if (emAndamento.size >= estado.maxSimultaneos) {
+      espera(`Fila cheia: ${emAndamento.size} trabalhos rodando (máximo ${estado.maxSimultaneos}).`);
+      continue;
+    }
+    if (ocupados.has(t.agente) || !agentById[t.agente]) {
+      espera(`${agentById[t.agente]?.nome ?? t.agente} está em outro card agora.`);
+      continue; // um card por agente de cada vez
+    }
     // O provedor deste agente está fora do ar e não há reserva disponível: espera.
-    if (provedorForaDoAr(provedorDoAgente(t.agente))) continue;
+    const prov = provedorDoAgente(t.agente);
+    if (provedorForaDoAr(prov)) {
+      espera(`O ${nomeProvedor[prov]} está fora do ar até ${hhmm(foraDoArAte(prov) ?? Date.now())} e não há reserva disponível.`);
+      continue;
+    }
     // Modelo local: um trabalho por vez. Dois cards se revezando descartam o cache do Ollama (e trocam o tamanho do
     // contexto, recarregando o modelo), e cada passo relê a conversa inteira do zero: ~2 min por passo em vez de segundos.
-    if (provedorDoAgente(t.agente) === "ollama" && [...emAndamento.values()].some((e) => provedorDoAgente(e.agenteId) === "ollama")) continue;
+    if (prov === "ollama" && [...emAndamento.values()].some((e) => provedorDoAgente(e.agenteId) === "ollama")) {
+      espera("Esperando a vez no modelo local (um trabalho por vez).");
+      continue;
+    }
     // De novo aqui: o pai pode ter começado neste mesmo ciclo, depois que a lista foi montada.
-    if (t.tipo === "executar" && esperaParente(t.card, porId, emAndamento.values())) continue;
+    if (t.tipo === "executar" && esperaParente(t.card, porId, emAndamento.values())) {
+      espera("Esperando o card pai (ou outra parte) terminar a rodada.");
+      continue;
+    }
     // Sem chave do provedor do agente (Claude sem chave, OpenAI sem chave…): o card espera.
-    if (!modeloDisponivel(modeloDoAgente(agentById[t.agente]!, "autor"))) continue;
+    if (!modeloDisponivel(modeloDoAgente(agentById[t.agente]!, "autor"))) {
+      espera(`Sem chave para o modelo ${modeloDoAgente(agentById[t.agente]!, "autor")}: cadastre em Configurações → Modelos de IA.`);
+      continue;
+    }
+    esperas.delete(t.card.id);
     ocupados.add(t.agente);
     void rodar(client, t.card, t.tipo, t.agente);
   }
-  if (mudouFila) publicar();
+  if (mudouFila || antes !== JSON.stringify([...esperas])) publicar();
 }
 
 async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "validar", agenteId: string) {
