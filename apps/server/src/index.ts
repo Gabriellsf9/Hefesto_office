@@ -62,7 +62,8 @@ import {
 } from "./tarefas.ts";
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
 import { HOST } from "./plataforma.ts";
-import { configurarProvedores, estadoProvedores } from "./provedores.ts";
+import { configurarProvedores, estadoProvedores, marcarNoAr } from "./provedores.ts";
+import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
 import { montarPainel, configRelatorio, definirRelatorio, mandarRelatorio, iniciarRelatorioDiario } from "./painel.ts";
@@ -72,7 +73,7 @@ import { relatorioParaCliente } from "./relatorioCliente.ts";
 import { limparCopiasAntigas, migrarCopiasParaWorkspace } from "./fabrica/workspace.ts";
 import { testarCard } from "./fabrica/testes.ts";
 import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
-import { listarEvals, rodarEvals, tarefasDeEval } from "./evals.ts";
+import { listarEvals, rodarEvals, tarefasDeEval, apagarCaso, importarCasos, listarCasos } from "./evals.ts";
 import { testarModelo } from "./agentes/compat.ts";
 import { conferirMetricas, conferirSentry, configurarProducao, definirMetrica, estadoProducao, iniciarProducao, metricaDoCard, previaPublicadaDo, publicarPrevia, registrarResultadoDaMetrica, vigiarDepoisDoMerge, vincularProjeto, vinculoDoProjeto } from "./fabrica/producao.ts";
 import { conferirReplanejamento, definirOrcamentoDoProjeto, fixarLinhaDeBase, iniciarPlanejamento, planoDoProjeto } from "./planejamento.ts";
@@ -131,6 +132,8 @@ app.post<{ Body: { apiKey?: string } }>("/api/key", async (req, reply) => {
   const check = await validateApiKey(apiKey);
   if (!check.ok) return reply.code(400).send({ erro: check.erro });
   saveApiKey(apiKey);
+  // Chave nova (ou crédito recarregado): o Claude volta a ser tentado na hora.
+  marcarNoAr("claude");
   emit({ type: "chave", configurada: true });
   return { chaveConfigurada: true, dicaChave: apiKeyHint(apiKey) } satisfies StatusResponse;
 });
@@ -224,6 +227,20 @@ app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => confi
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
 app.post("/api/evals", async () => rodarEvals());
+// Casos reais: cards concluídos viram casos de avaliação (o juiz compara com a entrega aprovada).
+app.get("/api/evals/casos", async () => listarCasos());
+app.post("/api/evals/casos/importar", async () => importarCasos());
+app.delete<{ Params: { id: string } }>("/api/evals/casos/:id", async (req) => {
+  apagarCaso(Number(req.params.id));
+  return listarCasos();
+});
+
+// Vigia de saúde: alertas abertos (ou os últimos 100, com ?todos=1) e resolver à mão.
+app.get<{ Querystring: { todos?: string } }>("/api/alertas", async (req) => listarAlertas(req.query.todos !== "1"));
+app.post<{ Params: { id: string } }>("/api/alertas/:id/resolver", async (req) => {
+  resolverAlerta(Number(req.params.id));
+  return listarAlertas();
+});
 
 /* ---------- Produção: prévia publicada (Vercel), Sentry depois do merge e métrica por card ---------- */
 
@@ -780,6 +797,7 @@ void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de
 setInterval(() => void limparCopiasAntigas().catch((e) => console.error("Limpeza de cópias:", e)), 3600_000);
 iniciarLembretesDeMarketing();
 iniciarMonitoramento();
+iniciarVigia();
 iniciarConquistas();
 iniciarConectores();
 iniciarBackup();

@@ -163,6 +163,18 @@ export interface PreviaPublicada {
   erro: string | null;
 }
 
+/** Alerta do vigia de saúde (trabalho travado, erro repetido, loop, chamada lenta, gasto, fila parada). */
+export type TipoAlertaSaude = "card-sem-progresso" | "erro-repetido" | "loop-de-ferramenta" | "chamada-lenta" | "gasto-do-dia" | "fila-parada";
+export interface AlertaSaude {
+  id: number;
+  chave: string;
+  tipo: TipoAlertaSaude;
+  cardId: number | null;
+  texto: string;
+  criadoEm: number;
+  resolvidoEm: number | null;
+}
+
 export type ServerEvent =
   | {
       type: "hello";
@@ -241,7 +253,8 @@ export type ServerEvent =
   | { type: "chat"; mensagem: ChatMessage }
   | { type: "focus"; sala: RoomId; agenteId?: string }
   | { type: "demo"; ativo: boolean }
-  | { type: "chave"; configurada: boolean };
+  | { type: "chave"; configurada: boolean }
+  | { type: "alertas"; abertos: AlertaSaude[] };
 
 export type ClientEvent =
   | { type: "command"; texto: string; imagens?: string[]; arquivos?: string[]; escritorio?: string }

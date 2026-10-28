@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, AlertaSaude, Ata, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -78,6 +78,8 @@ interface Store {
   /** Peças de marketing, por card. */
   pecas: Record<number, Peca>;
   monitores: Monitor[];
+  /** Alertas abertos do vigia de saúde (trabalho travado, erro repetido, loop…). */
+  alertas: AlertaSaude[];
   conquistas: Conquista[];
   /** Sessões do navegador dos agentes, por card. */
   navegador: Record<number, SessaoNavegador>;
@@ -184,6 +186,7 @@ export const useStore = create<Store>((set, get) => ({
   leads: {},
   pecas: {},
   monitores: [],
+  alertas: [],
   conquistas: [],
   navegador: {},
   navegadorAberto: false,
@@ -380,6 +383,9 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "chave":
         set({ chaveConfigurada: e.configurada });
+        break;
+      case "alertas":
+        set({ alertas: e.abertos });
         break;
       case "focus": {
         if (!get().seguirAtividade) break;
