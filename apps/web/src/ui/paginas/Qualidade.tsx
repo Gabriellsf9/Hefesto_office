@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, FlaskConical, Import, Trash2, XCircle } from "lucide-react";
 import { api } from "../../api.ts";
 import { Aprendizado } from "./Aprendizado.tsx";
-import { Botao, EstadoVazio, Etiqueta, Indicador, avisarErro, confirmar } from "../kit/index.ts";
+import { Botao, EstadoVazio, Etiqueta, Indicador, avisar, avisarErro, confirmar } from "../kit/index.ts";
 
 // Operação → Qualidade: avaliações (evals). Tarefas fixas, com respostas que dá para conferir, rodadas
 // com os prompts e os modelos de agora. Compare a nota antes e depois de mudar o modo de custo ou um modelo.
@@ -75,6 +75,16 @@ export function Qualidade() {
       <div className="flex flex-wrap items-center gap-3">
         <Botao variante="principal" icone={FlaskConical} carregando={rodando} onClick={() => void rodar()}>
           {rodando ? "Avaliando… (alguns minutos)" : "Rodar avaliação"}
+        </Botao>
+        <Botao
+          disabled={rodando || !casos.length}
+          onClick={() =>
+            void api("/api/evals", "POST", { lote: true })
+              .then(() => avisar("Avaliação econômica iniciada: o juiz vai pela Batch API (metade do preço). A rodada aparece aqui em até 1 hora."))
+              .catch(avisarErro)
+          }
+        >
+          Rodar econômica (lote)
         </Botao>
         <p className="text-pequeno text-fg-3">Rode antes e depois de mudar o modo de custo ou o modelo de um agente para ver se a qualidade caiu.</p>
       </div>

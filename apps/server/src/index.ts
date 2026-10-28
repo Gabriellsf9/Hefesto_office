@@ -6,7 +6,7 @@ import { colunaDe } from "@empresa/shared";
 import type { CardEditavel, ClientEvent, ConfigCritica, ItemConhecimento, Meta, RitualId, ServerEvent, StatusResponse } from "@empresa/shared";
 import { estados, emit, subscribe } from "./bus.ts";
 import { recentChat, recentFeed } from "./db.ts";
-import { configurarMotor, estadoMotor, iniciarMotor, interromper, orientarCard } from "./agentes/motor.ts";
+import { configurarMotor, encerrarMotor, estadoMotor, iniciarMotor, interromper, orientarCard } from "./agentes/motor.ts";
 import { pedirParaHelena } from "./agentes/helena.ts";
 import { custoHoje } from "./custo.ts";
 import { configurarGatilho, listarGatilhos, type GatilhoId } from "./gatilhos.ts";
@@ -227,7 +227,14 @@ app.get("/api/github", async () => estadoGithub());
 app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => configurarGithub(typeof req.body?.token === "string" ? req.body.token : null));
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
-app.post("/api/evals", async () => rodarEvals());
+app.post<{ Body: { lote?: boolean } }>("/api/evals", async (req) => {
+  // No lote (Batch API, metade do preço), roda em segundo plano: pode levar até 1 hora. A rodada aparece na lista ao terminar.
+  if (req.body?.lote) {
+    void rodarEvals({ lote: true }).catch((e: unknown) => console.error("Avaliação em lote:", e));
+    return { emAndamento: true };
+  }
+  return rodarEvals();
+});
 // Casos reais: cards concluídos viram casos de avaliação (o juiz compara com a entrega aprovada).
 app.get("/api/evals/casos", async () => listarCasos());
 app.post("/api/evals/casos/importar", async () => importarCasos());
@@ -827,10 +834,17 @@ iniciarConectores();
 iniciarBackup();
 iniciarWhatsapp();
 iniciarTelegram();
-for (const sinal of ["SIGINT", "SIGTERM"] as const) process.once(sinal, () => {
-  pararWhatsapp();
-  pararTodasPrevias();
-  process.exit(0);
-});
+// Parada sem perder trabalho: para de pegar cards novos e espera os que estão rodando (até 90 s; o Docker dá 120 s).
+// Quem não terminar retoma da última rodada salva na volta.
+for (const sinal of ["SIGINT", "SIGTERM"] as const)
+  process.once(sinal, () => {
+    pararWhatsapp();
+    pararTodasPrevias();
+    console.log("Encerrando: esperando os agentes terminarem a rodada…");
+    void encerrarMotor().then((restantes) => {
+      if (restantes) console.log(`${restantes} trabalho(s) ainda rodando: retomam da última rodada na volta.`);
+      process.exit(0);
+    });
+  });
 iniciarRituais();
 console.log(`Servidor do Hefesto em http://127.0.0.1:${PORT}`);

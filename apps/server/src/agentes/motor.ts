@@ -394,6 +394,18 @@ export function iniciarMotor() {
   if (!timer) timer = setInterval(() => void ciclo(), INTERVALO_MS);
 }
 
+let encerrando = false;
+/**
+ * Parada do servidor (atualização, reinício): não pega trabalho novo e espera o que está rodando terminar a
+ * rodada, até `limiteMs`. O que não terminar retoma da última rodada salva quando o servidor voltar.
+ */
+export async function encerrarMotor(limiteMs = 90_000): Promise<number> {
+  encerrando = true;
+  const ate = Date.now() + limiteMs;
+  while (emAndamento.size && Date.now() < ate) await new Promise((ok) => setTimeout(ok, 1000));
+  return emAndamento.size;
+}
+
 /* ---------- Agendador ---------- */
 
 const peso = (c: Card) => prioridades.findIndex((p) => p.id === c.prioridade);
@@ -505,6 +517,7 @@ export function esperaParente(card: Card, porId: Map<number, Card>, rodando: Ite
 }
 
 async function ciclo() {
+  if (encerrando) return;
   const estado = estadoMotor();
   const client = clienteClaude();
   let cards = listarCards();
