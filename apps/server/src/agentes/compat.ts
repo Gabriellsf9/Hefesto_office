@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { ferramentasDeWebLocal } from "./webLocal.ts";
 import type Anthropic from "@anthropic-ai/sdk";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -61,13 +63,39 @@ interface Resposta {
 const textoDe = (c: Msg["content"]) => (typeof c === "string" ? c : c.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n"));
 
 /** Anexos (imagens, PDF, texto) no formato de partes. PDF não vai direto: fica um aviso. */
-function partesDosAnexos(blocos: Anthropic.Beta.BetaContentBlockParam[]): Parte[] {
-  return blocos.flatMap((b): Parte[] => {
-    if (b.type === "text") return [{ type: "text", text: b.text }];
-    if (b.type === "image" && b.source.type === "base64") return [{ type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } }];
-    if (b.type === "document") return [{ type: "text", text: `(PDF anexado${b.title ? ` "${b.title}"` : ""}: este modelo não lê PDF direto. Se precisar do conteúdo, peça o texto ao CEO.)` }];
-    return [];
+/** Texto de um PDF (pdftotext, do poppler): modelos fora do Claude não leem PDF direto. Null se não deu. */
+export function textoDoPdf(base64: string): Promise<string | null> {
+  return new Promise((ok) => {
+    const p = execFile("pdftotext", ["-layout", "-enc", "UTF-8", "-", "-"], { timeout: 60_000, maxBuffer: 20 * 1024 * 1024 }, (err, stdout) => ok(err ? null : String(stdout)));
+    p.stdin?.on("error", () => ok(null));
+    p.stdin?.end(Buffer.from(base64, "base64"));
   });
+}
+
+/** O primeiro pedido nunca é compactado: no modelo local, o texto de cada PDF vai até este tamanho. */
+const PDF_MAX_LOCAL = 10_000;
+const PDF_MAX = 60_000;
+
+async function partesDosAnexos(blocos: Anthropic.Beta.BetaContentBlockParam[], local: boolean): Promise<Parte[]> {
+  const partes: Parte[] = [];
+  for (const b of blocos) {
+    if (b.type === "text") partes.push({ type: "text", text: b.text });
+    else if (b.type === "image" && b.source.type === "base64") partes.push({ type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } });
+    else if (b.type === "document") {
+      const nome = b.title ? ` "${b.title}"` : "";
+      const texto = b.source.type === "base64" ? await textoDoPdf(b.source.data) : null;
+      const max = local ? PDF_MAX_LOCAL : PDF_MAX;
+      partes.push({
+        type: "text",
+        text: texto?.trim()
+          ? `## PDF anexado${nome} (texto extraído)
+${texto.trim().slice(0, max)}${texto.length > max ? `
+…(cortado: o PDF tem ${texto.length} caracteres)` : ""}`
+          : `(PDF anexado${nome}: não consegui extrair o texto. Se precisar do conteúdo, peça o texto ao CEO.)`,
+      });
+    }
+  }
+  return partes;
 }
 
 /** Esquema das entradas sem o que o Gemini recusa (additionalProperties, $schema). */
@@ -377,15 +405,19 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     throw new ErroProvedor(`Sem chave da ${provedor === "openai" ? "OpenAI" : "Google (Gemini)"}: cadastre em Configurações → Modelos de IA.`, 401, false);
   }
   // Ferramentas do servidor da Anthropic (pesquisa e leitura na web) não existem fora do Claude.
-  const locais = o.ferramentas.filter((f): f is Ferramenta & { def: Anthropic.Beta.BetaTool } => !!f.executar && "input_schema" in f.def);
-  const semWeb = locais.length < o.ferramentas.length;
+  const doServidor = o.ferramentas.filter((f): f is Ferramenta & { def: Anthropic.Beta.BetaTool } => !!f.executar && "input_schema" in f.def);
+  // A pesquisa do Claude (web_search, web_fetch) não existe aqui: quem tinha direito a ela usa a busca do Hefesto.
+  const tinhaWeb = doServidor.length < o.ferramentas.length;
+  const webLocal = tinhaWeb ? (ferramentasDeWebLocal({ enxuto: provedor === "ollama" }) as (Ferramenta & { def: Anthropic.Beta.BetaTool })[]) : [];
+  const locais = [...doServidor, ...webLocal];
+  const semWeb = tinhaWeb && !webLocal.length;
   const porNome = new Map(locais.map((f) => [f.def.name, f] as const));
   const tools = locais.map((f) => ({
     type: "function",
     function: { name: f.def.name, description: f.def.description ?? "", parameters: provedor === "gemini" ? limparEsquema(f.def.input_schema) : f.def.input_schema },
   }));
 
-  const anexos = partesDosAnexos([...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])]);
+  const anexos = await partesDosAnexos([...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])], provedor === "ollama");
   // Retomada (queda, reinício, pausa): a conversa salva pelo laço local continua de onde parou, sem reler tudo.
   const salva = o.retomar?.length && ehConversaLocal(o.retomar) ? (o.retomar as unknown as Msg[]) : null;
   const novas = (): Msg[] => [
@@ -400,6 +432,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   let limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
   let custoUsd = 0;
   let lembretes = 0;
+  let tamanhoAposCompactar = 0;
   let ultimoTexto = "";
   // Calibrado a cada resposta do Ollama com a contagem real do prompt (começa no pessimista: 3 caracteres por token).
   let porToken = 3;
@@ -412,7 +445,9 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
     if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
     // Perto do limite: a parte antiga da conversa vira um resumo (antes de cortar resultados), como o Claude Code faz.
-    if (tokensDe(msgs, porToken) > limiteTokens * LIMIAR_COMPACTAR) {
+    // Só de novo quando a conversa crescer outros 20% do limite: se as últimas rodadas sozinhas já são grandes,
+    // resumir a cada passo não ajuda (no card 11 compactou duas vezes em 30 s); aí o aparar resolve.
+    if (tokensDe(msgs, porToken) > Math.max(limiteTokens * LIMIAR_COMPACTAR, tamanhoAposCompactar + limiteTokens * 0.2)) {
       const corte = pontoDeCorte(msgs);
       if (corte) {
         const t0 = Date.now();
@@ -429,6 +464,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
           if (resumo.length > 80) {
             const antes = Math.round(tokensDe(msgs, porToken));
             compactar(msgs, corte, resumo);
+            tamanhoAposCompactar = tokensDe(msgs, porToken);
             registrarPasso(replay, { rodada, tipo: "texto", saida: `(Conversa compactada: ~${antes} → ~${Math.round(tokensDe(msgs, porToken))} tokens.)` });
             salvarRodada();
           }

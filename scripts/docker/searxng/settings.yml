@@ -1,0 +1,13 @@
+# Busca na web dos agentes que não rodam no Claude (o Claude tem a busca dele). Só a rede interna do compose
+# acessa este serviço: nenhuma porta é publicada.
+use_default_settings: true
+server:
+  # Serviço interno, sem porta publicada; o valor só precisa ser diferente do padrão.
+  secret_key: "hefesto-busca-interna-sem-porta-publicada"
+  limiter: false
+  image_proxy: false
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

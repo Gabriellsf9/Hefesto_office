@@ -832,11 +832,11 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   // Card que não mexe no código mas nasceu de um card de código: lê a cópia do pai, com o trabalho em andamento.
   const wtDoPai = wt ? null : worktreeDoCard(card);
   if (wt) {
-    ferramentas.push(...ferramentasDeProjeto(wt.caminho), ...ferramentasDeEscrita(wt));
+    ferramentas.push(...ferramentasDeProjeto(wt.caminho, { enxuto: local }), ...ferramentasDeEscrita(wt));
     if (podeVerificar() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
     // Ambiente do card: o app inteiro rodando no Docker dos agentes, com autonomia para instalar e preparar o que precisar.
     if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
-  } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
+  } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho, { enxuto: local }));
   // Card sem código num projeto: a cópia de referência (o projeto como está hoje) para subir o app no ambiente,
   // criar dados de teste e tirar prints das telas reais. Um ambiente por projeto, compartilhado entre os cards.
   let referencia: Worktree | null = null;
@@ -846,7 +846,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
       // Ler e escrever na mesma raiz (a do repositório): com a pasta vinculada para ler e a cópia para escrever, os
       // caminhos não batiam e o agente gravava numa subpasta errada.
       ferramentas.push(
-        ...ferramentasDeProjeto(referencia.caminho),
+        ...ferramentasDeProjeto(referencia.caminho, { enxuto: local }),
         ...ferramentasDeAmbiente(referencia, `ref-${projetoId}`),
         ...ferramentasDeEscrita(referencia, { envDeTeste: true }),
         ferramentaDeCaptura(card.id, `http://${HOST_DO_AMBIENTE}`),
@@ -855,7 +855,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
       if (!(e instanceof ErroCard)) throw e;
     }
   }
-  if (!wt && !wtDoPai && projeto && !referencia) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
+  if (!wt && !wtDoPai && projeto && !referencia) ferramentas.push(...ferramentasDeProjeto(projeto.caminho, { enxuto: local }));
   // Pesquisa delegada: um modelo barato (ou local) lê o projeto e devolve só a resposta; o contexto do autor fica pequeno.
   const raizDoProjeto = wt?.caminho ?? wtDoPai?.caminho ?? referencia?.caminho ?? projeto?.caminho;
   const pesquisa = raizDoProjeto ? ferramentaDePesquisa(raizDoProjeto, { cardId: card.id, agenteId: agente.id, sinal }) : null;
@@ -1165,6 +1165,8 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
     ),
   ];
   const projeto = fichaDoProjeto(projetoDoCard(card));
+  // Validador no modelo local: leituras em pedaços menores.
+  const local = provedorDe(modeloDoAgente(validador, etapaDoCodigoDe(card) !== null ? "validador-codigo" : "validador")).provedor === "ollama";
   // Código: o validador lê a branch do card, vê o diff e (QA, performance, segurança) roda os testes.
   const wt = worktreeDoCard(card);
   // Fora do código (que já traz o diff da branch), o validador vê o que mudou entre a versão anterior e a atual.
@@ -1172,7 +1174,7 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   const mudancas = !worktreeDoCard(card) && versoes.length >= 2 ? await diferencaDeTexto(versoes.at(-2)!.conteudo, versoes.at(-1)!.conteudo) : "";
   let mensagem = mensagemValidar(card, mudancas) + consultasDoAutor(card);
   if (wt) {
-    ferramentas.push(...ferramentasDeProjeto(wt.caminho), ferramentaDeDiff(card.id));
+    ferramentas.push(...ferramentasDeProjeto(wt.caminho, { enxuto: local }), ferramentaDeDiff(card.id));
     if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
     // QA sobe o app de verdade no ambiente do card (banco, backend, frontend) e testa no navegador.
     if (validador.id.startsWith("qa") && ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
@@ -1189,7 +1191,7 @@ ${c.stat}
 \`\`\`diff
 ${c.patch.slice(0, 20_000)}
 \`\`\`${podeVerificar() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
-  } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
+  } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho, { enxuto: local }));
 
   const modeloValidador = modeloDoAgente(validador, etapaDoCodigoDe(card) !== null ? "validador-codigo" : "validador");
   await rodarAgente({

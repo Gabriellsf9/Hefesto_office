@@ -45,6 +45,21 @@ function docker(args: string[], cwd: string, tempo: number): Promise<Saida> {
   });
 }
 
+/**
+ * Roda um script numa imagem oficial da linguagem (python, rust, maven…) no Docker dos agentes, com a pasta montada
+ * no mesmo caminho (o volume das cópias é o mesmo nos dois). Serve para verificar projetos de qualquer stack, mesmo
+ * os que a imagem do Hefesto não traz. Só pastas dentro das cópias (/workspace).
+ */
+export async function rodarNaImagem(imagem: string, pasta: string, script: string, tempo = 15 * 60_000): Promise<Saida & { ms: number }> {
+  if (!DOCKER_AGENTES) return { codigo: 127, saida: "Docker dos agentes desligado.", ms: 0 };
+  if (!/^[\w./:-]+$/.test(imagem)) throw new Error(`Imagem inválida: ${imagem}`);
+  const raizCopias = process.env.EMPRESA_WORKSPACE_DIR ?? "/workspace";
+  if (!dentro(raizCopias, pasta)) throw new Error("Só pastas das cópias dos cards.");
+  const t0 = Date.now();
+  const r = await docker(["run", "--rm", "--memory", "3g", "-v", `${pasta}:${pasta}`, "-w", pasta, "-e", "CI=1", imagem, "sh", "-c", script], pasta, tempo);
+  return { ...r, ms: Date.now() - t0 };
+}
+
 const dentro = (raiz: string, caminho: string) => {
   const r = relative(raiz, caminho);
   return r === "" || (!r.startsWith("..") && !isAbsolute(r));

@@ -44,7 +44,7 @@ export function ferramentaDePesquisa(raiz: string, o: { cardId?: number; agenteI
         sistema: SISTEMA,
         mensagem: pergunta,
         ferramentas: [
-          ...ferramentasDeProjeto(raiz),
+          ...ferramentasDeProjeto(raiz, { enxuto: provedorDe(modelo).provedor === "ollama" }),
           ferramenta("responder", "Entrega a resposta da pesquisa e termina.", { resposta: { type: "string" } }, ["resposta"], (x) => {
             resposta = texto(x, "resposta", 60_000);
             return { texto: "Resposta registrada.", fim: true };
