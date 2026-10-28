@@ -217,6 +217,31 @@ async function lerPagina(p: Page, modo: Modo | null): Promise<string> {
 
 /* ---------- Ferramenta ---------- */
 
+/**
+ * O texto que o agente quis dizer quando o alvo não é um seletor válido: `button:contains("Salvar")`,
+ * `button[submit]: "Salvar"` ou só `Salvar`. Modelos menores escrevem seletores assim o tempo todo.
+ */
+export function textoDoAlvo(alvo: string): string {
+  const aspas = /["“']([^"”']{1,120})["”']/.exec(alvo);
+  if (aspas) return aspas[1]!.trim();
+  return alvo.replace(/^text=/, "").trim();
+}
+
+/**
+ * O elemento do alvo: o seletor como veio, se ele for válido e achar algo; senão pelo texto, como uma pessoa
+ * procuraria (botão, link ou rótulo do campo com esse nome, depois qualquer texto igual).
+ */
+async function localizar(p: Page, alvo: string, para: "clicar" | "preencher") {
+  const direto = p.locator(alvo).first();
+  if (await direto.count().catch(() => 0)) return direto;
+  const t = textoDoAlvo(alvo);
+  const porNome =
+    para === "clicar"
+      ? p.getByRole("button", { name: t }).or(p.getByRole("link", { name: t })).or(p.getByText(t))
+      : p.getByLabel(t).or(p.getByPlaceholder(t)).or(p.getByRole("textbox", { name: t }));
+  return porNome.first();
+}
+
 const ACOES = ["abrir", "ler", "print", "clicar", "preencher", "tecla", "rolar", "voltar", "esperar", "fechar"] as const;
 type Acao = (typeof ACOES)[number];
 
@@ -263,7 +288,7 @@ export async function executarAcao(cardId: number, agenteId: string, urlLocal: s
     } else if (acao === "clicar") {
       if (!alvo) throw new ErroEntrada('Informe o alvo: "link:N" (da lista do ler), um texto ("text=Entrar") ou um seletor CSS.');
       const link = /^link:(\d+)$/.exec(alvo);
-      const loc = link ? p.locator("a[href]").filter({ visible: true }).nth(Number(link[1]) - 1) : p.locator(alvo).first();
+      const loc = link ? p.locator("a[href]").filter({ visible: true }).nth(Number(link[1]) - 1) : await localizar(p, alvo, "clicar");
       if (!interageLivre) {
         // Site externo em só leitura: só seguir links (navegação), nada de botões que enviam algo.
         // O próprio elemento ou o link que o contém (XPath; scripts como texto não servem aqui).
@@ -279,7 +304,7 @@ export async function executarAcao(cardId: number, agenteId: string, urlLocal: s
     } else if (acao === "preencher") {
       exigirTeste("preencher");
       if (!alvo) throw new ErroEntrada("Informe o alvo (seletor ou rótulo).");
-      await p.locator(alvo).first().fill(valor);
+      await (await localizar(p, alvo, "preencher")).fill(valor);
       texto = `Preenchido: ${alvo}.`;
     } else if (acao === "tecla") {
       exigirTeste("tecla");
