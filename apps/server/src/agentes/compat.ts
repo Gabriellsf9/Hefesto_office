@@ -113,6 +113,14 @@ function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
     const t = textoDe(msgs[i]!.content);
     if (t.length > CORTE_RECENTE) msgs[i]!.content = `${t.slice(0, CORTE_RECENTE)}\n[…cortado para caber no contexto. Rode a ferramenta de novo se precisar do resto.]`;
   }
+  // Nem assim: o último resultado (ex.: o mapa do projeto inteiro) fica só com o que cabe. Sem isso o card esperava
+  // "um modelo com espaço", recomeçava, pedia o mesmo mapa e travava de novo.
+  const ultimo = ferramentas.at(-1);
+  const excesso = tokensDe(msgs, porToken) - limiteTokens;
+  if (ultimo === undefined || excesso <= 0) return;
+  const t = textoDe(msgs[ultimo]!.content);
+  const cabe = Math.max(2000, t.length - Math.ceil(excesso * porToken) - 500);
+  if (cabe < t.length) msgs[ultimo]!.content = `${t.slice(0, cabe)}\n[…cortado: o resultado inteiro não cabe no contexto do modelo local. Peça algo mais específico (uma pasta, um arquivo ou um trecho).]`;
 }
 const CORTE_RECENTE = 3000;
 
