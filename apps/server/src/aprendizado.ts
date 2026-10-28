@@ -45,9 +45,12 @@ export function modeloEscalonado(agente: Agent, papel: Papel, card: Card, codigo
   const falhas = falhasDoCard(card.id);
   const local = modeloLocalPrimeiro();
   if (local && papel === "autor" && codigoVerificavel && falhas === 0) return { modelo: local, motivo: "1ª tentativa no modelo local (a verificação confere)" };
+  // Agente escolhido para outro provedor (Ollama, OpenAI, Gemini): a 1ª tentativa é nele.
+  const foraDoClaude = provedorDe(base).provedor !== "claude";
+  if (foraDoClaude && falhas === 0) return { modelo: base, motivo: null };
   // Saiu do local (falhou): volta para o Claude do modo de custo antes de subir.
-  const claude = provedorDe(base).provedor === "claude" ? base : modeloPara(agente.modelo, papel);
-  const extra = local && codigoVerificavel ? Math.max(0, falhas - 1) : falhas;
+  const claude = foraDoClaude ? modeloPara(agente.modelo, papel) : base;
+  const extra = (local && codigoVerificavel) || foraDoClaude ? Math.max(0, falhas - 1) : falhas;
   const niveis = extra >= 4 ? 2 : extra >= 2 ? 1 : 0;
   const modelo = subir(claude, niveis);
   return { modelo, motivo: modelo !== base ? `subiu para ${modelo.replace("claude-", "")} depois de ${falhas} falha(s)` : null };

@@ -411,12 +411,27 @@ export const tetoDoCard = (card: Card) => limiteDoCard(card) + Number(getSetting
 /** Libera mais um limite para o card parado (botão Liberar, comentário ou Telegram) e ele continua de onde parou. */
 export function liberarGasto(id: number, autor = "voce"): Card {
   const card = lerCard(id);
+  // O limite já subiu desde que o card parou (Configurações): só destrava, sem somar mais um limite.
+  if (card.etiquetas.includes(ETIQUETA_LIMITE) && card.custoUsd < tetoDoCard(card)) return destravarDentroDoTeto(card, autor);
   const lim = limiteDoCard(card);
   const extra = Number(getSetting(`card_${id}_liberado_usd`) ?? 0);
   setSetting(`card_${id}_liberado_usd`, String(Math.max(extra, card.custoUsd - lim) + lim));
   db.prepare("UPDATE cards SET bloqueado = 0, etiquetas = ?, atualizado_em = ? WHERE id = ?").run(JSON.stringify(card.etiquetas.filter((e) => e !== ETIQUETA_LIMITE)), Date.now(), id);
   comentar(id, autor, "comentario", `Liberou mais US$ ${lim.toFixed(2)} para este card (novo teto: US$ ${(Math.max(extra, card.custoUsd - lim) + 2 * lim).toFixed(2)}).`);
   return publicar(id);
+}
+
+function destravarDentroDoTeto(card: Card, autor: string): Card {
+  db.prepare("UPDATE cards SET bloqueado = 0, etiquetas = ?, atualizado_em = ? WHERE id = ?").run(JSON.stringify(card.etiquetas.filter((e) => e !== ETIQUETA_LIMITE)), Date.now(), card.id);
+  comentar(card.id, autor, "comentario", `O teto deste card agora é US$ ${tetoDoCard(card).toFixed(2)} (gastou US$ ${card.custoUsd.toFixed(2)}): continua de onde parou.`);
+  return publicar(card.id);
+}
+
+/** Cards parados no limite de gasto que voltaram a caber no teto (você subiu o limite): destrava sozinho. */
+export function destravarCardsNoTeto(cards: Card[]): number {
+  const voltaram = cards.filter((c) => c.bloqueado && c.etiquetas.includes(ETIQUETA_LIMITE) && c.custoUsd < tetoDoCard(c));
+  for (const c of voltaram) destravarDentroDoTeto(c, "devops");
+  return voltaram.length;
 }
 
 /** O card já gastou o que podia: o limite do tipo dele, mais o que você liberou. */

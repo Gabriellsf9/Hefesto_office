@@ -29,7 +29,7 @@ import { ferramentasDeInfra } from "../areas/infra.ts";
 import { ferramentasDeFinancas } from "../areas/financas.ts";
 import { ferramentasDeAtendimento } from "../areas/atendimento.ts";
 import {
-  comentar, criarCard, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
+  comentar, criarCard, destravarCardsNoTeto, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
   ultimaEntrega,
 } from "../tarefas.ts";
 import { NO_MAC } from "../plataforma.ts";
@@ -371,12 +371,16 @@ export function prontoParaValidar(card: Card) {
 async function ciclo() {
   const estado = estadoMotor();
   const client = clienteClaude();
-  const cards = listarCards();
+  let cards = listarCards();
+  // Você subiu o limite por card: quem tinha parado no limite antigo volta sozinho.
+  if (destravarCardsNoTeto(cards)) cards = listarCards();
   const porId = new Map(cards.map((c) => [c.id, c]));
   const trabalhos = [
     ...cards.filter(prontoParaValidar).map((card) => ({ card, tipo: "validar" as const, agente: card.validador! })),
     ...cards
-      .filter((c) => prontoParaExecutar(c, porId) && !esperandoEntrega(c.id))
+      // Card de apoio (pedido no meio do trabalho do pai) só começa quando a rodada do pai termina: antes
+      // disso a cópia ainda não tem os arquivos que o pai está escrevendo.
+      .filter((c) => prontoParaExecutar(c, porId) && !esperandoEntrega(c.id) && !(c.paiId !== null && emAndamento.get(c.paiId)?.tipo === "executar"))
       .map((card) => ({ card, tipo: "executar" as const, agente: card.dono! })),
   ]
     .filter((t) => !emAndamento.has(t.card.id))
