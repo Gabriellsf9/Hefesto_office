@@ -80,10 +80,10 @@ function limparEsquema(v: unknown): unknown {
  */
 /**
  * Degraus de contexto do modelo local quando o trabalho não cabe no padrão. Medido no 9b com 8 GB de VRAM: 32 mil
- * escreve a ~19 tok/s e 64 mil a ~6 tok/s, com a RAM livre quase igual (o Qwen 3.5 guarda pouco por token).
+ * escreve a ~19 tok/s, 64 mil a ~6 e 96 mil a ~3, com a RAM livre quase igual (o Qwen 3.5 guarda pouco por token).
  * Usa o menor que couber: o mais lento só quando precisa.
  */
-const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536];
+const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536, 98_304];
 
 /** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
 const tokensDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3;

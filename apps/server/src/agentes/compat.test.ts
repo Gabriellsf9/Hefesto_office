@@ -47,7 +47,7 @@ test("trabalho que não cabe no contexto do modelo local vai para o Claude, em v
       rodarAgente({
         modelo: "ollama:modelo-teste",
         agenteId: "ux-writer",
-        sistema: "regras ".repeat(30000), // ~210 mil caracteres: não cabe nem no maior contexto ampliado (64 mil tokens)
+        sistema: "regras ".repeat(50000), // ~350 mil caracteres: não cabe nem no maior contexto ampliado (96 mil tokens)
         mensagem: "faça",
         ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
         lembrete: "Chame entregar.",
@@ -124,7 +124,7 @@ test("não cabe no local e o Claude está fora do ar: espera (passageiro), sem c
     const erro = await rodarAgente({
       modelo: "ollama:modelo-teste",
       agenteId: "dev-backend",
-      sistema: "regras ".repeat(30000),
+      sistema: "regras ".repeat(50000),
       mensagem: "faça",
       ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
       lembrete: "Chame entregar.",
