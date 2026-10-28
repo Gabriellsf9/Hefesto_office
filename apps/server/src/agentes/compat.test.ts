@@ -4,24 +4,31 @@ import { rodarAgente, ferramenta } from "./loop.ts";
 import { resumoChamadas } from "../chamadas.ts";
 import { setSetting } from "../db.ts";
 import { saveApiKey } from "../secrets.ts";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
-// Ollama de mentira: /api/show diz que chama ferramentas; /api/chat responde em streaming
-// com uma chamada à ferramenta final.
-function ollamaFalso() {
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (entrada: string | URL | Request) => {
-    const url = String(entrada);
-    if (url.endsWith("/api/show")) return Response.json({ capabilities: ["completion", "tools"] });
-    if (url.endsWith("/api/chat")) {
+// Ollama de mentira, num servidor HTTP de verdade (o chat não passa pelo fetch): /api/show diz que chama
+// ferramentas; /api/chat responde em streaming com uma chamada à ferramenta final.
+async function ollamaFalso() {
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    if (req.url === "/api/chat") {
       const linhas = [
         { message: { content: "", tool_calls: [{ function: { name: "entregar", arguments: { conteudo: "pronto" } } }] } },
         { done: true, done_reason: "stop", prompt_eval_count: 120, eval_count: 30 },
       ];
-      return new Response(linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
+      return void res.end(linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
     }
-    throw new Error(`fetch inesperado: ${url}`);
-  }) as typeof fetch;
-  return () => void (globalThis.fetch = original);
+    res.statusCode = 404;
+    res.end();
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  const { port } = servidor.address() as AddressInfo;
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${port}`, contexto: 16_384 } }));
+  return () => {
+    servidor.close();
+    setSetting("provedores", "{}");
+  };
 }
 
 test("trabalho que não cabe no contexto do modelo local vai para o Claude, em vez de o Ollama cortar as instruções", async () => {
@@ -56,7 +63,7 @@ test("trabalho que não cabe no contexto do modelo local vai para o Claude, em v
 });
 
 test("sombra no modelo local: se não couber, para (não gasta no Claude)", async () => {
-  const restaurar = ollamaFalso();
+  const restaurar = await ollamaFalso();
   try {
     await assert.rejects(
       rodarAgente({
@@ -77,7 +84,7 @@ test("sombra no modelo local: se não couber, para (não gasta no Claude)", asyn
 });
 
 test("chamadas a modelos fora do Claude entram no rastreamento (Operação → Chamadas)", async () => {
-  const restaurar = ollamaFalso();
+  const restaurar = await ollamaFalso();
   try {
     const r = await rodarAgente({
       modelo: "ollama:modelo-teste",

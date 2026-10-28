@@ -1,4 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { Readable } from "node:stream";
 import { agentById } from "@empresa/org";
 import { modeloPara, orcamentoEsgotado, registrarUsoTokens } from "../custo.ts";
 import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
@@ -185,6 +188,23 @@ async function chamarCompat(p: "openai" | "gemini", modelo: string, msgs: Msg[],
 
 /* ---------- Ollama (API nativa) ---------- */
 
+/**
+ * POST sem o limite de 5 minutos sem dados do fetch do Node: com ferramentas, o Ollama segura o texto até fechar a
+ * chamada da ferramenta, e num contexto grande (a ~6 tok/s) isso passa de 5 minutos e o fetch cortava ("terminated").
+ * O sinal continua interrompendo (card movido, empresa pausada).
+ */
+function postarSemLimiteDeTempo(url: string, corpo: string, sinal?: AbortSignal): Promise<Response> {
+  return new Promise((ok, falha) => {
+    const pedido = (url.startsWith("https:") ? httpsRequest : httpRequest)(
+      url,
+      { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(corpo) }, signal: sinal },
+      (res) => ok(new Response(Readable.toWeb(res) as ReadableStream<Uint8Array>, { status: res.statusCode ?? 500, statusText: res.statusMessage })),
+    );
+    pedido.on("error", falha);
+    pedido.end(corpo);
+  });
+}
+
 // Um pedido por vez ao Ollama: numa máquina de 16 GB, dois modelos (ou dois contextos grandes)
 // ao mesmo tempo estouram a memória. Os agentes locais esperam a vez.
 let filaOllama: Promise<unknown> = Promise.resolve();
@@ -215,10 +235,9 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
     if (sinal?.aborted) throw new ErroInterrompido(String(sinal.reason ?? "interrompido"));
     let res: Response;
     try {
-      res = await fetch(`${url}/api/chat`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      res = await postarSemLimiteDeTempo(
+        `${url}/api/chat`,
+        JSON.stringify({
           model: modelo,
           messages: mensagens,
           stream: true,
@@ -228,8 +247,8 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
           ...(caps?.includes("thinking") ? { think: esforco !== "low" } : {}),
           ...(tools.length ? { tools } : {}),
         }),
-        signal: sinal,
-      });
+        sinal,
+      );
     } catch (e) {
       if (sinal?.aborted) throw e;
       throw new ErroProvedor(`O Ollama não está respondendo em ${url}. Abra o app do Ollama (ou rode "ollama serve").`, 0, true);
