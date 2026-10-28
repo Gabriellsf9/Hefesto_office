@@ -352,9 +352,12 @@ export function filhosAbertos(cardId: number, cards: Iterable<Card>): Card[] {
 
 export function prontoParaExecutar(card: Card, porId: Map<number, Card>) {
   const tipo = tipoColuna(card);
+  // QA, Segurança e Code review trabalham numa coluna de validação ("Em QA", "Segurança"): o card dessas
+  // salas parado na própria coluna, sem estar em validação (ex.: devolvido), volta para o dono.
+  const naColunaDaSala = tipo === "validacao" && card.coluna === colunaDeTrabalho(card.fluxo, card.sala);
   return (
     !card.demo && !card.bloqueado && !card.emValidacao && !!card.dono && card.coluna !== "backlog" &&
-    (tipo === "fila" || tipo === "trabalho" || tipo === "bug") && antesDoCeo(card) && dependenciaOk(card, porId) &&
+    (tipo === "fila" || tipo === "trabalho" || tipo === "bug" || naColunaDaSala) && antesDoCeo(card) && dependenciaOk(card, porId) &&
     // Quem pediu partes do trabalho a outras áreas espera elas terminarem para continuar com o resultado.
     !filhosAbertos(card.id, porId.values()).length
   );
@@ -368,6 +371,19 @@ export function prontoParaValidar(card: Card) {
   return !card.demo && !card.bloqueado && card.emValidacao && !!card.validador;
 }
 
+/**
+ * Card de apoio e o pai mexem na mesma cópia: um só executa quando o outro não está executando.
+ * O filho espera a rodada do pai (a cópia ainda não tem os arquivos que o pai está escrevendo) e o pai
+ * espera a do filho (os dois escreveriam nos mesmos arquivos ao mesmo tempo).
+ */
+export function esperaParente(card: Card, porId: Map<number, Card>, rodando: Iterable<TrabalhoEmAndamento>) {
+  for (const t of rodando) {
+    if (t.tipo !== "executar" || t.cardId === card.id) continue;
+    if (t.cardId === card.paiId || porId.get(t.cardId)?.paiId === card.id) return true;
+  }
+  return false;
+}
+
 async function ciclo() {
   const estado = estadoMotor();
   const client = clienteClaude();
@@ -378,9 +394,7 @@ async function ciclo() {
   const trabalhos = [
     ...cards.filter(prontoParaValidar).map((card) => ({ card, tipo: "validar" as const, agente: card.validador! })),
     ...cards
-      // Card de apoio (pedido no meio do trabalho do pai) só começa quando a rodada do pai termina: antes
-      // disso a cópia ainda não tem os arquivos que o pai está escrevendo.
-      .filter((c) => prontoParaExecutar(c, porId) && !esperandoEntrega(c.id) && !(c.paiId !== null && emAndamento.get(c.paiId)?.tipo === "executar"))
+      .filter((c) => prontoParaExecutar(c, porId) && !esperandoEntrega(c.id) && !esperaParente(c, porId, emAndamento.values()))
       .map((card) => ({ card, tipo: "executar" as const, agente: card.dono! })),
   ]
     .filter((t) => !emAndamento.has(t.card.id))
@@ -399,6 +413,8 @@ async function ciclo() {
   for (const t of trabalhos) {
     if (emAndamento.size >= estado.maxSimultaneos) break;
     if (ocupados.has(t.agente) || !agentById[t.agente]) continue; // um card por agente de cada vez
+    // De novo aqui: o pai pode ter começado neste mesmo ciclo, depois que a lista foi montada.
+    if (t.tipo === "executar" && esperaParente(t.card, porId, emAndamento.values())) continue;
     // Sem chave do provedor do agente (Claude sem chave, OpenAI sem chave…): o card espera.
     if (!modeloDisponivel(modeloDoAgente(agentById[t.agente]!, "autor"))) continue;
     ocupados.add(t.agente);

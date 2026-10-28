@@ -243,7 +243,9 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     } catch (err) {
       if (o.sinal?.aborted) throw interrompido();
       // Com eager_input_streaming, uma entrada de ferramenta ilegível rejeita aqui. Só isso é repetido.
-      if (err instanceof Anthropic.APIError || tentativasJson++ >= 2) throw err;
+      if (err instanceof Anthropic.APIError) throw err;
+      // Três vezes seguidas: vale uma nova vez do card (como entrega vazia) antes de bloquear.
+      if (tentativasJson++ >= 2) throw new ErroSemEntrega(`O modelo mandou parâmetros de ferramenta ilegíveis 3 vezes seguidas (${String(err instanceof Error ? err.message : err).slice(0, 160)}).`);
       continue;
     }
     const usd = registrarUso(o.modelo, msg.usage);

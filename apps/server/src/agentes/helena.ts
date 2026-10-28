@@ -64,8 +64,44 @@ function resumoDaBoard(escritorio = SEDE): string {
 function conversaRecente(): string {
   return recentChat(16)
     .slice(0, -1) // a última é o pedido atual
-    .map((m) => `${m.de === "voce" ? "CEO" : (agentById[m.de]?.nome ?? m.de)}: ${m.texto}`)
+    .map((m) => `${m.de === "voce" ? "CEO" : (agentById[m.de]?.nome ?? m.de)}: ${m.texto}${m.opcoes?.length ? `\n(opções dadas ao CEO: ${m.opcoes.join(" | ")})` : ""}`)
     .join("\n");
+}
+
+export interface PerguntaAoCeo {
+  texto: string;
+  opcoes: string[];
+}
+
+/**
+ * Na dúvida, a coordenadora pergunta em vez de adivinhar: a pergunta vai ao chat com as opções em botões
+ * (o clique responde como se o CEO tivesse escrito a opção). Termina a vez sem criar card.
+ */
+export function ferramentaPerguntar(aoPerguntar: (p: PerguntaAoCeo) => void) {
+  return ferramenta(
+    "perguntar_ao_ceo",
+    "Pergunta ao CEO quando o pedido é ambíguo e cada leitura levaria a um trabalho diferente (ex.: atividade nova ou continuação de um card que já existe; escopo de um projeto inteiro ou de uma parte). Não crie card antes da resposta. As opções viram botões no chat; o CEO também pode escrever outra coisa.",
+    {
+      pergunta: { type: "string", description: "Uma pergunta curta, dizendo o que ficou em dúvida" },
+      opcoes: {
+        type: "array",
+        minItems: 2,
+        maxItems: 4,
+        items: { type: "string" },
+        description: "2 a 4 respostas prontas, escritas como o CEO diria (ex.: \"Atividade nova: pentest do Parliamo inteiro\"), a mais provável primeiro",
+      },
+    },
+    ["pergunta", "opcoes"],
+    (e) => {
+      const opcoes = (Array.isArray(e.opcoes) ? e.opcoes : [])
+        .filter((o): o is string => typeof o === "string" && !!o.trim())
+        .map((o) => o.trim().slice(0, 120))
+        .slice(0, 4);
+      if (opcoes.length < 2) throw new ErroEntrada("Envie de 2 a 4 opções em opcoes.");
+      aoPerguntar({ texto: texto(e, "pergunta", 600), opcoes });
+      return { texto: "Pergunta enviada ao CEO. Espere a resposta.", fim: true };
+    },
+  );
 }
 
 async function atender(pedido: string, imagens: string[] = [], arquivos: string[] = [], escritorio = SEDE) {
@@ -82,6 +118,7 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
   }
   setAgentStatus(HELENA_, "pensando", "Lendo o pedido do CEO");
   const criados: string[] = [];
+  let pergunta: PerguntaAoCeo | null = null;
   // Num escritório criado por você, o projeto é o do escritório (não o ativo da sede).
   const ativo = escritorio === SEDE ? projetoAtivo() : (definicaoDe(escritorio)?.projetoId ?? null);
 
@@ -201,7 +238,7 @@ ${fluxosDe(escritorio).map((f) => `- ${f.nome}: ${f.colunas.map((c) => c.nome).j
 ## Novo pedido do CEO
 ${pedido}${imagens.length ? `\n\n(O CEO anexou ${imagens.length} imagem(ns), acima. Os cards que você criar levam as imagens junto, para quem for trabalhar neles.)` : ""}${arquivos.length ? `\n\n(O CEO anexou ${arquivos.length} arquivo(s), acima. Os cards que você criar levam os arquivos junto.)` : ""}
 
-Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. ${naSede ? "Se for um pedido de clientes ou leads, use iniciar_prospeccao (se faltar a região, pergunte antes). " : ""}Se for pergunta, responda direto.`;
+Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. ${naSede ? "Se for um pedido de clientes ou leads, use iniciar_prospeccao (se faltar a região, pergunte antes). " : ""}Se for pergunta, responda direto. Se o pedido der para entender de mais de um jeito e cada jeito levar a um trabalho diferente, não adivinhe: use perguntar_ao_ceo.`;
 
   try {
     setAgentStatus(HELENA_, "trabalhando", "Respondendo ao CEO");
@@ -213,6 +250,7 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. $
       ferramentas: [
         ferramentaMemoria,
         criarCards,
+        ferramentaPerguntar((p) => (pergunta = p)),
         // Prospecção e conectores são da empresa: só pela sede.
         ...(naSede ? [prospectar] : []),
         ...ferramentasDeConectores(agentById[HELENA_]!, null),
@@ -226,6 +264,11 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. $
       maxRodadas: 4,
     });
     emit({ type: "chat.parcial", de: HELENA_, texto: "" });
+    const p = pergunta as PerguntaAoCeo | null;
+    if (p) {
+      postChat(HELENA_, p.texto, undefined, undefined, p.opcoes);
+      return;
+    }
     const resposta = r.texto.trim() || (criados.length ? `Feito. Criei e distribuí:\n${criados.map((c) => `- ${c}`).join("\n")}` : "");
     postChat(HELENA_, resposta || "Não consegui responder agora. Pode repetir?");
   } catch (err) {

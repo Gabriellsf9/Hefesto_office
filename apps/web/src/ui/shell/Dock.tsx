@@ -73,7 +73,14 @@ export function Dock() {
     setErroAnexo(null);
   };
 
-  const recentes = historico ? [] : chat.slice(-2).filter((m) => agora - m.ts < 30_000);
+  // Pergunta com opções ainda sem resposta (é a última mensagem): fica na tela até você escolher.
+  const ultima = chat.at(-1);
+  const pendente = ultima?.opcoes?.length && ultima.de !== "voce" ? ultima : null;
+  const responder = (opcao: string) => {
+    if (!conectado) return;
+    send({ type: "command", texto: opcao, escritorio: escritorioAtivo() });
+  };
+  const recentes = historico ? [] : chat.slice(-2).filter((m) => agora - m.ts < 30_000 || m === pendente);
   const pode = conectado && (!!texto.trim() || anexos.length > 0 || documentos.length > 0) && subindo === 0;
 
   return (
@@ -85,7 +92,7 @@ export function Dock() {
         {!historico && (recentes.length > 0 || parcial) && (
           <div className="pointer-events-auto space-y-2">
             {recentes.map((m) => (
-              <Bolha key={m.id} m={m} flutuante />
+              <Bolha key={m.id} m={m} flutuante responder={m === pendente ? responder : undefined} />
             ))}
             {parcial && agentById[parcial.de] && <Bolha m={{ id: "p", ts: Date.now(), de: parcial.de, texto: parcial.texto }} flutuante escrevendo />}
           </div>
@@ -167,7 +174,7 @@ export function Dock() {
       <Gaveta aberta={historico} fechar={() => setHistorico(false)} titulo="Conversa com a empresa" subtitulo="Helena e quem você chamar pelo nome" largura={440} semFundo>
         <div className="space-y-3 p-4 pb-40">
           {chat.length === 0 && <p className="py-10 text-center text-pequeno text-fg-2">Nenhuma mensagem ainda. Escreva abaixo ou segure o espaço para falar.</p>}
-          {chat.map((m) => <Bolha key={m.id} m={m} />)}
+          {chat.map((m) => <Bolha key={m.id} m={m} responder={m === pendente ? responder : undefined} />)}
           {parcial && agentById[parcial.de] && <Bolha m={{ id: "p", ts: Date.now(), de: parcial.de, texto: parcial.texto }} escrevendo />}
           <FimDaLista dep={chat.length + (parcial?.texto.length ?? 0)} />
         </div>
@@ -182,7 +189,13 @@ function FimDaLista({ dep }: { dep: number }) {
   return <div ref={ref} />;
 }
 
-function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" | "de" | "texto" | "imagens" | "arquivos">; flutuante?: boolean; escrevendo?: boolean }) {
+/** responder: só na pergunta ainda sem resposta; nas já respondidas as opções aparecem apagadas. */
+function Bolha({ m, flutuante, escrevendo, responder }: {
+  m: Pick<ChatMessage, "id" | "ts" | "de" | "texto" | "imagens" | "arquivos" | "opcoes">;
+  flutuante?: boolean;
+  escrevendo?: boolean;
+  responder?: (opcao: string) => void;
+}) {
   const a = m.de === "voce" ? null : agentById[m.de];
   return (
     <div className={cx("flex gap-2.5", a ? "" : "flex-row-reverse")}>
@@ -200,6 +213,26 @@ function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" 
           </div>
         )}
         <div className="whitespace-pre-wrap">{m.texto}</div>
+        {m.opcoes && m.opcoes.length > 0 && (
+          <div className="mt-2 flex flex-col items-start gap-1.5">
+            {m.opcoes.map((o, i) => (
+              <button
+                key={o}
+                type="button"
+                disabled={!responder}
+                onClick={() => responder?.(o)}
+                className={cx(
+                  "min-h-alvo rounded-ctl px-3 py-1.5 text-left text-pequeno font-medium transition-colors",
+                  i === 0 ? "border border-ink bg-ink text-on-ink" : "border border-line bg-surface text-fg hover:bg-hover",
+                  "disabled:cursor-default disabled:opacity-45",
+                )}
+              >
+                {o}
+              </button>
+            ))}
+            {responder && <span className="text-legenda text-fg-3">Ou escreva outra coisa abaixo.</span>}
+          </div>
+        )}
         {m.arquivos && m.arquivos.length > 0 && <ListaArquivos arquivos={m.arquivos} escuro={!a} />}
         {m.imagens && m.imagens.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1.5">

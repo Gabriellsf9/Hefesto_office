@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "test": "node --import tsx --import ./src/teste-ambiente.ts --test --test-force-exit \"src/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

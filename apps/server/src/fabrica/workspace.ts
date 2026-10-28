@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { colunaDe, type Card, type CodigoDoCard } from "@empresa/shared";
@@ -48,14 +48,47 @@ export async function g(cwd: string, ...args: string[]) {
 const slug = (s: string) =>
   s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "trabalho";
 
-/** O worktree deste card, de um card de origem (bug → história) ou do card pai. */
+/**
+ * O worktree deste card, de um card de origem (bug → história) ou do card pai, subindo a cadeia:
+ * o apoio de um apoio (EMP-30 → EMP-26 → EMP-11) trabalha na cópia de quem tem uma.
+ */
 export function worktreeDoCard(card: Card): Worktree | null {
-  const ids = [card.id, card.bugDe, card.paiId].filter((x): x is number => typeof x === "number");
-  for (const id of ids) {
-    const r = db.prepare("SELECT * FROM worktrees WHERE card_id = ? AND status = 'ativo'").get(id) as Linha | undefined;
-    if (r) return deLinha(r);
+  const vistos = new Set<number>();
+  let nivel: Card[] = [card];
+  for (let profundidade = 0; nivel.length && profundidade < 6; profundidade++) {
+    const acima: Card[] = [];
+    for (const c of nivel) {
+      if (vistos.has(c.id)) continue;
+      vistos.add(c.id);
+      const r = db.prepare("SELECT * FROM worktrees WHERE card_id = ? AND status = 'ativo'").get(c.id) as Linha | undefined;
+      if (r) return deLinha(r);
+      for (const id of [c.bugDe, c.paiId]) {
+        if (typeof id !== "number" || vistos.has(id)) continue;
+        try {
+          acima.push(lerCard(id));
+        } catch {
+          // card de origem apagado
+        }
+      }
+    }
+    nivel = acima;
   }
   return null;
+}
+
+/**
+ * Sobra de uma criação interrompida (servidor caiu no meio do "worktree add"): a branch existe e a pasta
+ * pode estar registrada no git, travada, sem o registro no banco. Tira a pasta e devolve a base da branch,
+ * para recriar a cópia nela sem perder commits.
+ */
+async function sobraDeCriacao(repo: string, branch: string, caminho: string, base: string): Promise<string | null> {
+  const existe = await g(repo, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`).then(() => true, () => false);
+  await g(repo, "worktree", "unlock", caminho).catch(() => {});
+  await g(repo, "worktree", "remove", "--force", "--force", caminho).catch(() => {});
+  rmSync(caminho, { recursive: true, force: true });
+  await g(repo, "worktree", "prune").catch(() => {});
+  if (!existe) return null;
+  return g(repo, "merge-base", base, branch).catch(() => base);
 }
 
 export function registroDoCard(cardId: number): Worktree | null {
@@ -83,7 +116,11 @@ export async function garantirWorktree(card: Card, repo: string, projetoId: numb
   mkdirSync(pasta, { recursive: true });
   const caminho = join(pasta, card.chave);
   const branch = `empresa/${card.chave.toLowerCase()}-${slug(card.titulo)}`;
-  await g(repo, "worktree", "add", "-b", branch, caminho, base);
+  const baseDaSobra = await sobraDeCriacao(repo, branch, caminho, base);
+  if (baseDaSobra) {
+    await g(repo, "worktree", "add", caminho, branch);
+    base = baseDaSobra;
+  } else await g(repo, "worktree", "add", "-b", branch, caminho, base);
   db.prepare("INSERT OR REPLACE INTO worktrees (card_id, projeto_id, repo, caminho, branch, base, status, criado_em) VALUES (?, ?, ?, ?, ?, ?, 'ativo', ?)")
     .run(card.id, projetoId, repo, caminho, branch, base, Date.now());
   comentar(card.id, "devops", "comentario", `Cópia isolada criada na branch \`${branch}\`. A sua pasta original não muda até você fazer o merge.`);

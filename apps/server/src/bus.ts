@@ -34,8 +34,11 @@ export function postFeed(sala: RoomId, agenteId: string | null, texto: string) {
   emit({ type: "feed", item });
 }
 
-export function postChat(de: string, texto: string, imagens?: string[], arquivos?: { url: string; nome: string }[]) {
-  const mensagem: ChatMessage = { id: randomUUID(), ts: Date.now(), de, texto, ...(imagens?.length ? { imagens } : {}), ...(arquivos?.length ? { arquivos } : {}) };
+export function postChat(de: string, texto: string, imagens?: string[], arquivos?: { url: string; nome: string }[], opcoes?: string[]) {
+  const mensagem: ChatMessage = {
+    id: randomUUID(), ts: Date.now(), de, texto,
+    ...(imagens?.length ? { imagens } : {}), ...(arquivos?.length ? { arquivos } : {}), ...(opcoes?.length ? { opcoes } : {}),
+  };
   insertChat(mensagem);
   emit({ type: "chat", mensagem });
 }

@@ -72,14 +72,21 @@ export function recentFeed(limit = 200): FeedItem[] {
 }
 
 export function insertChat(m: ChatMessage) {
-  db.prepare("INSERT INTO chat (id, ts, de, texto, imagens, arquivos) VALUES (?, ?, ?, ?, ?, ?)").run(m.id, m.ts, m.de, m.texto, m.imagens?.length ? JSON.stringify(m.imagens) : null, m.arquivos?.length ? JSON.stringify(m.arquivos) : null);
+  db.prepare("INSERT INTO chat (id, ts, de, texto, imagens, arquivos, opcoes) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    m.id, m.ts, m.de, m.texto, m.imagens?.length ? JSON.stringify(m.imagens) : null, m.arquivos?.length ? JSON.stringify(m.arquivos) : null, m.opcoes?.length ? JSON.stringify(m.opcoes) : null,
+  );
 }
 
 export function recentChat(limit = 100): ChatMessage[] {
-  const rows = db.prepare("SELECT id, ts, de, texto, imagens, arquivos FROM chat ORDER BY ts DESC LIMIT ?").all(limit) as {
-    id: string; ts: number; de: string; texto: string; imagens: string | null; arquivos: string | null;
+  const rows = db.prepare("SELECT id, ts, de, texto, imagens, arquivos, opcoes FROM chat ORDER BY ts DESC LIMIT ?").all(limit) as {
+    id: string; ts: number; de: string; texto: string; imagens: string | null; arquivos: string | null; opcoes: string | null;
   }[];
-  return rows.reverse().map((r) => ({ id: r.id, ts: r.ts, de: r.de, texto: r.texto, ...(r.imagens ? { imagens: JSON.parse(r.imagens) as string[] } : {}), ...(r.arquivos ? { arquivos: JSON.parse(r.arquivos) as { url: string; nome: string }[] } : {}) }));
+  return rows.reverse().map((r) => ({
+    id: r.id, ts: r.ts, de: r.de, texto: r.texto,
+    ...(r.imagens ? { imagens: JSON.parse(r.imagens) as string[] } : {}),
+    ...(r.arquivos ? { arquivos: JSON.parse(r.arquivos) as { url: string; nome: string }[] } : {}),
+    ...(r.opcoes ? { opcoes: JSON.parse(r.opcoes) as string[] } : {}),
+  }));
 }
 
 /** Adiciona uma coluna a uma tabela existente, se ainda não existir (migração simples). */
@@ -91,3 +98,4 @@ export function garantirColuna(tabela: string, coluna: string, definicao: string
 // Imagens anexadas no chat (endereços), adicionadas depois da criação da tabela.
 garantirColuna("chat", "imagens", "TEXT");
 garantirColuna("chat", "arquivos", "TEXT");
+garantirColuna("chat", "opcoes", "TEXT");

@@ -107,6 +107,8 @@ export interface ChatMessage {
   imagens?: string[];
   /** Arquivos anexados (PDF, Word, Excel…): endereço e nome original. */
   arquivos?: { url: string; nome: string }[];
+  /** Pergunta com respostas prontas (ex.: Helena na dúvida): cada opção vira um botão que responde por você. */
+  opcoes?: string[];
 }
 
 /* ---------- Livro da Empresa e entrevista de onboarding (Fase 2a) ---------- */
