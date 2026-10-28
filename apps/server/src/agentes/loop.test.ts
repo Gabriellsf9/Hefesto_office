@@ -52,3 +52,11 @@ test("retomada depois de um pause_turn: tira a chamada de ferramenta do servidor
   assert.match(ids, /srvtoolu_ok/, "a chamada com resultado fica");
   assert.doesNotMatch(ids, /srvtoolu_pendente|srvtoolu_so/);
 });
+
+test("conversa livre: resposta que só anuncia (\"Vou pesquisar…\") não vale como resposta; resposta de verdade vale", async () => {
+  const { soAnunciou } = await import("./loop.ts");
+  assert.equal(soAnunciou("Vou pesquisar na memória e no código para localizar o handler de tickets."), true);
+  assert.equal(soAnunciou("Deixa eu olhar o arquivo primeiro."), true);
+  assert.equal(soAnunciou("O handler fica em backend/internal/handlers/tickets.go:21."), false);
+  assert.equal(soAnunciou("Vou explicar em passos:\n- primeiro, o login\n- depois, o token"), false, "anúncio seguido de conteúdo é resposta");
+});

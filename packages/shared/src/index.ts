@@ -175,6 +175,28 @@ export interface AlertaSaude {
   resolvidoEm: number | null;
 }
 
+/** Conversa direta com um agente (fora dos cards), com histórico, o modelo que você escolher e ferramentas. */
+export interface Conversa {
+  id: number;
+  agente: string;
+  /** Modelo escolhido para esta conversa; null = o do agente. */
+  modelo: string | null;
+  projetoId: number | null;
+  titulo: string;
+  criadoEm: number;
+  atualizadoEm: number;
+  rodando: boolean;
+}
+export interface MensagemConversa {
+  id: number;
+  conversaId: number;
+  papel: "voce" | "agente";
+  texto: string;
+  ts: number;
+  modelo?: string | null;
+  custoUsd?: number;
+}
+
 export type ServerEvent =
   | {
       type: "hello";
@@ -254,7 +276,10 @@ export type ServerEvent =
   | { type: "focus"; sala: RoomId; agenteId?: string }
   | { type: "demo"; ativo: boolean }
   | { type: "chave"; configurada: boolean }
-  | { type: "alertas"; abertos: AlertaSaude[] };
+  | { type: "alertas"; abertos: AlertaSaude[] }
+  | { type: "conversa.mensagem"; mensagem: MensagemConversa }
+  | { type: "conversa.parcial"; conversaId: number; texto: string }
+  | { type: "conversa.estado"; conversaId: number; rodando: boolean };
 
 export type ClientEvent =
   | { type: "command"; texto: string; imagens?: string[]; arquivos?: string[]; escritorio?: string }

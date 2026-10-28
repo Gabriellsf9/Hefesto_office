@@ -16,3 +16,6 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </StrictMode>,
 );
+
+// Instalável como app (PWA): o service worker não guarda cache, só habilita a instalação.
+if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js").catch(() => null);

@@ -316,3 +316,38 @@ test("conversa longa no modelo local: a parte antiga vira um resumo (compactaç�
     setSetting("provedores", "{}");
   }
 });
+
+test("mensagem do CEO no meio do trabalho entra na próxima rodada, sem reiniciar", async () => {
+  const recebidos: { messages: { role: string; content: string }[] }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      const chamada = recebidos.length === 1 ? { name: "ler", arguments: {} } : { name: "entregar", arguments: { conteudo: "ok" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  const fila = ["Use o padrão de handlers de auth/, não invente outro."];
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.",
+      orientacoes: () => fila.splice(0),
+      ferramentas: [
+        ferramenta("ler", "Lê.", {}, [], () => ({ texto: "conteúdo" })),
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true);
+    assert.ok(!recebidos[0]!.messages.some((m) => String(m.content).includes("Mensagem do CEO")), "a primeira chamada já tem o pedido inteiro");
+    const ultima = recebidos[1]!.messages.at(-1)!;
+    assert.equal(ultima.role, "user");
+    assert.match(ultima.content, /Mensagem do CEO agora[\s\S]*padrão de handlers de auth/);
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});

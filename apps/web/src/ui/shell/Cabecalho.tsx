@@ -15,6 +15,7 @@ import { CampoOrcamento } from "../CampoOrcamento.tsx";
 export const NOMES_AREA: Record<Area, string> = {
   escritorio: "Escritório",
   entrada: "Caixa de entrada",
+  conversas: "Conversas",
   trabalho: "Trabalho",
   clientes: "Clientes",
   equipe: "Equipe",

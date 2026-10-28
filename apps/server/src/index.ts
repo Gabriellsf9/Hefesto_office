@@ -6,7 +6,7 @@ import { colunaDe } from "@empresa/shared";
 import type { CardEditavel, ClientEvent, ConfigCritica, ItemConhecimento, Meta, RitualId, ServerEvent, StatusResponse } from "@empresa/shared";
 import { estados, emit, subscribe } from "./bus.ts";
 import { recentChat, recentFeed } from "./db.ts";
-import { configurarMotor, estadoMotor, iniciarMotor, interromper } from "./agentes/motor.ts";
+import { configurarMotor, estadoMotor, iniciarMotor, interromper, orientarCard } from "./agentes/motor.ts";
 import { pedirParaHelena } from "./agentes/helena.ts";
 import { custoHoje } from "./custo.ts";
 import { configurarGatilho, listarGatilhos, type GatilhoId } from "./gatilhos.ts";
@@ -64,6 +64,7 @@ import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from 
 import { HOST } from "./plataforma.ts";
 import { configurarProvedores, estadoProvedores, marcarNoAr } from "./provedores.ts";
 import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
+import { apagarConversa, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
 import { montarPainel, configRelatorio, definirRelatorio, mandarRelatorio, iniciarRelatorioDiario } from "./painel.ts";
@@ -236,6 +237,26 @@ app.delete<{ Params: { id: string } }>("/api/evals/casos/:id", async (req) => {
 });
 
 // Vigia de saúde: alertas abertos (ou os últimos 100, com ?todos=1) e resolver à mão.
+// Conversa direta com qualquer agente e modelo (fora dos cards), com histórico e ferramentas.
+type CorpoConversa = { agente?: string; modelo?: string | null; projetoId?: number | null; titulo?: string };
+app.get("/api/conversas", async () => listarConversas());
+app.post<{ Body: CorpoConversa }>("/api/conversas", async (req) => criarConversa(req.body ?? {}));
+app.patch<{ Params: { id: string }; Body: CorpoConversa }>("/api/conversas/:id", async (req) => editarConversa(idDe(req.params.id), req.body ?? {}));
+app.delete<{ Params: { id: string } }>("/api/conversas/:id", async (req) => {
+  apagarConversa(idDe(req.params.id));
+  return listarConversas();
+});
+app.get<{ Params: { id: string } }>("/api/conversas/:id/mensagens", async (req) => listarMensagensDaConversa(idDe(req.params.id)));
+app.post<{ Params: { id: string }; Body: { texto?: string } }>("/api/conversas/:id/mensagens", async (req) => {
+  const texto = req.body?.texto?.trim();
+  if (!texto) throw new ErroCard("Escreva a mensagem.");
+  return enviarMensagem(idDe(req.params.id), texto.slice(0, 20_000));
+});
+app.post<{ Params: { id: string } }>("/api/conversas/:id/parar", async (req) => {
+  pararConversa(idDe(req.params.id));
+  return { ok: true };
+});
+
 app.get<{ Querystring: { todos?: string } }>("/api/alertas", async (req) => listarAlertas(req.query.todos !== "1"));
 app.post<{ Params: { id: string } }>("/api/alertas/:id/resolver", async (req) => {
   resolverAlerta(Number(req.params.id));
@@ -345,7 +366,10 @@ app.get<{ Params: { id: string } }>("/api/cards/:id/entregas", async (req) => li
 app.post<{ Params: { id: string }; Body: { texto: string } }>("/api/cards/:id/comentarios", async (req) => {
   const texto = req.body?.texto?.trim();
   if (!texto) throw new ErroCard("Escreva o comentário.");
-  return comentarComoCeo(idDe(req.params.id), texto.slice(0, 5000));
+  const id = idDe(req.params.id);
+  const comentario = comentarComoCeo(id, texto.slice(0, 5000));
+  // Card rodando agora: o agente recebe na próxima rodada, sem reiniciar.
+  return { ...comentario, entregueAoAgente: orientarCard(id, texto.slice(0, 5000)) };
 });
 
 /* ---------- Motor de agentes ---------- */

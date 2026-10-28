@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Building2, Check, ChevronsUpDown, Inbox, Plus, KanbanSquare, LineChart, MessagesSquare, PanelLeftClose, PanelLeftOpen, Settings, Users, type LucideIcon } from "lucide-react";
+import { BookOpen, Building2, Check, ChevronsUpDown, Inbox, Plus, KanbanSquare, LineChart, MessagesSquare, PanelLeftClose, PanelLeftOpen, Settings, Users, type LucideIcon, MessageSquareText } from "lucide-react";
 import { navegar, useNav, type Area } from "../../nav.ts";
 import { useStore } from "../../store.ts";
 import { ItemMenu, Popover, cx } from "../kit/index.ts";
@@ -17,6 +17,7 @@ interface Item {
 export const ITENS_NAV: Item[] = [
   { area: "escritorio", nome: "Escritório", icone: Building2, atalho: "1" },
   { area: "entrada", nome: "Caixa de entrada", icone: Inbox, atalho: "2" },
+  { area: "conversas", nome: "Conversas", icone: MessageSquareText, atalho: "8" },
   { area: "trabalho", nome: "Trabalho", icone: KanbanSquare, atalho: "3" },
   { area: "clientes", nome: "Clientes", icone: MessagesSquare, atalho: "4" },
   { area: "equipe", nome: "Equipe", icone: Users, atalho: "5" },
