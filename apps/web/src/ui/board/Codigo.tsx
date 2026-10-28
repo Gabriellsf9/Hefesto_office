@@ -87,7 +87,7 @@ export function SecaoCodigo({ card }: { card: Card }) {
             </button>
           )}
           {verDiff && (
-            <pre className="scroll-fino mt-2 max-h-96 overflow-auto rounded-lg bg-ink p-3 text-legenda leading-relaxed">
+            <pre className="scroll-fino mt-2 max-h-96 overflow-auto rounded-lg bg-codigo p-3 text-legenda leading-relaxed text-codigo-fg ring-1 ring-line">
               {codigo.patch.split("\n").map((l, i) => (
                 <div
                   key={i}
@@ -131,6 +131,15 @@ export function SecaoCodigo({ card }: { card: Card }) {
             >
               Descartar
             </button>
+            <button
+              disabled={ocupado}
+              title="Roda os testes do projeto nesta branch, na sandbox (o resultado vai para a atividade do card)"
+              onClick={() => void acao(() => api<{ passou: boolean }>(`/api/cards/${card.id}/codigo/testar`, "POST"), "Testes rodados: veja o resultado na atividade.")}
+              className="rounded-lg px-3 py-1.5 text-legenda font-semibold text-fg ring-1 ring-line hover:bg-hover disabled:opacity-30"
+            >
+              Rodar testes
+            </button>
+            <PullRequest card={card} ocupado={ocupado} acao={acao} />
             {card.coluna !== "concluido" && <span className="text-legenda text-fg-3">O merge libera depois da sua aprovação.</span>}
             {erro && <span className="text-legenda text-danger-fg">{erro}</span>}
             {ok && <span className="text-legenda text-success-fg">{ok}</span>}
@@ -173,5 +182,64 @@ function PreviaDoApp({ cardId }: { cardId: number }) {
       {p?.erro && <p className="mt-1.5 text-legenda text-danger-fg">{p.erro}</p>}
       {log && p && <pre className="scroll-fino mt-2 max-h-56 overflow-auto rounded-ctl bg-sunken p-2 font-mono text-legenda text-fg-2">{p.log.join("\n")}</pre>}
     </div>
+  );
+}
+
+/** Pull request no GitHub (em vez do merge local): publica a branch e abre o PR. Token só seu, cifrado. */
+function PullRequest({ card, ocupado, acao }: { card: Card; ocupado: boolean; acao: (fn: () => Promise<unknown>, msg: string) => Promise<void> }) {
+  const [configurado, setConfigurado] = useState<boolean | null>(null);
+  const [token, setToken] = useState("");
+  const [editando, setEditando] = useState(false);
+  useEffect(() => void api<{ configurado: boolean }>("/api/github").then((r) => setConfigurado(r.configurado)).catch(() => setConfigurado(false)), []);
+  if (configurado === null) return null;
+  if (!configurado || editando)
+    return editando ? (
+      <span className="flex items-center gap-1.5">
+        <input
+          type="password"
+          autoComplete="off"
+          aria-label="Token do GitHub"
+          placeholder="github_pat_…"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          className="h-7 w-44 rounded-md bg-sunken px-2 font-mono text-legenda text-fg ring-1 ring-line"
+        />
+        <button
+          disabled={!token.trim()}
+          onClick={() =>
+            void api("/api/github", "PUT", { token })
+              .then(() => {
+                setConfigurado(true);
+                setEditando(false);
+                setToken("");
+              })
+              .catch((e) => alert(e instanceof Error ? e.message : String(e)))
+          }
+          className="rounded-lg px-2 py-1 text-legenda font-semibold text-fg ring-1 ring-line disabled:opacity-30"
+        >
+          Salvar
+        </button>
+      </span>
+    ) : (
+      <button onClick={() => setEditando(true)} className="rounded-lg px-3 py-1.5 text-legenda text-fg-2 ring-1 ring-line hover:bg-hover" title="Token fine-grained com acesso a Contents e Pull requests do repositório">
+        Conectar GitHub (pull request)
+      </button>
+    );
+  return (
+    <button
+      disabled={ocupado || card.coluna !== "concluido"}
+      title={card.coluna !== "concluido" ? "O pull request libera depois que você aprova o card." : "Publica a branch no GitHub e abre o pull request"}
+      onClick={() => {
+        if (confirm("Publicar esta branch no GitHub e abrir um pull request? O código sai do seu Mac para o repositório do projeto.")) {
+          void acao(
+            () => api<{ url: string }>(`/api/cards/${card.id}/pull-request`, "POST").then((r) => window.open(r.url, "_blank")),
+            "Pull request aberto no GitHub.",
+          );
+        }
+      }}
+      className="rounded-lg px-3 py-1.5 text-legenda font-semibold text-fg ring-1 ring-line hover:bg-hover disabled:opacity-30"
+    >
+      Abrir pull request
+    </button>
   );
 }

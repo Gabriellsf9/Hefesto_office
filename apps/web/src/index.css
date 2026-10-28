@@ -26,6 +26,9 @@
   --ink: #1f2430;
   --ink-hover: #343a48;
   --on-ink: #ffffff;
+  /* Blocos de código: escuros nos dois temas, com texto claro. */
+  --codigo: #1f2430;
+  --codigo-fg: #e6e9ef;
   --accent: #2f6fdb;
   --accent-soft: #e7effc;
   --accent-fg: #1f4fa3;
@@ -71,6 +74,8 @@
     --ink: #eceef2;
     --ink-hover: #ffffff;
     --on-ink: #12151b;
+  --codigo: #0b0e13;
+  --codigo-fg: #e6e9ef;
     --accent: #6d9cf0;
     --accent-soft: #1d2a42;
     --accent-fg: #a9c4f6;
@@ -111,6 +116,8 @@
   --ink: #eceef2;
   --ink-hover: #ffffff;
   --on-ink: #12151b;
+  --codigo: #0b0e13;
+  --codigo-fg: #e6e9ef;
   --accent: #6d9cf0;
   --accent-soft: #1d2a42;
   --accent-fg: #a9c4f6;
@@ -152,6 +159,8 @@
   --color-ink: var(--ink);
   --color-ink-hover: var(--ink-hover);
   --color-on-ink: var(--on-ink);
+  --color-codigo: var(--codigo);
+  --color-codigo-fg: var(--codigo-fg);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-fg: var(--accent-fg);

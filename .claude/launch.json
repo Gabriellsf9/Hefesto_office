@@ -4,14 +4,33 @@
     {
       "name": "empresa",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 5317
     },
     {
       "name": "web-5318",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@empresa/web", "exec", "vite", "--port", "5318", "--strictPort"],
+      "runtimeArgs": [
+        "--filter",
+        "@empresa/web",
+        "exec",
+        "vite",
+        "--port",
+        "5318",
+        "--strictPort"
+      ],
       "port": 5318
+    },
+    {
+      "name": "isolado-5517",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export API_PORT=4517 EMPRESA_DATA_DIR=/private/tmp/claude-501/-Users-gabrielfreitas-Developer-Empresa-completa/5af22bb9-5872-40e9-a715-de2e068f02c5/scratchpad/dados; pnpm --filter @empresa/server start & pnpm --filter @empresa/web exec vite --port 5517 --strictPort; wait"
+      ],
+      "port": 5517
     }
   ]
 }

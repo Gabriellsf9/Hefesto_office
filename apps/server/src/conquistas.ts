@@ -1,5 +1,6 @@
 import type { Conquista } from "@empresa/shared";
 import { db, getSetting } from "./db.ts";
+import { orcamentoDiario } from "./custo.ts";
 import { emit, postFeed } from "./bus.ts";
 
 // Conquistas (Fase 7): marcos da empresa calculados a partir do que aconteceu de verdade
@@ -57,7 +58,7 @@ const DEFINICOES: Definicao[] = [
     descricao: "Cinco dias de trabalho seguidos dentro do orçamento diário de IA.",
     icone: "💰",
     atingiu: () => {
-      const orcamento = Number(getSetting("motor_orcamento_usd") ?? "5");
+      const orcamento = orcamentoDiario();
       try {
         const dias = db.prepare("SELECT usd FROM uso ORDER BY dia DESC LIMIT 5").all() as { usd: number }[];
         return dias.length === 5 && dias.every((d) => d.usd > 0 && d.usd <= orcamento);

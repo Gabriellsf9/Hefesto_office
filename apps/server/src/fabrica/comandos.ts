@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename } from "node:path";
 import { DATA_DIR } from "../paths.ts";
+import { comoAgente, NO_MAC, podeRodarComandos, SO_NO_MAC } from "../plataforma.ts";
 
 // Comandos dos agentes na fábrica de software (Fase 4): testes, build, lint e instalação
 // de dependências, rodando DENTRO da cópia isolada do projeto (git worktree).
@@ -121,6 +122,8 @@ export interface ResultadoComando {
 
 /** Roda um comando permitido dentro da pasta (cópia isolada), na sandbox. */
 export async function rodarComando(pasta: string, comando: string): Promise<ResultadoComando> {
+  // Só com sandbox: a do macOS ou a Linux do contêiner (sem ela, leriam os dados do próprio servidor).
+  if (!podeRodarComandos()) throw new ErroComando(SO_NO_MAC);
   const args = dividir(comando);
   const prog = args.shift()!;
   if (prog.includes("/") && !prog.startsWith("./")) throw new ErroComando("Use o nome do programa, não um caminho.");
@@ -141,9 +144,11 @@ export async function rodarComando(pasta: string, comando: string): Promise<Resu
     NO_COLOR: "1",
   };
   return new Promise((resolve) => {
+    // Mac: sandbox-exec com o perfil. Docker: o mesmo comando como o usuário "agente" (sem rede, sem /data).
+    const exe = NO_MAC ? { prog: "/usr/bin/sandbox-exec", args: ["-p", perfilSandbox(pasta, rede), prog, ...args] } : comoAgente(prog, args, rede, env);
     execFile(
-      "/usr/bin/sandbox-exec",
-      ["-p", perfilSandbox(pasta, rede), prog, ...args],
+      exe.prog,
+      exe.args,
       { cwd: pasta, env, timeout: TEMPO_MAX_MS, maxBuffer: 20 * 1024 * 1024 },
       (err, stdout, stderr) => {
         const tudo = `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();

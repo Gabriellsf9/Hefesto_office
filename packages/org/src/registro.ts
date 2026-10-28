@@ -86,6 +86,14 @@ export function ativarEscritorio(id: string) {
 
 export const escritorioAtivo = () => ativo;
 export const definicaoDe = (id: string) => definicoes.get(id) ?? null;
+/**
+ * Projeto de código de um card: na sede, o do card; num escritório criado por você, sempre o projeto
+ * do escritório (ou nenhum). Assim a Clínica nunca escreve código no repositório de outro escritório.
+ */
+export const projetoDoCard = (card: { sala: RoomId; projetoId: number | null }): number | null => {
+  const esc = escritorioDe(card.sala);
+  return esc === SEDE ? card.projetoId : (definicoes.get(esc)?.projetoId ?? null);
+};
 export const listarDefinicoes = () => [...definicoes.values()];
 export const escritorioDe = (sala: RoomId) => escritorioDaSala[sala] ?? SEDE;
 export const escritorioDoFluxoId = (fluxo: string) => escritorioDoFluxo[fluxo] ?? SEDE;

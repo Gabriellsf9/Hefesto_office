@@ -2,6 +2,7 @@ import { colunaDe, type Agent } from "@empresa/shared";
 import { agentesDe, nomeDaSala, SEDE } from "@empresa/org";
 import { emit, focus, postChat, setAgentStatus } from "../bus.ts";
 import { clienteClaude } from "../custo.ts";
+import { escolhas, modeloDisponivel } from "../provedores.ts";
 import { listarCards, listarComentarios, ultimaEntrega } from "../tarefas.ts";
 import { rodarAgente } from "./loop.ts";
 import { playbookDe } from "./prompts.ts";
@@ -51,8 +52,10 @@ function contextoDoAgente(agente: Agent): string {
 
 export async function conversarComAgente(agente: Agent, pergunta: string, imagens: string[] = [], arquivos: string[] = []) {
   const client = clienteClaude();
+  // Quem escolheu um modelo para o agente conversa com ele; senão, o Haiku.
+  const modelo = escolhas()[agente.id] ?? MODELO_CONVERSA;
   focus(agente.sala, agente.id);
-  if (!client) {
+  if (!modeloDisponivel(modelo)) {
     postChat(agente.id, "Configure a chave da API para eu poder responder.");
     return;
   }
@@ -68,7 +71,7 @@ ${playbookDe(agente.sala)}`;
     const conectores = [ferramentaMemoria, ...ferramentasDeConectores(agente, null)];
     const r = await rodarAgente({
       client,
-      modelo: MODELO_CONVERSA,
+      modelo,
       sistema,
       mensagem: `## Seus cards agora\n${contextoDoAgente(agente)}\n\n## O CEO pergunta\n${pergunta}${imagens.length || arquivos.length ? "\n\n(O CEO anexou imagens ou arquivos, acima.)" : ""}`,
       imagens,

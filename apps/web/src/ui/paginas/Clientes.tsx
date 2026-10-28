@@ -196,7 +196,7 @@ function Conversa({ contato }: { contato: ContatoWhatsapp }) {
   useEffect(() => {
     if (contato.naoLidas > 0) void api(`/api/whatsapp/contatos/${contato.telefone}`, "PATCH", { lido: true }).catch(() => {});
   }, [contato.telefone, contato.naoLidas]);
-  useEffect(() => fim.current?.scrollIntoView({ block: "end" }), [msgs?.length]);
+  useEffect(() => void fim.current?.scrollIntoView({ block: "end" }), [msgs?.length]);
 
   const enviar = async () => {
     if (!texto.trim()) return;

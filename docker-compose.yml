@@ -1,0 +1,47 @@
+# Subir:   docker compose up -d --build      → http://localhost:4417
+# Parar:   docker compose down               (os dados ficam no volume hefesto-dados)
+#
+# As portas são publicadas só em 127.0.0.1: ninguém na sua rede acessa o Hefesto.
+# Os dados (banco, chave cifrada, mídia) ficam no volume hefesto-dados, separados do Hefesto do Mac,
+# para os dois nunca escreverem no mesmo banco. A chave da API você cadastra na tela, como no Mac.
+
+name: hefesto
+
+services:
+  hefesto:
+    build: .
+    image: hefesto:latest
+    container_name: hefesto
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HEFESTO_PORTA:-4417}:4317"
+      # Webhook do WhatsApp (aponte o túnel ou o endereço fixo para esta porta).
+      - "127.0.0.1:${HEFESTO_PORTA_WHATSAPP:-4418}:4318"
+      # Prévias do app de cada card (o servidor de desenvolvimento do agente), para você abrir no navegador.
+      - "127.0.0.1:4450-4469:4450-4469"
+    # Para a sandbox dos comandos dos agentes (regras de rede por usuário). Sem isso, eles não rodam testes.
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - hefesto-dados:/data
+      # Cópias isoladas dos cards (git worktree), separadas dos dados: os agentes escrevem aqui, nunca em /data.
+      - hefesto-copias:/workspace
+      # Backups diários (banco + mídia) numa pasta que você vê no Finder.
+      - ${HOME}/Documents/Hefesto/backups-docker:/home/node/Documents/Hefesto/backups
+      # Sua pasta de projetos, no mesmo caminho do Mac: é por ela que o "Escolher pasta" navega.
+      # Para outra pasta: HEFESTO_PROJETOS=/caminho/da/pasta docker compose up -d
+      # (pastas que contêm o próprio Hefesto são recusadas como projeto; arquivos de segredo nunca são lidos).
+      - ${HEFESTO_PROJETOS:-${HOME}/Developer}:${HEFESTO_PROJETOS:-${HOME}/Developer}
+    environment:
+      HEFESTO_PREVIA_PORTAS: "4450-4469"
+      HEFESTO_PROJETOS: ${HEFESTO_PROJETOS:-${HOME}/Developer}
+      # A pasta do próprio Hefesto no Mac, para nunca virar (nem conter) um projeto.
+      HEFESTO_PASTA_HOST: ${PWD}
+      # Modelos locais: o Ollama roda no Mac, fora do container.
+      HEFESTO_OLLAMA_URL: ${HEFESTO_OLLAMA_URL:-http://host.docker.internal:11434}
+    # O Chromium precisa de memória compartilhada maior que o padrão.
+    shm_size: 1gb
+
+volumes:
+  hefesto-dados:
+  hefesto-copias:

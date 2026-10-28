@@ -11,7 +11,7 @@ import {
 // no lugar das malhas; aqui cada instância copia a posição da sua âncora a cada quadro.
 
 export type Parte =
-  | "tronco" | "perna" | "sapato" | "braco" | "cabeca" | "cabelo" | "olho" | "xicara" | "copo" | "fruta" | "livro"
+  | "tronco" | "perna" | "sapato" | "braco" | "cabeca" | "cabelo" | "olho" | "xicara" | "copo" | "fruta" | "livro" | "pasta"
   | "oculos" | "fone" | "cabeloLongo" | "coque" | "cracha";
 
 interface Def {
@@ -36,6 +36,7 @@ function definicoes(): Record<Parte, Def> {
     copo: { geo: new CylinderGeometry(0.045, 0.04, 0.13, 10), mat: padrao({ transparent: true, opacity: 0.8 }), max: 128 },
     fruta: { geo: new SphereGeometry(0.065, 10, 8), mat: padrao(), max: 128 },
     livro: { geo: new BoxGeometry(0.22, 0.05, 0.16), mat: padrao(), max: 128 },
+    pasta: { geo: new BoxGeometry(0.26, 0.34, 0.035), mat: padrao({ roughness: 0.6 }), max: 64 },
     oculos: { geo: new TorusGeometry(0.055, 0.011, 6, 16), mat: padrao({ roughness: 0.3, metalness: 0.4 }), max: 256 },
     fone: { geo: new TorusGeometry(0.27, 0.035, 6, 18, Math.PI), mat: padrao({ roughness: 0.5 }), max: 128 },
     cabeloLongo: { geo: new BoxGeometry(0.44, 0.46, 0.14), mat: padrao({ roughness: 0.9 }), max: 128 },

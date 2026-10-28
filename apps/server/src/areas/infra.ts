@@ -165,7 +165,7 @@ export function removerMonitor(id: number): Monitor[] {
 }
 
 const SRE = "sre";
-const hoje = () => new Date().toISOString().slice(0, 10);
+const hoje = () => new Date().toLocaleDateString("sv-SE"); // dia no fuso local
 
 /** Uma rodada: checa cada endereço, avisa mudanças e abre incidente quando a queda se confirma. */
 export async function checarTodos(verificar = verificarSite) {

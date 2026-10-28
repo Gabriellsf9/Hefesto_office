@@ -68,7 +68,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
       if (/^\s*```/.test(linha)) {
         const c = codigo;
         blocos.push(
-          <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-ink p-3 text-legenda leading-relaxed text-slate-100">
+          <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-codigo p-3 text-legenda leading-relaxed text-codigo-fg ring-1 ring-line">
             <code>{c.linhas.join("\n")}</code>
           </pre>,
         );
@@ -146,7 +146,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
   if (codigo) {
     const c: { linhas: string[] } = codigo;
     blocos.push(
-      <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-ink p-3 text-legenda text-slate-100">
+      <pre key={blocos.length} className="scroll-fino overflow-x-auto rounded-lg bg-codigo p-3 text-legenda text-codigo-fg ring-1 ring-line">
         <code>{c.linhas.join("\n")}</code>
       </pre>,
     );
@@ -158,7 +158,7 @@ export function Markdown({ texto, className = "" }: { texto: string; className?:
 /** Negrito (**x**), itálico (*x* ou _x_), código (`x`) e links [texto](https://…). */
 function inline(texto: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|\*[^*]+\*|_[^_]+_)/g;
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|\/api\/midia\/)[^)\s]+\)|\*[^*]+\*|_[^_]+_)/g;
   let ultimo = 0;
   for (const m of texto.matchAll(re)) {
     if (m.index > ultimo) out.push(texto.slice(ultimo, m.index));
@@ -168,6 +168,12 @@ function inline(texto: string): ReactNode[] {
     else if (t.startsWith("`")) out.push(<code key={k} className="rounded bg-sunken px-1">{t.slice(1, -1)}</code>);
     else if (t.startsWith("[")) {
       const [, rotulo, url] = /^\[([^\]]+)\]\((.+)\)$/.exec(t)!;
+      // Vídeo do teste do QA (gravado pelo navegador dos agentes): toca aqui mesmo.
+      if (/^\/api\/midia\/\d+\/videos\/[\w.-]+\.webm$/.test(url!)) {
+        out.push(<video key={k} src={url} controls preload="metadata" className="my-1 block max-h-72 w-full rounded-ctl ring-1 ring-line" aria-label={rotulo} />);
+        ultimo = m.index + t.length;
+        continue;
+      }
       out.push(
         <a key={k} href={url} target="_blank" rel="noreferrer noopener" className="text-accent-fg underline">
           {rotulo}

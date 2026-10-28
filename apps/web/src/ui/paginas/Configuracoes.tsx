@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bot, Building2, Copy, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import { Bot, Building2, Copy, Cpu, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
 import type { EstadoTelegram, EstadoWhatsapp, RoomId, StatusResponse } from "@empresa/shared";
 import { rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -13,13 +13,16 @@ import {
   AreaTexto, Botao, CabecalhoPagina, Campo, CampoSegredo, Etiqueta, Interruptor, Kbd, MenuSecoes, Pagina, Pilulas, Segmentado, Seletor, avisar, avisarErro, confirmar, cx,
 } from "../kit/index.ts";
 import { ConteudoConectores } from "../Conectores.tsx";
+import { CampoOrcamento } from "../CampoOrcamento.tsx";
 import { definirTema, useTema, type Tema } from "../shell/tema.ts";
+import ModelosIa from "./ModelosIa.tsx";
 
 // Configurações (DESIGN-INTERFACE.md §6.9): tudo o que estava no menu ⋯, organizado por seção.
 
-type Secao = "geral" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
+type Secao = "geral" | "modelos" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
 const SECOES: { id: Secao; rotulo: string; icone: typeof Info }[] = [
   { id: "geral", rotulo: "Geral", icone: KeyRound },
+  { id: "modelos", rotulo: "Modelos de IA", icone: Cpu },
   { id: "voz", rotulo: "Voz e sons", icone: Volume2 },
   { id: "escritorio", rotulo: "Escritório e aparência", icone: Building2 },
   { id: "permissoes", rotulo: "Permissões dos agentes", icone: ShieldCheck },
@@ -44,6 +47,7 @@ export default function PaginaConfiguracoes() {
         <div className="min-w-0 flex-1 space-y-6">
           <h2 className="text-secao font-semibold text-fg">{atual.rotulo}</h2>
           {secao === "geral" && <Geral />}
+          {secao === "modelos" && <ModelosIa />}
           {secao === "voz" && <VozESons />}
           {secao === "escritorio" && <Escritorio />}
           {secao === "permissoes" && <Permissoes />}
@@ -58,7 +62,7 @@ export default function PaginaConfiguracoes() {
   );
 }
 
-function Bloco({ titulo, descricao, children }: { titulo: ReactNode; descricao?: ReactNode; children: ReactNode }) {
+export function Bloco({ titulo, descricao, children }: { titulo: ReactNode; descricao?: ReactNode; children: ReactNode }) {
   return (
     <section className="rounded-panel bg-surface p-5 shadow-1">
       <h3 className="text-destaque font-semibold text-fg">{titulo}</h3>
@@ -75,7 +79,6 @@ function Geral() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [chave, setChave] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [orcamento, setOrcamento] = useState(String(motor.orcamentoDiarioUsd));
   const carregar = () => void fetch("/api/status").then((r) => r.json() as Promise<StatusResponse>).then(setStatus).catch(() => setStatus(null));
   useEffect(carregar, []);
   const salvarChave = async () => {
@@ -125,10 +128,28 @@ function Geral() {
       <Bloco titulo="Equipe e orçamento" descricao="No limite do dia, a equipe para sozinha até amanhã ou até você aumentar o orçamento.">
         <Interruptor ativo={!motor.pausado} onChange={(v) => void motorCfg({ pausado: !v })} rotulo="Empresa trabalhando" descricao="Desligue para pausar todos os agentes e rituais." />
         <div className="grid grid-cols-2 gap-3">
-          <Campo rotulo="Orçamento por dia (US$)" type="number" min={0} step={1} value={orcamento} onChange={(e) => setOrcamento(e.target.value)} onBlur={() => void motorCfg({ orcamentoDiarioUsd: Number(orcamento) })} />
+          <CampoOrcamento />
           <Seletor rotulo="Agentes ao mesmo tempo" value={motor.maxSimultaneos} onChange={(e) => void motorCfg({ maxSimultaneos: Number(e.target.value) })}>
             {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
           </Seletor>
+          <Seletor
+            rotulo="Modo de custo"
+            ajuda={
+              (motor.modoCusto ?? "equilibrado") === "maximo"
+                ? "Cada agente no seu modelo (Opus nos líderes e revisores). Mais caro."
+                : (motor.modoCusto ?? "equilibrado") === "economico"
+                  ? "Ninguém usa Opus; tarefas de apoio em Haiku. Mais barato, um pouco menos caprichado."
+                  : "Opus só no coordenador, na revisão e segurança do código e no advogado do diabo; o resto em Sonnet."
+            }
+            value={motor.modoCusto ?? "equilibrado"}
+            onChange={(e) => void motorCfg({ modoCusto: e.target.value })}
+          >
+            <option value="economico">Econômico</option>
+            <option value="equilibrado">Equilibrado (recomendado)</option>
+            <option value="maximo">Qualidade máxima</option>
+          </Seletor>
+          <CampoOrcamento campo="limiteCardUsd" rotulo="Limite por card (US$)" ajuda="Passou disso, o card para e espera você liberar." />
+          <CampoOrcamento campo="limiteCodigoUsd" rotulo="Limite por card de código (US$)" ajuda="Código custa mais: cards que mexem no repositório." />
         </div>
       </Bloco>
     </>

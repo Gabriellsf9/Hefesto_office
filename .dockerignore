@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+data
+workspace
+Hefesto.app
+.git
+.env
+.env.*
+**/.DS_Store
+*.log

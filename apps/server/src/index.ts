@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import type { CardEditavel, ClientEvent, ConfigCritica, ItemConhecimento, Meta, RitualId, ServerEvent, StatusResponse } from "@empresa/shared";
 import { estados, emit, subscribe } from "./bus.ts";
 import { recentChat, recentFeed } from "./db.ts";
-import { configurarMotor, estadoMotor, iniciarMotor } from "./agentes/motor.ts";
+import { configurarMotor, estadoMotor, iniciarMotor, interromper } from "./agentes/motor.ts";
 import { pedirParaHelena } from "./agentes/helena.ts";
 import { custoHoje } from "./custo.ts";
 import { configurarGatilho, listarGatilhos, type GatilhoId } from "./gatilhos.ts";
@@ -46,25 +46,52 @@ import { configurarRitual, executarRitual, iniciarRituais, listarAtas, listarRit
 import { isDemoActive, setDemo } from "./demo.ts";
 import { ehSecao, lerLivro, marcarRevisada, salvarSecao } from "./livro.ts";
 import { estadoOnboarding, iniciarEntrevista, responder } from "./onboarding.ts";
-import { adicionarProjeto, definirAtivo, definirUrlLocal, escolherPasta, listarProjetos, projetoAtivo, removerProjeto } from "./projetos.ts";
+import { adicionarProjeto, definirAtivo, definirUrlLocal, escolherPasta, listarPastas, listarProjetos, projetoAtivo, removerProjeto } from "./projetos.ts";
 import { pastaDeMidia } from "./fabrica/capturas.ts";
 import { nomeValido, PASTA_IMAGENS, salvarImagem } from "./imagens.ts";
 import { mimeDe, nomeArquivoValido, nomeOriginal, PASTA_ARQUIVOS, salvarArquivo } from "./arquivos.ts";
 import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  abrirBug, aprovar, aprovarLote, comentarComoCeo, criarCard, devolver, editarCard, ErroCard, lerCard, listarCards, listarComentarios, listarEntregas, mover,
+  abrirBug, aprovar, aprovarLote, comentarComoCeo, criarCard, devolver, editarCard, ErroCard, lerCard, liberarGasto, listarCards, listarComentarios, listarEntregas, mover,
   removerCard, removerCardsDemo, type NovoCard,
 } from "./tarefas.ts";
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
+import { HOST } from "./plataforma.ts";
+import { configurarProvedores, estadoProvedores } from "./provedores.ts";
+import { montarPainel, configRelatorio, definirRelatorio, mandarRelatorio, iniciarRelatorioDiario } from "./painel.ts";
+import { resumoChamadas, estimativaDeCusto } from "./chamadas.ts";
+import { MODELOS_DE_PROJETO, criarProjetoDoModelo } from "./modelosDeProjeto.ts";
+import { relatorioParaCliente } from "./relatorioCliente.ts";
+import { limparCopiasAntigas, migrarCopiasParaWorkspace } from "./fabrica/workspace.ts";
+import { testarCard } from "./fabrica/testes.ts";
+import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
+import { listarEvals, rodarEvals, tarefasDeEval } from "./evals.ts";
+import { testarModelo } from "./agentes/compat.ts";
 
 const PORT = Number(process.env.API_PORT ?? 4317);
 
 // Escritórios guardados no banco entram no registro antes de tudo (motor, prompts e rotas usam o registro).
 carregarEscritorios();
 
-// Escuta só em localhost: a chave e os agentes nunca ficam expostos na rede.
+// Escuta só em localhost: a chave e os agentes nunca ficam expostos na rede (no Docker, 0.0.0.0 dentro
+// do contêiner, publicado só em 127.0.0.1 do Mac; o filtro de Host e Origin abaixo vale nos dois casos).
 const app = Fastify({ logger: { level: "warn" } });
+
+// Só o próprio Mac fala com a API (achado do QA em 27/10/2026): sem isso, qualquer site aberto no navegador
+// poderia mandar pedidos para 127.0.0.1 (CSRF), apontar um domínio para o Mac (DNS rebinding) ou abrir o
+// WebSocket e ler o chat. Regras: Host local; Origin, se houver, local; nada entre sites, exceto a navegação
+// normal (o retorno do login OAuth chega assim).
+const HOST_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const ORIGEM_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+app.addHook("onRequest", async (req, reply) => {
+  if (!HOST_LOCAL.test(req.headers.host ?? "")) return reply.code(403).send({ erro: "Acesso só pelo próprio Mac (localhost)." });
+  const origem = req.headers.origin;
+  if (origem !== undefined && !ORIGEM_LOCAL.test(origem)) return reply.code(403).send({ erro: "Origem não permitida." });
+  const site = req.headers["sec-fetch-site"];
+  const navegacao = req.method === "GET" && req.headers["sec-fetch-mode"] === "navigate";
+  if (site === "cross-site" && !navegacao) return reply.code(403).send({ erro: "Pedido entre sites bloqueado." });
+});
 await app.register(websocket);
 
 // Erros de regra de negócio viram respostas { erro } com o status certo.
@@ -123,8 +150,18 @@ const idDe = (v: string) => {
 
 app.get("/api/cards", async () => listarCards());
 app.post<{ Body: NovoCard }>("/api/cards", async (req) => criarCard(req.body));
-app.patch<{ Params: { id: string }; Body: CardEditavel }>("/api/cards/:id", async (req) => editarCard(idDe(req.params.id), req.body));
+// O CEO mexendo num card em andamento (bloquear, trocar responsável/área, mover, apagar) interrompe o agente que está nele.
+app.patch<{ Params: { id: string }; Body: CardEditavel }>("/api/cards/:id", async (req) => {
+  const id = idDe(req.params.id);
+  const antes = lerCard(id);
+  const depois = editarCard(id, req.body);
+  if ((depois.bloqueado && !antes.bloqueado) || depois.dono !== antes.dono || depois.validador !== antes.validador || depois.sala !== antes.sala) {
+    interromper(id, "o CEO mudou o card");
+  }
+  return depois;
+});
 app.delete<{ Params: { id: string } }>("/api/cards/:id", async (req) => {
+  interromper(idDe(req.params.id), "o card foi apagado");
   removerCard(idDe(req.params.id));
   return { ok: true };
 });
@@ -132,9 +169,13 @@ app.delete("/api/cards-demo", async () => {
   removerCardsDemo();
   return { ok: true };
 });
-app.post<{ Params: { id: string }; Body: { coluna: string; ordem?: number } }>("/api/cards/:id/mover", async (req) =>
-  mover(idDe(req.params.id), req.body.coluna, "voce", req.body.ordem),
-);
+app.post<{ Params: { id: string }; Body: { coluna: string; ordem?: number } }>("/api/cards/:id/mover", async (req) => {
+  const id = idDe(req.params.id);
+  const antes = lerCard(id).coluna;
+  const movido = mover(id, req.body.coluna, "voce", req.body.ordem);
+  if (movido.coluna !== antes) interromper(id, "o CEO moveu o card de coluna");
+  return movido;
+});
 app.post<{ Params: { id: string }; Body: { comentario?: string } }>("/api/cards/:id/aprovar", async (req) =>
   aprovar(idDe(req.params.id), req.body?.comentario),
 );
@@ -145,6 +186,30 @@ app.post<{ Params: { id: string }; Body: { comentario: string } }>("/api/cards/:
 app.post<{ Params: { id: string }; Body: { titulo: string; descricao?: string; severidade?: "S1" | "S2" | "S3" | "S4" } }>(
   "/api/cards/:id/bug",
   async (req) => abrirBug(idDe(req.params.id), req.body),
+);
+app.post<{ Params: { id: string } }>("/api/cards/:id/liberar", async (req) => liberarGasto(idDe(req.params.id)));
+app.post<{ Params: { id: string } }>("/api/cards/:id/codigo/testar", async (req) => testarCard(idDe(req.params.id), "voce"));
+app.post<{ Params: { id: string } }>("/api/cards/:id/pull-request", async (req) => abrirPullRequest(idDe(req.params.id)));
+app.get("/api/github", async () => estadoGithub());
+app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => configurarGithub(typeof req.body?.token === "string" ? req.body.token : null));
+app.get("/api/evals", async () => listarEvals());
+app.get("/api/evals/tarefas", async () => tarefasDeEval());
+app.post("/api/evals", async () => rodarEvals());
+
+/* ---------- Painel, chamadas de IA, modelos de projeto e relatórios ---------- */
+
+app.get<{ Querystring: { escritorio?: string } }>("/api/painel", async (req) => montarPainel(req.query.escritorio || undefined));
+app.get<{ Querystring: { horas?: string } }>("/api/chamadas", async (req) => resumoChamadas(Math.min(24 * 30, Math.max(1, Number(req.query.horas) || 24))));
+app.get<{ Querystring: { sala: string; tipo: string } }>("/api/estimativa", async (req) => estimativaDeCusto(String(req.query.sala ?? ""), String(req.query.tipo ?? "tarefa")) ?? { semHistorico: true });
+app.get("/api/relatorio", async () => configRelatorio());
+app.put<{ Body: { ativo?: boolean; hora?: number } }>("/api/relatorio", async (req) => definirRelatorio(req.body ?? {}));
+app.post("/api/relatorio/agora", async () => ({ texto: await mandarRelatorio() }));
+app.get("/api/modelos-projeto", async () => MODELOS_DE_PROJETO.map((m) => ({ id: m.id, nome: m.nome, descricao: m.descricao, etapas: m.etapas.map((e) => ({ titulo: e.titulo, sala: e.sala })) })));
+app.post<{ Params: { id: string }; Body: { contexto?: string; projetoId?: number | null } }>("/api/modelos-projeto/:id", async (req) =>
+  criarProjetoDoModelo(req.params.id, String(req.body?.contexto ?? ""), typeof req.body?.projetoId === "number" ? req.body.projetoId : null),
+);
+app.post<{ Params: { id: string }; Body: { cliente?: string } }>("/api/projetos/:id/relatorio-cliente", async (req) =>
+  relatorioParaCliente(idDe(req.params.id), typeof req.body?.cliente === "string" ? req.body.cliente.slice(0, 120) : undefined),
 );
 app.get<{ Params: { id: string } }>("/api/cards/:id/comentarios", async (req) => listarComentarios(idDe(req.params.id)));
 app.get<{ Params: { id: string } }>("/api/cards/:id/entregas", async (req) => listarEntregas(idDe(req.params.id)));
@@ -157,7 +222,7 @@ app.post<{ Params: { id: string }; Body: { texto: string } }>("/api/cards/:id/co
 /* ---------- Motor de agentes ---------- */
 
 app.get("/api/motor", async () => estadoMotor());
-app.put<{ Body: { pausado?: boolean; orcamentoDiarioUsd?: number; maxSimultaneos?: number } }>("/api/motor", async (req) =>
+app.put<{ Body: { pausado?: boolean; orcamentoDiarioUsd?: number; maxSimultaneos?: number; modoCusto?: string; limiteCardUsd?: number; limiteCodigoUsd?: number } }>("/api/motor", async (req) =>
   configurarMotor(req.body ?? {}),
 );
 
@@ -315,6 +380,13 @@ app.post("/api/telegram/teste", async () => {
   if (!id) throw new ErroCard("Não enviou: confira se o bot está ligado e pareado.");
   return { ok: true };
 });
+app.get("/api/provedores", async () => estadoProvedores());
+app.put<{ Body: Record<string, unknown> }>("/api/provedores", async (req) => configurarProvedores(req.body ?? {}));
+app.post<{ Body: { modelo?: string } }>("/api/provedores/testar", async (req) => {
+  const modelo = String(req.body?.modelo ?? "");
+  if (!/^((ollama|openai|gemini):[\w.:/-]{1,120}|claude-[\w.-]{1,60})$/.test(modelo)) throw new ErroCard("Modelo inválido.");
+  return testarModelo(modelo);
+});
 app.get("/api/backup", async () => estadoBackup());
 app.put<{ Body: { ativo?: boolean; pasta?: string; manter?: number } }>("/api/backup", async (req) => definirConfigBackup(req.body ?? {}));
 app.post("/api/backup/agora", async () => fazerBackup());
@@ -397,6 +469,7 @@ app.delete<{ Params: { id: string } }>("/api/nao-contatar/:id", async (req) => r
 /* ---------- Projetos da sua máquina ---------- */
 
 app.get("/api/projetos", async () => ({ projetos: listarProjetos(), projetoAtivo: projetoAtivo() }));
+app.get<{ Querystring: { caminho?: string } }>("/api/pastas", async (req) => listarPastas(req.query.caminho));
 app.post("/api/projetos/escolher", async () => {
   const caminho = await escolherPasta();
   return caminho ? adicionarProjeto(caminho) : { cancelado: true };
@@ -457,6 +530,13 @@ app.get<{ Params: { card: string; nome: string } }>("/api/midia/:card/arquivos/:
   const caminho = join(pastaDeMidia(idDe(req.params.card)), "arquivos", nome);
   if (!existsSync(caminho)) throw new ErroCard("Não encontrado.", 404);
   return reply.header("content-type", mimeDe(nome.split(".").pop()!)).header("content-disposition", baixar(nome)).header("x-content-type-options", "nosniff").send(createReadStream(caminho));
+});
+app.get<{ Params: { card: string; nome: string } }>("/api/midia/:card/videos/:nome", async (req, reply) => {
+  const nome = req.params.nome;
+  if (!/^\d+-\d+\.webm$/.test(nome)) throw new ErroCard("Arquivo inválido.", 400);
+  const caminho = join(pastaDeMidia(idDe(req.params.card)), "videos", nome);
+  if (!existsSync(caminho)) throw new ErroCard("Não encontrado.", 404);
+  return reply.header("content-type", "video/webm").header("x-content-type-options", "nosniff").send(createReadStream(caminho));
 });
 app.get<{ Params: { arquivo: string } }>("/api/midia/chat/:arquivo", async (req, reply) => {
   const { arquivo } = req.params;
@@ -539,8 +619,12 @@ if (existsSync(join(WEB_DIST, "index.html"))) {
   });
 }
 
-await app.listen({ host: "127.0.0.1", port: PORT });
+await app.listen({ host: HOST, port: PORT });
 iniciarMotor();
+iniciarRelatorioDiario();
+void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));
+// Limpeza de cópias isoladas abandonadas (cards apagados ou perdidos), uma vez por hora; a branch fica.
+setInterval(() => void limparCopiasAntigas().catch((e) => console.error("Limpeza de cópias:", e)), 3600_000);
 iniciarLembretesDeMarketing();
 iniciarMonitoramento();
 iniciarConquistas();

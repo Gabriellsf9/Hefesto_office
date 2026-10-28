@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, Database, DatabaseBackup, FolderGit2, FolderOpen, Globe, LineChart, Plus, ScanSearch, Wallet, X } from "lucide-react";
+import { Activity, CheckCircle2, Database, DatabaseBackup, FolderGit2, Globe, LineChart, Plus, ScanSearch, Wallet, X, Sun, Cpu, FileText, FlaskConical } from "lucide-react";
 import type { Card, Projeto } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -7,16 +7,19 @@ import { api } from "../../api.ts";
 import { navegar, useNav } from "../../nav.ts";
 import { Abas, Botao, BotaoIcone, CabecalhoPagina, Campo, Etiqueta, EstadoVazio, Indicador, Pagina, Seletor, avisar, avisarErro, confirmar, cx } from "../kit/index.ts";
 import { CalculadoraSimples, Monitoramento } from "../Operacao.tsx";
+import { ChamadasIA, PainelHoje } from "./Hoje.tsx";
+import { Qualidade } from "./Qualidade.tsx";
+import { BotaoEscolherPasta } from "../SeletorDePastas.tsx";
 import { Backup } from "./Configuracoes.tsx";
 import { Avatarzinho, usd } from "../comum.tsx";
 
 // Operação (DESIGN-INTERFACE.md §6.7): projetos e banco, monitoramento, finanças e backup.
 
-type Sub = "projetos" | "monitoramento" | "financas" | "backup";
+type Sub = "hoje" | "projetos" | "chamadas" | "qualidade" | "monitoramento" | "financas" | "backup";
 
 export default function PaginaOperacao() {
   const rota = useNav((s) => s.rota);
-  const sub = (["projetos", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "projetos") as Sub;
+  const sub = (["hoje", "projetos", "chamadas", "qualidade", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
   const monitores = useStore((s) => s.monitores);
   const fora = monitores.filter((m) => m.status === "fora").length;
   return (
@@ -24,13 +27,16 @@ export default function PaginaOperacao() {
       <CabecalhoPagina
         icone={LineChart}
         titulo="Operação"
-        descricao="Onde a empresa trabalha e como ela está: projetos da sua máquina, sites monitorados, custos e backup."
+        descricao="O dia da empresa, os projetos da sua máquina, cada chamada de IA, sites monitorados, custos e backup."
         abas={
           <Abas
             ativa={sub}
             onChange={(id) => navegar("operacao", id)}
             abas={[
+              { id: "hoje", rotulo: "Hoje", icone: Sun },
               { id: "projetos", rotulo: "Projetos", icone: FolderGit2 },
+              { id: "chamadas", rotulo: "Chamadas de IA", icone: Cpu },
+              { id: "qualidade", rotulo: "Qualidade", icone: FlaskConical },
               { id: "monitoramento", rotulo: "Monitoramento", icone: Activity, contador: fora, alerta: true },
               { id: "financas", rotulo: "Finanças", icone: Wallet },
               { id: "backup", rotulo: "Backup", icone: DatabaseBackup },
@@ -38,7 +44,10 @@ export default function PaginaOperacao() {
           />
         }
       />
+      {sub === "hoje" && <PainelHoje />}
       {sub === "projetos" && <Projetos />}
+      {sub === "chamadas" && <ChamadasIA />}
+      {sub === "qualidade" && <Qualidade />}
       {sub === "monitoramento" && <div className="rounded-panel bg-surface p-5 shadow-1"><Monitoramento /></div>}
       {sub === "financas" && <Financas />}
       {sub === "backup" && <Backup />}
@@ -52,27 +61,10 @@ function Projetos() {
   const projetos = useStore((s) => s.projetos);
   const ativoId = useStore((s) => s.projetoAtivo);
   const [caminho, setCaminho] = useState("");
-  const [escolhendo, setEscolhendo] = useState(false);
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-2 rounded-panel bg-surface p-4 shadow-1">
-        <Botao
-          variante="principal"
-          icone={FolderOpen}
-          carregando={escolhendo}
-          onClick={async () => {
-            setEscolhendo(true);
-            try {
-              await api("/api/projetos/escolher", "POST");
-            } catch (e) {
-              avisarErro(e);
-            } finally {
-              setEscolhendo(false);
-            }
-          }}
-        >
-          {escolhendo ? "Escolha a pasta na janela do Mac…" : "Escolher pasta"}
-        </Botao>
+        <BotaoEscolherPasta />
         <span className="pb-2 text-pequeno text-fg-3">ou</span>
         <div className="min-w-[260px] flex-1">
           <Campo value={caminho} onChange={(e) => setCaminho(e.target.value)} placeholder="/Users/voce/projetos/meu-app" className="font-mono text-pequeno" />
@@ -151,6 +143,22 @@ function ItemProjeto({ p, ativo }: { p: Projeto; ativo: boolean }) {
               Fazer raio-x do projeto
             </Botao>
           )}
+          <Botao
+            tamanho="p"
+            variante="discreto"
+            icone={FileText}
+            className="mt-2"
+            onClick={() =>
+              void api<{ url: string }>(`/api/projetos/${p.id}/relatorio-cliente`, "POST", {})
+                .then((r) => {
+                  window.open(r.url, "_blank");
+                  avisar("Relatório gerado (PDF)");
+                })
+                .catch(avisarErro)
+            }
+          >
+            Relatório para cliente (PDF)
+          </Botao>
         </div>
         <div>
           <div className="mb-1.5 flex items-center gap-1.5 text-pequeno font-medium text-fg"><Globe className="size-4 text-fg-3" /> Onde o app roda</div>

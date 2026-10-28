@@ -1,13 +1,16 @@
 import { colunaDe, prioridades, secoesLivro, type Agent, type Card, type RoomId } from "@empresa/shared";
-import { agentById, agents, checklistPerformance, conhecimentoStacks, especialidades, playbookPadrao, playbooks, referencias, roomById, rooms, salasTecnicas, nomeDaSala, salaDe, agentesDe, coordenadorDe, definicaoDe, escritorioDe, salasDe, SEDE } from "@empresa/org";
+import { projetoDoCard, agentById, agents, checklistPerformance, conhecimentoStacks, especialidades, playbookPadrao, playbooks, referencias, roomById, rooms, salasTecnicas, nomeDaSala, salaDe, agentesDe, coordenadorDe, definicaoDe, escritorioDe, salasDe, SEDE } from "@empresa/org";
 import { lerLivro } from "../livro.ts";
 import { conhecimentoDaSala } from "../conhecimento.ts";
 import { contextoDoLead } from "../prospeccao.ts";
 import { contextoDaPeca } from "../marketing.ts";
-import { worktreeDoCard } from "../fabrica/workspace.ts";
+import { registroDoCard, worktreeDoCard } from "../fabrica/workspace.ts";
 import { metasEmTexto } from "../metas.ts";
 import { fichaDoProjeto } from "../projetos.ts";
-import { lerCard, listarComentarios, listarEntregas, ultimaEntrega } from "../tarefas.ts";
+import { lerCard, listarCards, listarComentarios, listarDevolucoesDoAgente, listarEntregas, ultimaEntrega } from "../tarefas.ts";
+
+// Só os pedidos a outras áreas (etiqueta "pedido"); leads, chamados e bugs também têm pai, mas não são pedidos.
+const listarCardsFilhos = (id: number) => listarCards().filter((c) => c.paiId === id && c.etiquetas.includes("pedido"));
 
 // Prompts dos agentes. Ordem pensada para o cache de prompt: o que não muda entre
 // tarefas (identidade, playbook, regras, diretório, Livro) vem no system; o que é
@@ -74,7 +77,7 @@ Você é a porta de entrada deste escritório: o CEO fala com você pelo chat. S
 1. Quando o CEO pede um trabalho, transforme o pedido em cards com criar_cards e distribua para as salas e pessoas certas DESTE escritório (só as do diretório abaixo). Cada card precisa de título claro, sala, dono (id de um agente daquela sala), descrição com contexto suficiente, critérios de aceite verificáveis, prioridade e nível de autonomia.
 2. Encadeie etapas dependentes com depende_de; etapas independentes rodam em paralelo.
 3. Comece enxuto: só o necessário para a primeira entrega de valor.
-4. Use N0 em etapas internas e reversíveis, N1 na entrega que o CEO precisa ver, N2 em tudo que tem efeito externo.
+4. Use N0 em etapas internas e reversíveis, N1 na entrega que o CEO precisa ver, N2 em tudo que tem efeito externo. Código (backend, frontend, app, banco, infraestrutura) nunca é N0: sempre passa pelo CEO.
 5. Responda no chat em poucas linhas, em português do Brasil, dizendo o que vai acontecer e quem vai fazer.
 
 Níveis de autonomia: N0 = interno e reversível (só o validador aprova); N1 = o CEO revisa, pode ser em lote (padrão); N2 = efeito externo, o CEO aprova um por um; N3 = dinheiro, contratos, redes sociais: o agente prepara e o CEO executa.
@@ -107,6 +110,8 @@ ${playbookDe(agente.sala)}${especialidades[agente.id] ? `\n\n${especialidades[ag
 ## Como usar as ferramentas
 - Termine SEMPRE chamando entregar, com o conteúdo final completo em Markdown. O conteúdo é o produto do seu trabalho; o resumo é uma frase para o board.
 - Se faltar uma informação que só o CEO tem e sem a qual a entrega não faz sentido, chame perguntar_ao_ceo em vez de entregar. Use isso pouco: na dúvida, assuma uma premissa explícita e entregue.
+- Se o card pede algo que você NÃO consegue fazer com as suas ferramentas (rodar testes, aplicar uma migração, publicar, acessar um sistema), não entregue como se estivesse feito: deixe pronto tudo o que der e chame perguntar_ao_ceo dizendo exatamente o que falta e como o CEO faz essa parte.
+- Para ler por inteiro um plano, contrato, schema ou entrega de outro card, use ler_card (a busca na memória só traz trechos).
 - Se uma parte do trabalho é de outra área, chame pedir_para_outra_area para abrir um card para ela, e siga com a sua parte.
 - Quando a tarefa for sobre um projeto do CEO, leia os arquivos com listar_arquivos, ler_arquivo e buscar_no_codigo antes de afirmar qualquer coisa sobre o código.
 - Se descobrir um padrão que vale para os próximos trabalhos da área (convenção do projeto, decisão da casa, modelo reutilizável), chame registrar_conhecimento. Vira proposta para o CEO aprovar.
@@ -119,7 +124,7 @@ ${diretorio(agente.escritorio ?? SEDE)}
 ${livroDaEmpresa()}
 
 ## Metas do trimestre
-${metasEmTexto()}`;
+Vêm na mensagem do card (mudam com frequência; ficam fora daqui para o cache valer entre cards).`;
 }
 
 type Foco = "corretude" | "performance" | "seguranca" | "qa";
@@ -147,6 +152,8 @@ Agora você está como VALIDADOR de uma entrega da área ${sala.nome}. Seu papel
 - Se não estiver, chame devolver com motivos numerados, específicos e acionáveis: o que está errado, onde, e o que fazer. Não devolva por gosto pessoal nem por detalhe cosmético.
 - Na segunda rodada em diante, confira se os motivos anteriores foram resolvidos antes de levantar pontos novos.
 - Termine SEMPRE chamando aprovar ou devolver.
+- Nunca aprove um "não deu": se a entrega admite que o principal do card não foi feito (não rodou, não aplicou, não testou), devolva. Se for impossível com as ferramentas da equipe, devolva pedindo que o autor deixe pronto o que der e use perguntar_ao_ceo para o CEO fazer o resto.
+- Para conferir contra outro card (plano, contrato, schema), leia-o inteiro com ler_card.
 
 ${REGRAS}
 
@@ -162,7 +169,7 @@ ${diretorio(agente.escritorio ?? SEDE)}
 ${livroDaEmpresa()}
 
 ## Metas do trimestre
-${metasEmTexto()}`;
+Vêm na mensagem do card (mudam com frequência; ficam fora daqui para o cache valer entre cards).`;
 }
 
 /** System prompt do advogado do diabo: questiona as premissas antes da validação. */
@@ -184,12 +191,18 @@ ${REGRAS}
 ${livroDaEmpresa()}
 
 ## Metas do trimestre
-${metasEmTexto()}`;
+Vêm na mensagem do card (mudam com frequência; ficam fora daqui para o cache valer entre cards).`;
 }
 
 export function mensagemAdvogado(card: Card): string {
   const atual = ultimaEntrega(card.id);
-  return [descreverCard(card), contextoExtra(card), `## Entrega a questionar (versão ${atual?.versao ?? "?"})\n${atual?.conteudo ?? "(sem entrega)"}`, "Liste os seus questionamentos."]
+  return [
+    descreverCard(card),
+    contextoExtra(card),
+    blocoMetas(),
+    `## Entrega a questionar (versão ${atual?.versao ?? "?"})\n${atual?.conteudo ?? "(sem entrega)"}`,
+    "Liste os seus questionamentos.",
+  ]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -204,7 +217,7 @@ Você é a porta de entrada da empresa: o CEO fala com você pelo chat (texto ou
 1. Quando o CEO pede um trabalho, transforme o pedido em cards com criar_cards e distribua para as áreas e pessoas certas. Cada card precisa de: título claro, sala, dono (id de um agente daquela sala), descrição com contexto suficiente para o dono trabalhar sozinho, critérios de aceite verificáveis, prioridade e nível de autonomia.
 2. Encadeie etapas que dependem umas das outras com depende_de (ex.: histórias do Produto → protótipo do Design → plano da Arquitetura). Etapas independentes rodam em paralelo.
 3. Comece enxuto: só os cards necessários para a primeira entrega de valor. Mais cards podem vir depois.
-4. A cadeia anda sozinha: cada etapa só começa quando a anterior está concluída. Use N0 nas etapas intermediárias internas (histórias, protótipo, plano técnico), que o validador aprova sem parar no CEO; deixe N1 ou N2 na entrega final que o CEO precisa ver e em tudo que tem efeito externo. Se o CEO pedir para aprovar cada etapa, use N1 em todas.
+4. A cadeia anda sozinha: cada etapa só começa quando a anterior está concluída. Use N0 nas etapas intermediárias internas (histórias, protótipo, plano técnico), que o validador aprova sem parar no CEO; código (backend, frontend, app, banco, infraestrutura) nunca é N0, sempre passa pelo CEO; deixe N1 ou N2 na entrega final que o CEO precisa ver e em tudo que tem efeito externo. Se o CEO pedir para aprovar cada etapa, use N1 em todas.
 5. Quando o CEO pergunta sobre andamento, responda com base no resumo da board que vem na mensagem.
 6. Responda no chat em poucas linhas, em português do Brasil, dizendo o que vai acontecer e quem vai fazer. Sem listas longas.
 7. Chame os especialistas certos na cadeia de uma funcionalidade nova: com telas, a UX Writer (id "ux-writer") escreve os textos junto com o protótipo; se coleta ou usa dado pessoal, a DPO (id "dpo") revisa as histórias antes do desenvolvimento; se usa IA, o Engenheiro de IA (id "engenheiro-ia") desenha prompt, eval e custo junto com a Arquitetura; preço e posicionamento são da Product Marketing (id "pmm"); impostos e nota fiscal, do Contador (id "contador").
@@ -267,9 +280,18 @@ function contextoExtra(card: Card): string {
     if (peca) partes.push(peca);
     else if (card.tipo === "conteudo") partes.push(`## Peça\nSalve a peça com salvar_peca (canal, formato, texto final, hashtags, CTA, roteiro visual, variações A/B e data de publicação${card.prazo ? ` — sugerida: ${new Date(card.prazo).toLocaleDateString("pt-BR")}` : ""}) antes de entregar.`);
   }
-  const projeto = fichaDoProjeto(card.projetoId);
+  const projeto = fichaDoProjeto(projetoDoCard(card));
   const wt = worktreeDoCard(card);
-  if (projeto && wt) {
+  const proprio = registroDoCard(card.id)?.status === "ativo";
+  if (projeto && wt && !proprio) {
+    // Card de apoio a um card de código: lê a cópia do pai, com o trabalho em andamento.
+    const pai = card.paiId ? lerCard(card.paiId) : null;
+    partes.push(
+      `## Projeto: ${projeto.nome} (cópia do card ${pai?.chave ?? "pai"}, branch ${wt.branch})\nVocê lê a cópia isolada do card que te pediu este trabalho, COM o código que ele está escrevendo (ainda sem merge). Leia com listar_arquivos, ler_arquivo e buscar_no_codigo (somente leitura).\n${
+        projeto.ficha ? `### Ficha do Projeto\n${projeto.ficha}` : ""
+      }`,
+    );
+  } else if (projeto && wt) {
     partes.push(
       `## Projeto: ${projeto.nome} (cópia isolada, branch ${wt.branch})\nVocê trabalha numa cópia isolada do projeto: a pasta do CEO não muda até ele fazer o merge. Leia com listar_arquivos, ler_arquivo e buscar_no_codigo; mude o código com escrever_arquivo e editar_arquivo; rode testes, build e lint com rodar_comando (se tiver). O commit é automático quando você entrega. Escreva os testes junto com o código e rode-os antes de entregar.\n${
         projeto.ficha ? `### Ficha do Projeto\n${projeto.ficha}` : "(ainda não há Ficha do Projeto: leia os arquivos que precisar)"
@@ -286,8 +308,9 @@ function contextoExtra(card: Card): string {
 }
 
 /** Debate desde a última entrega: devoluções e comentários do validador e do CEO. */
-function debateRecente(card: Card): string {
-  const coms = listarComentarios(card.id).filter((c) => c.tipo !== "movimento");
+function debateRecente(card: Card, paraValidador = false): string {
+  // O validador não vê a autocrítica do autor: julga a entrega, não a defesa dela.
+  const coms = listarComentarios(card.id).filter((c) => c.tipo !== "movimento" && !(paraValidador && c.tipo === "autocritica"));
   if (!coms.length) return "";
   return coms
     .slice(-12)
@@ -300,12 +323,38 @@ function debateRecente(card: Card): string {
     .join("\n");
 }
 
+/** O que as outras áreas entregaram nos pedidos que este card fez (o autor continua com isso). */
+function resultadoDosPedidos(card: Card): string {
+  const filhos = listarCardsFilhos(card.id);
+  if (!filhos.length) return "";
+  return `## Pedidos que você fez a outras áreas\n${filhos
+    .map((f) => {
+      const e = ultimaEntrega(f.id);
+      const col = colunaDe(f.fluxo, f.coluna)?.nome ?? f.coluna;
+      return `### ${f.chave} · ${f.titulo} (${col})\n${e ? `${e.resumo}\n\n${e.conteudo.slice(0, 8000)}${e.conteudo.length > 8000 ? "\n…(continua: use ler_card para ler tudo)" : ""}` : "(sem entrega)"}`;
+    })
+    .join("\n\n")}\n\nUse o resultado desses pedidos na sua entrega.`;
+}
+
+/** Memória do agente: o que já devolveram a ele em outros cards (para não repetir o mesmo erro). */
+function memoriaDoAgente(card: Card): string {
+  if (!card.dono) return "";
+  const devolucoes = listarDevolucoesDoAgente(card.dono, card.id, 5);
+  if (!devolucoes.length) return "";
+  return `## O que já te devolveram em outros cards (não repita)\n${devolucoes.map((d) => `- ${d.chave}: ${d.texto.replace(/\s+/g, " ").slice(0, 400)}`).join("\n")}`;
+}
+
+const blocoMetas = () => `## Metas do trimestre\n${metasEmTexto()}`;
+
 export function mensagemExecutar(card: Card): string {
   const anterior = ultimaEntrega(card.id);
   const debate = debateRecente(card);
   return [
     descreverCard(card),
     contextoExtra(card),
+    resultadoDosPedidos(card),
+    memoriaDoAgente(card),
+    blocoMetas(),
     anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${anterior.conteudo}` : "",
     debate ? `## Comentários e devoluções\n${debate}\n\nResolva todos os pontos das devoluções e da conversa com o CEO nesta nova versão.` : "",
     anterior ? "Faça a nova versão completa (não só as mudanças) e chame entregar." : "Faça o trabalho e chame entregar.",
@@ -314,15 +363,17 @@ export function mensagemExecutar(card: Card): string {
     .join("\n\n");
 }
 
-export function mensagemValidar(card: Card): string {
+export function mensagemValidar(card: Card, mudancas = ""): string {
   const entregas = listarEntregas(card.id);
   const atual = entregas.at(-1);
   const autor = card.dono ? agentById[card.dono] : undefined;
-  const debate = debateRecente(card);
+  const debate = debateRecente(card, true);
   return [
     descreverCard(card),
     contextoExtra(card),
+    blocoMetas(),
     `## Entrega para validar (versão ${atual?.versao ?? "?"}, por ${autor?.nome ?? "?"})\n${atual?.conteudo ?? "(sem entrega)"}`,
+    mudancas ? `## O que mudou desde a versão anterior\n\`\`\`diff\n${mudancas}\n\`\`\`\nConfira se as mudanças resolvem as devoluções anteriores sem estragar o que já estava bom.` : "",
     debate ? `## Histórico do debate\n${debate}` : "",
     "Confira contra o checklist da área e os critérios de aceite. Termine chamando aprovar ou devolver.",
   ]

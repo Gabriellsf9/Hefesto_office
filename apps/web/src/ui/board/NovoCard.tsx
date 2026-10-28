@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { colunaDeEntrada, fluxoDaSala, fluxos, niveis, prioridades, tiposCard, type Card, type FluxoId, type RoomId, fluxoPadrao } from "@empresa/shared";
+import { baseDoFluxo, ehCardDeCodigo, colunaDeEntrada, fluxoDaSala, fluxos, niveis, prioridades, tiposCard, type Card, type FluxoId, type RoomId, fluxoPadrao } from "@empresa/shared";
 import { agentById, agents, roomById, rooms, salaDe, fluxosDe, escritorioAtivo } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
@@ -12,7 +12,7 @@ const salaPadrao: Partial<Record<FluxoId, RoomId>> = {
   software: "produto", marketing: "marketing", comercial: "comercial", operacoes: "infraestrutura", geral: "diretoria",
 };
 /** Sala onde um card novo deste fluxo nasce (a da sede, a da 1ª coluna com sala ou a 1ª sala do escritório). */
-const salaPadraoDo = (f: FluxoId): RoomId => salaPadraoDo(f) ?? fluxos[f]?.colunas.find((c) => c.sala)?.sala ?? rooms[0]!.id;
+const salaPadraoDo = (f: FluxoId): RoomId => salaPadrao[f] ?? fluxos[f]?.colunas.find((c) => c.sala)?.sala ?? rooms[0]!.id;
 const liderDe = (s: RoomId) => agents.find((a) => a.sala === s && a.lider)?.id ?? agents.find((a) => a.sala === s)?.id ?? "";
 
 export function NovoCard() {
@@ -32,12 +32,15 @@ function Formulario({ fechar }: { fechar: () => void }) {
   const [fluxo, setFluxo] = useState<FluxoId>(fluxoInicial);
   const [sala, setSala] = useState<RoomId>(salaPadraoDo(fluxoInicial));
   const [titulo, setTitulo] = useState("");
-  const [tipo, setTipo] = useState<Card["tipo"]>(fluxoInicial === "software" ? "historia" : "tarefa");
+  const [tipo, setTipo] = useState<Card["tipo"]>(baseDoFluxo(fluxoInicial) === "software" ? "historia" : "tarefa");
   const [prioridade, setPrioridade] = useState<Card["prioridade"]>("P2");
   const [nivel, setNivel] = useState<Card["nivel"]>("N1");
   const [descricao, setDescricao] = useState("");
   const [criterios, setCriterios] = useState("");
-  const [projetoId, setProjetoId] = useState<number | null>(fluxoInicial === "software" ? projetoAtivo : null);
+  const [projetoId, setProjetoId] = useState<number | null>(baseDoFluxo(fluxoInicial) === "software" ? projetoAtivo : null);
+  const [melhorDe3, setMelhorDe3] = useState(false);
+  // Card que mexe no código (sala de código do fluxo de software, com projeto): pode usar o "melhor de 3".
+  const codigo = !!projetoId && ehCardDeCodigo({ fluxo, sala, tipo });
   const [dono, setDono] = useState(liderDe(salaPadraoDo(fluxoInicial)));
   const [comecarAgora, setComecarAgora] = useState(true);
   const [mais, setMais] = useState(false);
@@ -53,7 +56,7 @@ function Formulario({ fechar }: { fechar: () => void }) {
     try {
       // "Começar agora" coloca o card na fila da equipe (fora do Backlog) para o motor pegar.
       const coluna = comecarAgora ? colunaDeEntrada(fluxo) : undefined;
-      const c = await api<Card>("/api/cards", "POST", { titulo, fluxo, sala, tipo, prioridade, nivel, descricao, criterios, projetoId, coluna, dono: dono || null });
+      const c = await api<Card>("/api/cards", "POST", { titulo, fluxo, sala, tipo, prioridade, nivel, descricao, criterios, projetoId, coluna, dono: dono || null, ...(melhorDe3 && codigo ? { etiquetas: ["melhor-de-3"] } : {}) });
       fechar();
       avisar(`${c.chave} criado`);
       useStore.getState().abrirCard(c.id);
@@ -125,10 +128,19 @@ function Formulario({ fechar }: { fechar: () => void }) {
             <option value="">Sem responsável</option>
             {agents.filter((a) => a.sala === sala).map((a) => <option key={a.id} value={a.id}>{a.nome} · {a.cargo}</option>)}
           </Seletor>
+          {codigo && (
+            <Interruptor
+              ativo={melhorDe3}
+              onChange={setMelhorDe3}
+              rotulo="Melhor de 3"
+              descricao="Para código crítico: 3 tentativas em paralelo, fica a que passa nas verificações (tipos, lint e testes) com o menor diff. Custa cerca de 3 vezes mais."
+            />
+          )}
           <AreaTexto rotulo="Critérios de aceite" value={criterios} onChange={(e) => setCriterios(e.target.value)} rows={3} placeholder={"- Dado um cliente no plano mensal, quando ele abre Preços, então vê o desconto do anual"} />
         </div>
       )}
 
+      <Estimativa sala={sala} tipo={tipo} />
       <div className="flex items-center gap-3 border-t border-line pt-4">
         <div className="flex-1">
           <Interruptor ativo={comecarAgora} onChange={setComecarAgora} rotulo="A equipe começa agora" descricao={comecarAgora ? "O responsável pega o card sozinho." : "O card fica parado no Backlog."} />
@@ -137,5 +149,22 @@ function Formulario({ fechar }: { fechar: () => void }) {
         <Botao variante="principal" type="submit" carregando={criando}>Criar card</Botao>
       </div>
     </form>
+  );
+}
+
+/** Quanto cards parecidos (mesma área e tipo) costumam custar, pelo histórico. */
+function Estimativa({ sala, tipo }: { sala: RoomId; tipo: Card["tipo"] }) {
+  const [e, setE] = useState<{ min: number; tipico: number; max: number; amostras: number } | null>(null);
+  useEffect(() => {
+    void api<{ min: number; tipico: number; max: number; amostras: number } | { semHistorico: true }>(`/api/estimativa?sala=${encodeURIComponent(sala)}&tipo=${tipo}`)
+      .then((r) => setE("semHistorico" in r ? null : r))
+      .catch(() => setE(null));
+  }, [sala, tipo]);
+  if (!e) return null;
+  const usd = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "USD" });
+  return (
+    <p className="text-legenda text-fg-3">
+      Custo estimado: <b className="text-fg-2">{usd(e.tipico)}</b> (normalmente entre {usd(e.min)} e {usd(e.max)}, pelos últimos {e.amostras} cards parecidos).
+    </p>
   );
 }

@@ -5,15 +5,28 @@ import { aoLadoDaMesa, assentoDaMesa, rota, type Lugar, type Ponto } from "./nav
 import { assentosReuniao, pois, rotulosAcao, type Acao } from "./pois.ts";
 
 // Vida no escritório: quando o agente está ocioso ele levanta, toma café, come,
-// descansa ou vai conversar com um colega. Quando recebe trabalho, volta (rápido)
-// para a mesa e senta no computador. O validador vai até a mesa de quem ele valida.
+// descansa ou vai conversar com um colega — saídas curtas; o normal é ficar na mesa.
+// Quando recebe trabalho, volta (rápido) para a mesa e senta no computador.
+// O validador vai até a mesa de quem ele valida. Quem passa uma tarefa para outro
+// leva a pasta até a mesa dele; quem recebe reage (📥) antes de começar.
 
 export type Pose = "sentado" | "em-pe" | "andando";
-export type ItemNaMao = "xicara" | "fruta" | "copo" | "livro" | null;
+export type ItemNaMao = "xicara" | "fruta" | "copo" | "livro" | "pasta" | null;
 
 const VELOCIDADE_LIVRE = 1.7;
 const VELOCIDADE_TRABALHO = 4.2;
-const MAX_PASSEANDO = 10;
+const VELOCIDADE_ENTREGA = 6;
+/** Segundos (mín., máx.) em cada lugar quando ocioso: bem mais tempo na mesa do que fora dela. */
+const TEMPO_NA_MESA: [number, number] = [50, 140];
+const TEMPO_FORA: [number, number] = [10, 22];
+const TEMPO_CONVERSA: [number, number] = [7, 13];
+/** Chance de, ao fim do tempo na mesa, sair mesmo (senão continua lá mais um tempo). */
+const CHANCE_DE_SAIR = 0.45;
+/** No máximo ~1 em cada 10 fora da mesa ao mesmo tempo (entre 2 e 6). */
+const maxPasseando = () => Math.max(2, Math.min(6, Math.round(agents.length * 0.1)));
+/** Tempo parado ao lado da mesa do colega entregando a pasta. */
+const TEMPO_ENTREGA = 2.2;
+const entre = ([a, b]: [number, number]) => a + Math.random() * (b - a);
 
 const itemDaAcao: Partial<Record<Acao, ItemNaMao>> = { cafe: "xicara", comer: "fruta", agua: "copo", ler: "livro" };
 /** Emoji do balão que aparece sobre a cabeça enquanto o agente faz aquilo. */
@@ -32,6 +45,8 @@ interface Destino {
   texto: string | null;
   rapido: boolean;
   emoji?: string;
+  /** Quanto tempo fica depois de chegar (ocioso). */
+  dura?: number;
 }
 
 const controladores = new Map<string, Comportamento>();
@@ -45,6 +60,24 @@ export function comportamentoDe(id: string) {
 }
 
 const passeando = () => [...controladores.values()].filter((c) => c.livreForaDaMesa).length;
+
+/** Repasses de tarefa vindos do servidor (Helena distribuindo, pedido a outra área, etapa seguinte, validação). */
+interface Repasse {
+  de: string;
+  para: string;
+  motivo: "pedido" | "validacao" | "devolucao" | "proxima-etapa";
+}
+window.addEventListener("hefesto:repasse", (ev) => {
+  const r = (ev as CustomEvent<Repasse>).detail;
+  const aqui = new Set(agents.map((a) => a.id));
+  if (r.de === r.para || !aqui.has(r.de) || !aqui.has(r.para)) return;
+  if (r.motivo === "pedido" || r.motivo === "proxima-etapa") comportamentoDe(r.de).levarTarefa(r.para);
+  else {
+    // Validação e devolução: o validador já vai até a mesa do autor; aqui só os sinais de quem manda e de quem recebe.
+    comportamentoDe(r.de).sinal(r.motivo === "validacao" ? "📤" : "↩️", 3);
+    comportamentoDe(r.para).receber(r.motivo === "validacao" ? "📥" : "📝");
+  }
+});
 const sorteia = <T>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)]!;
 
 export class Comportamento {
@@ -64,22 +97,52 @@ export class Comportamento {
   private chegou = true;
   private timer: number;
   private poiAtual: number | null = null;
+  /** Relógio próprio (segundos), para as animações curtas. */
+  relogio = 0;
+  /** Quando recebeu a última tarefa (para o pulinho e o aceno). */
+  recebeuEm = -99;
+  private aviso: { emoji: string; ate: number } | null = null;
+  /** Tarefas a entregar em mãos, em ordem (a Helena distribuindo vários cards vai de mesa em mesa). */
+  private entregas: string[] = [];
+  private entregandoAte: number | null = null;
 
   constructor(private readonly id: string) {
     this.mesa = assentoDaMesa(id);
     this.x = this.mesa.x;
     this.z = this.mesa.z;
     this.destino = this.destinoMesa(false);
-    this.timer = 6 + Math.random() * 50;
+    this.timer = 20 + Math.random() * 100;
   }
 
   get livreForaDaMesa() {
     return this.destino.chave !== "mesa" && !this.destino.rapido;
   }
 
-  /** Balão com emoji sobre a cabeça: só depois de chegar (no café, no puff, conversando…). */
+  /** Balão com emoji sobre a cabeça: um aviso rápido (📥, 📤…) ou, depois de chegar, o do lugar (☕, 💬, 📋…). */
   get balao(): string | null {
+    if (this.aviso && this.relogio < this.aviso.ate) return this.aviso.emoji;
     return this.chegou ? (this.destino.emoji ?? null) : null;
+  }
+
+  /** Leva uma tarefa em mãos até a mesa de outro agente. */
+  levarTarefa(para: string) {
+    if (this.entregas.length < 6 && !this.entregas.includes(para)) this.entregas.push(para);
+  }
+
+  /** Mostra um emoji por alguns segundos. */
+  sinal(emoji: string, segundos: number) {
+    this.aviso = { emoji, ate: this.relogio + segundos };
+  }
+
+  /** Recebeu uma tarefa: 📥 e um pulinho antes de começar. */
+  receber(emoji = "📥") {
+    this.sinal(emoji, 3.5);
+    this.recebeuEm = this.relogio;
+  }
+
+  private destinoEntrega(para: string): Destino {
+    const nome = agentById[para]?.nome ?? para;
+    return { ...this.destinoAoLado(para, `Levando uma tarefa para ${nome}`, true), chave: `entrega:${para}`, item: "pasta", emoji: "📋" };
   }
 
   get sentadoNaMesa() {
@@ -112,7 +175,22 @@ export class Comportamento {
   }
 
   update(dt: number, status: AgentStatus, com: string | null) {
+    this.relogio += dt;
     const trabalhando = status !== "ocioso";
+
+    // Entregar tarefas em mãos vem antes de tudo (é rápido).
+    if (this.entregandoAte !== null) {
+      if (this.relogio >= this.entregandoAte) {
+        this.entregandoAte = null;
+        this.item = null;
+        this.entregas.shift();
+      } else return this.andar(dt);
+    }
+    if (this.entregas.length) {
+      const d = this.destinoEntrega(this.entregas[0]!);
+      if (d.chave !== this.destino.chave) this.irPara(d);
+      return this.andar(dt);
+    }
 
     if (trabalhando) {
       const reuniao = status === "em-reuniao" && com?.startsWith("reuniao:") ? Number(com.slice(8)) : null;
@@ -129,8 +207,9 @@ export class Comportamento {
     } else if (this.chegou) {
       this.timer -= dt;
       if (this.timer <= 0) {
-        if (this.destino.chave === "mesa") this.escolherPasseio();
-        else this.irPara(this.destinoMesa(false));
+        if (this.destino.chave !== "mesa") this.irPara(this.destinoMesa(false));
+        else if (Math.random() < CHANCE_DE_SAIR) this.escolherPasseio();
+        else this.timer = entre(TEMPO_NA_MESA);
       }
     }
 
@@ -138,8 +217,8 @@ export class Comportamento {
   }
 
   private escolherPasseio() {
-    this.timer = 15 + Math.random() * 45;
-    if (passeando() >= MAX_PASSEANDO) return;
+    this.timer = entre(TEMPO_NA_MESA);
+    if (passeando() >= maxPasseando()) return;
 
     const sala = this.mesa.sala;
     const r = Math.random();
@@ -149,7 +228,7 @@ export class Comportamento {
       if (candidatos.length) {
         const outro = sorteia(candidatos);
         const d = this.destinoAoLado(outro.id, `Conversando com ${outro.nome} 💬`, false);
-        this.irPara(d);
+        this.irPara({ ...d, dura: entre(TEMPO_CONVERSA) });
         return;
       }
     }
@@ -172,6 +251,7 @@ export class Comportamento {
       texto: rotulosAcao[p.acao],
       rapido: false,
       emoji: emojiDaAcao[p.acao],
+      dura: entre(TEMPO_FORA),
     });
   }
 
@@ -187,8 +267,8 @@ export class Comportamento {
 
     this.destino = d;
     this.chegou = false;
-    this.item = null;
-    this.timer = 8 + Math.random() * 12;
+    this.item = d.chave.startsWith("entrega:") ? "pasta" : null;
+    this.timer = d.dura ?? (d.chave === "mesa" ? entre(TEMPO_NA_MESA) : entre(TEMPO_FORA));
     useStore.getState().setTempoLivre(this.id, d.texto ? `A caminho: ${d.texto}` : null);
   }
 
@@ -199,7 +279,7 @@ export class Comportamento {
       return;
     }
 
-    const vel = this.destino.rapido ? VELOCIDADE_TRABALHO : VELOCIDADE_LIVRE;
+    const vel = this.destino.chave.startsWith("entrega:") ? VELOCIDADE_ENTREGA : this.destino.rapido ? VELOCIDADE_TRABALHO : VELOCIDADE_LIVRE;
     let restante = vel * dt;
     while (restante > 0 && this.proximo < this.percurso.length) {
       const p = this.percurso[this.proximo]!;
@@ -227,6 +307,11 @@ export class Comportamento {
       this.alturaAssento = this.destino.alturaAssento;
       this.item = this.destino.item;
       useStore.getState().setTempoLivre(this.id, this.destino.texto);
+      // Chegou com a pasta: entrega e o colega reage.
+      if (this.destino.chave.startsWith("entrega:")) {
+        this.entregandoAte = this.relogio + TEMPO_ENTREGA;
+        comportamentoDe(this.destino.chave.slice(8)).receber();
+      }
     }
   }
 }

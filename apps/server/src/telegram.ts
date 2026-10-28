@@ -4,7 +4,7 @@ import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import { getSetting, setSetting } from "./db.ts";
 import { emit, subscribe } from "./bus.ts";
 import { apagarSegredo, lerSegredo, salvarSegredo } from "./secrets.ts";
-import { aprovar, devolver, ErroCard, lerCard, listarCards } from "./tarefas.ts";
+import { aprovar, devolver, ErroCard, lerCard, listarCards, ETIQUETA_LIMITE, liberarGasto, limiteDoCard } from "./tarefas.ts";
 import { aprovarPedido, recusarPedido } from "./mcp/ferramentas.ts";
 import { aprovarResposta, descartarResposta, lerContato } from "./whatsapp/whatsapp.ts";
 import { pedirParaHelena } from "./agentes/helena.ts";
@@ -141,6 +141,12 @@ function avisoCard(card: Card) {
       `✅ <b>Pronto para aprovar</b> · ${card.chave} (${card.nivel}, ${card.prioridade})\n${escapar(card.titulo)}\n<i>${escapar(nomeDaSala(card.sala))} · ${escapar(nomeDe(card.dono))}${card.validador ? `, validado por ${escapar(nomeDe(card.validador))}` : ""}</i>`,
       [[{ text: "Aprovar", callback_data: `ap:${card.id}` }, { text: "Devolver", callback_data: `dv:${card.id}` }]],
     );
+  } else if (card.bloqueado && card.etiquetas.includes(ETIQUETA_LIMITE) && uma(`lg-${card.id}-${card.custoUsd.toFixed(2)}`)) {
+    const lim = limiteDoCard(card);
+    void enviar(
+      `💸 <b>Limite de gasto</b> · ${card.chave}\n${escapar(card.titulo)}\n<i>Gastou US$ ${card.custoUsd.toFixed(2)} e parou. Liberando, ${escapar(nomeDe(card.dono))} continua de onde parou.</i>`,
+      [[{ text: `Liberar mais US$ ${lim.toFixed(2)}`, callback_data: `lb:${card.id}` }]],
+    );
   } else if (card.bloqueado && c.notificar.perguntas && uma(`bq-${card.id}-${card.atualizadoEm}`)) {
     void enviar(`❓ <b>Pergunta para você</b> · ${card.chave}\n${escapar(card.titulo)}\n<i>Responda aqui citando ${card.chave} ou abra o card no Mac.</i>`);
   }
@@ -204,6 +210,7 @@ async function tratar(u: Update) {
       else if (acao === "rc") resposta = (recusarPedido(id, "Recusado pelo Telegram"), "Recusado.");
       else if (acao === "wo") resposta = `Mensagem ${(await aprovarResposta(id)).status}.`;
       else if (acao === "wn") resposta = (descartarResposta(id), "Descartada.");
+      else if (acao === "lb") resposta = `Liberado: ${liberarGasto(id).chave} continua.`;
     } catch (e) {
       resposta = e instanceof Error ? e.message : String(e);
     }

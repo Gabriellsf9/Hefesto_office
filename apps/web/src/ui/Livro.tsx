@@ -101,7 +101,7 @@ function Conteudo({ id, secao }: { id: SecaoLivroId; secao?: SecaoLivro }) {
         <div>
           A Helena ainda não chegou neste bloco da entrevista.
           <br />
-          <button onClick={() => setEditando(true)} className="mt-3 text-pequeno font-semibold text-fg underline">
+          <button onClick={() => setEditando(true)} className="mt-3 inline-flex min-h-6 items-center px-1 text-pequeno font-semibold text-fg underline">
             Escrever eu mesmo
           </button>
         </div>

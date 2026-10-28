@@ -9,6 +9,7 @@ import { send } from "../ws.ts";
 import { navegar } from "../nav.ts";
 import { Botao, CampoSegredo, avisarErro, cx, useCamada } from "./kit/index.ts";
 import { Avatarzinho } from "./comum.tsx";
+import { BotaoEscolherPasta } from "./SeletorDePastas.tsx";
 
 // Boas-vindas da primeira vez (DESIGN-INTERFACE.md §6.10): chave da API, o seu negócio (entrevista com a Helena)
 // e o projeto. Cada passo pode ser pulado; a escolha fica salva neste navegador.
@@ -139,31 +140,17 @@ function PassoNegocio({ proximo }: { proximo: () => void }) {
 }
 
 function PassoProjeto({ terminar }: { terminar: () => void }) {
-  const [escolhendo, setEscolhendo] = useState(false);
   return (
     <div className="space-y-4">
       <p className="text-corpo text-fg-2">Se você tem um app ou site, escolha a pasta dele: o Arquiteto faz um raio-x e a equipe passa a trabalhar numa cópia isolada. Nada entra no seu projeto sem o seu merge.</p>
       <div className="flex items-center justify-between gap-2">
         <Botao variante="discreto" onClick={terminar}>Pular por agora</Botao>
-        <Botao
-          variante="principal"
-          icone={FolderOpen}
-          carregando={escolhendo}
-          onClick={async () => {
-            setEscolhendo(true);
-            try {
-              await api("/api/projetos/escolher", "POST");
-              terminar();
-              navegar("operacao", "projetos");
-            } catch (e) {
-              avisarErro(e);
-            } finally {
-              setEscolhendo(false);
-            }
+        <BotaoEscolherPasta
+          aoEscolher={() => {
+            terminar();
+            navegar("operacao", "projetos");
           }}
-        >
-          {escolhendo ? "Escolha a pasta na janela do Mac…" : "Escolher pasta"}
-        </Botao>
+        />
       </div>
     </div>
   );

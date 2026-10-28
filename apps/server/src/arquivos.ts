@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import type Anthropic from "@anthropic-ai/sdk";
 import ExcelJS from "exceljs";
 import { DATA_DIR } from "./paths.ts";
+import { NO_MAC, opcoesDoChrome } from "./plataforma.ts";
 import { ErroCard } from "./tarefas.ts";
 import { pastaDeMidia } from "./fabrica/capturas.ts";
 import { ErroEntrada, ferramenta, texto, type Ferramenta } from "./agentes/loop.ts";
@@ -97,7 +98,12 @@ export const arquivosEmMarkdown = (urls: string[]) =>
 /** Texto de um arquivo para a IA (DOCX/DOC/RTF pelo textutil, planilhas como tabela). */
 async function textoDe(caminho: string, ext: string): Promise<string> {
   if (["txt", "md", "csv", "json", "html"].includes(ext)) return readFileSync(caminho, "utf8");
-  if (["docx", "doc", "rtf"].includes(ext)) return (await run("/usr/bin/textutil", ["-convert", "txt", "-stdout", caminho], { maxBuffer: 20 * 1024 * 1024, timeout: 30_000 })).stdout;
+  if (["docx", "doc", "rtf"].includes(ext)) {
+    if (NO_MAC) return (await run("/usr/bin/textutil", ["-convert", "txt", "-stdout", caminho], { maxBuffer: 20 * 1024 * 1024, timeout: 30_000 })).stdout;
+    // No Docker: pandoc (lê DOCX e RTF; o .doc antigo, não).
+    if (ext === "doc") throw new ErroEntrada("Arquivos .doc antigos só são lidos no Mac. Salve como .docx e envie de novo.");
+    return (await run("pandoc", ["-f", ext, "-t", "plain", "--wrap=none", caminho], { maxBuffer: 20 * 1024 * 1024, timeout: 30_000 })).stdout;
+  }
   if (ext === "xlsx") {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(caminho);
@@ -196,7 +202,7 @@ code{font-family:Menlo,monospace;font-size:10pt;background:#f1ede6;padding:0 2pt
 
 async function gerarPdf(html: string, destino: string) {
   const { chromium } = await import("playwright-core");
-  const b = await chromium.launch({ channel: "chrome", headless: true });
+  const b = await chromium.launch({ ...opcoesDoChrome(), headless: true });
   try {
     const p = await b.newPage();
     // Só o HTML que nós geramos: sem rede.
@@ -243,7 +249,8 @@ export async function gerarArquivo(cardId: number, formato: FormatoArquivo, nome
       const tmp = join(tmpdir(), `doc-${randomUUID()}.html`);
       writeFileSync(tmp, html);
       try {
-        await run("/usr/bin/textutil", ["-convert", "docx", "-inputencoding", "UTF-8", tmp, "-output", destino], { timeout: 60_000 });
+        if (NO_MAC) await run("/usr/bin/textutil", ["-convert", "docx", "-inputencoding", "UTF-8", tmp, "-output", destino], { timeout: 60_000 });
+        else await run("pandoc", ["-f", "html", "-t", "docx", tmp, "-o", destino], { timeout: 60_000 });
       } finally {
         rmSync(tmp, { force: true });
       }

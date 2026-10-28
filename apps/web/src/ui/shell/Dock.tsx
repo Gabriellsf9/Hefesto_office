@@ -178,7 +178,7 @@ export function Dock() {
 
 function FimDaLista({ dep }: { dep: number }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => ref.current?.scrollIntoView({ block: "end" }), [dep]);
+  useEffect(() => void ref.current?.scrollIntoView({ block: "end" }), [dep]);
   return <div ref={ref} />;
 }
 

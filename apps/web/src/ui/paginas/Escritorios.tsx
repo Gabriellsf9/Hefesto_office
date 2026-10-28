@@ -202,7 +202,7 @@ function Editor({ id }: { id: string }) {
   const props: PropsAba = { d, setD: (f) => setD((x) => (x ? f(x) : x)), usados };
   return (
     <Pagina largura="media">
-      <button type="button" onClick={() => navegar("escritorios")} className="mb-4 flex items-center gap-1 text-pequeno text-fg-3 hover:text-fg"><ArrowLeft className="size-4" /> Escritórios</button>
+      <button type="button" onClick={() => navegar("escritorios")} className="mb-4 flex min-h-6 items-center gap-1 text-pequeno text-fg-3 hover:text-fg"><ArrowLeft className="size-4" /> Escritórios</button>
       <CabecalhoPagina
         icone={Building2}
         titulo={d.nome || "Sem nome"}

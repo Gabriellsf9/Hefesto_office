@@ -1,4 +1,4 @@
-import { colunaDeEntrada, fluxoDaSala, type Card, fluxoPadrao } from "@empresa/shared";
+import { baseDoFluxo, colunaDeEntrada, fluxoDaSala, type Card, fluxoPadrao } from "@empresa/shared";
 import { getSetting, setSetting } from "./db.ts";
 import { postFeed } from "./bus.ts";
 import { aoAprovar, comentar, criarCard, ultimaEntrega } from "./tarefas.ts";
@@ -39,7 +39,7 @@ export function configurarGatilho(id: GatilhoId, ativo: boolean) {
 }
 
 /** Só funcionalidades de verdade (histórias e épicos de software), não bugs nem tarefas internas. */
-const ehFuncionalidade = (c: Card) => !c.demo && c.fluxo === "software" && (c.tipo === "historia" || c.tipo === "epico");
+const ehFuncionalidade = (c: Card) => !c.demo && baseDoFluxo(c.fluxo) === "software" && (c.tipo === "historia" || c.tipo === "epico");
 
 aoAprovar.push((card) => {
   if (!ehFuncionalidade(card)) return;

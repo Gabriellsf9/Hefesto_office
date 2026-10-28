@@ -3,6 +3,7 @@ import { rename } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { DATA_DIR } from "../paths.ts";
+import { opcoesDoChrome } from "../plataforma.ts";
 import { ErroEntrada, ferramenta, type Ferramenta } from "../agentes/loop.ts";
 
 // Prints (e vídeo, quando possível) das telas do app do CEO para treinamento e QA (Fase 4).
@@ -41,7 +42,7 @@ export async function capturar(cardId: number, urlBase: string, passos: Passo[],
   const saida: string[] = [];
   let navegador;
   try {
-    navegador = await chromium.launch({ channel: "chrome", headless: true, timeout: 30_000 });
+    navegador = await chromium.launch({ ...opcoesDoChrome(), headless: true, timeout: 30_000 });
   } catch (e) {
     throw new ErroEntrada(`Não consegui abrir o Google Chrome para as capturas: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
   }

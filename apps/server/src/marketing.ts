@@ -180,7 +180,8 @@ export function conferirEntregaDePeca(card: Card) {
 
 /* ---------- Lembrete de publicação ---------- */
 
-const hoje = (d = new Date()) => d.toISOString().slice(0, 10);
+// Dia no fuso local (no Brasil, depois das 21h o dia em UTC já é o seguinte).
+const hoje = (d = new Date()) => d.toLocaleDateString("sv-SE");
 
 /** A partir das 8h, a Helena avisa no chat (uma vez por peça) o que está agendado para hoje e ainda não foi publicado. */
 export function lembrarPublicacoes(agora = new Date()) {

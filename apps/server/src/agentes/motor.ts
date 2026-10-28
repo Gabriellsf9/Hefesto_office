@@ -1,15 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  colunaDe, colunaDeEntrada, colunaDeTrabalho, colunaDeValidacao, etapaDoCodigo, etapasDoCodigo, fluxoDaSala, fluxos, prioridades, type Agent, type Card, type EstadoMotor,
+  colunaDe, colunaDeEntrada, colunaDeTrabalho, colunaDeValidacao, ehCardDeCodigo, fluxoDaSala, fluxos, prioridades, type Agent, type Card, type EstadoMotor,
   type FluxoId, type RoomId, type TrabalhoEmAndamento, fluxoPadrao, colunaDoCeo } from "@empresa/shared";
-import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe, SEDE } from "@empresa/org";
+import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe, etapaDoCodigoDe, etapasDoCodigoDe, projetoDoCard, SEDE } from "@empresa/org";
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
-import { clienteClaude, custoHoje } from "../custo.ts";
-import { getSetting, setSetting } from "../db.ts";
+import { clienteClaude, custoHoje, limitePorCard, modoCusto, orcamentoDiario, limitePorCardDeCodigo } from "../custo.ts";
+import { modeloDisponivel, modeloDoAgente } from "../provedores.ts";
+import { ErroProvedor } from "./compat.ts";
+import { db, getSetting, setSetting } from "../db.ts";
 import { fichaDoProjeto } from "../projetos.ts";
 import { configCritica, criarConhecimento, extrairLicao } from "../conhecimento.ts";
 import { conferirEntregaDeLead, ferramentasDeProspeccao } from "../prospeccao.ts";
-import { codigoDoCard, commitar, garantirWorktree, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
+import { codigoDoCard, commitar, g as gitEm, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
 import { ferramentaDeComando, ferramentaDeDiff, ferramentasDeEscrita } from "../fabrica/ferramentas.ts";
 import { ferramentaDeCaptura } from "../fabrica/capturas.ts";
 import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
@@ -27,10 +29,14 @@ import { ferramentasDeInfra } from "../areas/infra.ts";
 import { ferramentasDeFinancas } from "../areas/financas.ts";
 import { ferramentasDeAtendimento } from "../areas/atendimento.ts";
 import {
-  comentar, criarCard, editarCard, ErroCard, lerCard, listarCards, listarComentarios, marcarValidacao, mover, registrarDevolucao, registrarEntrega,
+  comentar, criarCard, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
   ultimaEntrega,
 } from "../tarefas.ts";
-import { ErroEntrada, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
+import { NO_MAC, podeRodarComandos } from "../plataforma.ts";
+import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
+import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
+import { comandoDeTestes, testarCard, verificarPasta } from "../fabrica/testes.ts";
+import { fecharSessao } from "../fabrica/navegador.ts";
 import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
@@ -41,9 +47,17 @@ import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, s
 
 const MAX_RODADAS = 4;
 const INTERVALO_MS = 3000;
+/** Pedidos a outras áreas: por vez de trabalho e profundidade (pedido de pedido de pedido…). */
+const MAX_PEDIDOS_POR_VEZ = 3;
+const MAX_PEDIDOS_POR_CARD = 6;
+const MAX_PROFUNDIDADE = 2;
 
 const emAndamento = new Map<number, TrabalhoEmAndamento>();
+const controles = new Map<number, AbortController>();
 const falhas = new Map<number, number>();
+/** A API pediu para esperar (limite de uso ou sobrecarga): ninguém começa nada até lá. */
+let esperarAte = 0;
+let esperaMs = 0;
 let naFila = 0;
 let semOrcamentoAntes = false;
 let timer: NodeJS.Timeout | null = null;
@@ -51,7 +65,7 @@ let timer: NodeJS.Timeout | null = null;
 /* ---------- Configuração e estado ---------- */
 
 export function estadoMotor(): EstadoMotor {
-  const orcamento = Number(getSetting("motor_orcamento_usd") ?? "5");
+  const orcamento = orcamentoDiario();
   return {
     pausado: getSetting("motor_pausado") === "1",
     semOrcamento: custoHoje() >= orcamento,
@@ -59,13 +73,162 @@ export function estadoMotor(): EstadoMotor {
     maxSimultaneos: Number(getSetting("motor_max_simultaneos") ?? "3"),
     emAndamento: [...emAndamento.values()],
     naFila,
+    esperandoApiAte: esperarAte > Date.now() ? esperarAte : null,
+    modoCusto: modoCusto(),
+    limiteCardUsd: limitePorCard(),
+    limiteCodigoUsd: limitePorCardDeCodigo(),
   };
 }
 
+/** O CEO mexeu no card (moveu, bloqueou, trocou o responsável, apagou) ou pausou a empresa: quem estava nele para. */
+export function interromper(cardId: number, motivo: string) {
+  controles.get(cardId)?.abort(motivo);
+  // O CEO mudou o card: a conversa salva de antes não vale mais.
+  apagarRetomada(cardId);
+}
+
+/** Card que um agente acabou de passar para outro: espera a entrega em mãos no 3D antes de começar. */
+function esperandoEntrega(cardId: number) {
+  const liberaEm = repassadosEm.get(cardId);
+  if (liberaEm === undefined) return false;
+  if (Date.now() < liberaEm) return true;
+  repassadosEm.delete(cardId);
+  return false;
+}
+
+/** Lê outro card do mesmo escritório pelo número: descrição, critérios e a última entrega completa. */
+function ferramentaLerCard(daqui: Card): Ferramenta {
+  return ferramenta(
+    "ler_card",
+    "Lê outro card pelo número (ex.: EMP-12): título, coluna, descrição, critérios de aceite e a ÚLTIMA ENTREGA COMPLETA. Use quando precisar do texto inteiro de um plano, contrato, schema ou entrega de outra área (a busca na memória só traz trechos).",
+    { chave: { type: "string", description: "Número do card, ex.: EMP-12 ou 12" } },
+    ["chave"],
+    (e) => {
+      const n = Number(texto(e, "chave", 20).replace(/\D/g, ""));
+      let alvo: Card;
+      try {
+        alvo = lerCard(n);
+      } catch {
+        throw new ErroEntrada(`Card ${e.chave} não encontrado.`);
+      }
+      if (escritorioDe(alvo.sala) !== escritorioDe(daqui.sala)) throw new ErroEntrada("Esse card é de outro escritório.");
+      const ent = ultimaEntrega(alvo.id);
+      const col = colunaDe(alvo.fluxo, alvo.coluna)?.nome ?? alvo.coluna;
+      return {
+        texto: `# ${alvo.chave} · ${alvo.titulo}\nColuna: ${col} · Responsável: ${alvo.dono ? (agentById[alvo.dono]?.nome ?? alvo.dono) : "—"}\n\n## Descrição\n${alvo.descricao || "(vazia)"}\n\n## Critérios de aceite\n${alvo.criterios || "(nenhum)"}\n\n## Última entrega${ent ? ` (versão ${ent.versao}): ${ent.resumo}\n${ent.conteudo.slice(0, 60_000)}` : "\n(ainda sem entrega)"}`,
+      };
+    },
+  );
+}
+
+/* ---------- Retomada depois de uma pausa por gasto ---------- */
+
+// Quando o card para no limite de gasto (ou o orçamento do dia acaba), a conversa do agente fica salva.
+// Ao liberar, ele continua dela, sem refazer leituras e raciocínio (o que já foi pago não se perde).
+db.exec(`CREATE TABLE IF NOT EXISTS retomadas (
+  card_id INTEGER NOT NULL, tipo TEXT NOT NULL, agente TEXT NOT NULL, modelo TEXT NOT NULL, mensagens TEXT NOT NULL, ts INTEGER NOT NULL,
+  PRIMARY KEY (card_id, tipo)
+)`);
+const RETOMADA_VALE_MS = 3 * 24 * 60 * 60_000;
+
+function salvarRetomada(cardId: number, tipo: "executar" | "validar", agente: string, modelo: string, mensagens: unknown[]) {
+  const json = JSON.stringify(mensagens);
+  if (json.length > 8_000_000) return; // grande demais (muitas imagens): recomeça do zero
+  db.prepare("INSERT OR REPLACE INTO retomadas (card_id, tipo, agente, modelo, mensagens, ts) VALUES (?, ?, ?, ?, ?, ?)").run(cardId, tipo, agente, modelo, json, Date.now());
+}
+
+/** Só retoma o mesmo agente, no mesmo modelo (o raciocínio salvo é do modelo que o escreveu), há pouco tempo. */
+function lerRetomada(cardId: number, tipo: "executar" | "validar", agente: string, modelo: string) {
+  const r = db.prepare("SELECT agente, modelo, mensagens, ts FROM retomadas WHERE card_id = ? AND tipo = ?").get(cardId, tipo) as
+    | { agente: string; modelo: string; mensagens: string; ts: number }
+    | undefined;
+  if (!r || r.agente !== agente || r.modelo !== modelo || Date.now() - r.ts > RETOMADA_VALE_MS) return null;
+  return JSON.parse(r.mensagens) as Anthropic.Beta.BetaMessageParam[];
+}
+
+const apagarRetomada = (cardId: number) => db.prepare("DELETE FROM retomadas WHERE card_id = ?").run(cardId);
+
+/** Etiqueta que liga o "melhor de N" num card de código. */
+export const ETIQUETA_MELHOR_DE = "melhor-de-3";
+
+/**
+ * Melhor de N: o autor faz N tentativas ao mesmo tempo, cada uma na sua cópia (branch própria a partir
+ * da mesma base). Cada tentativa passa pela verificação (tipos → lint → testes); vence a que passa com
+ * o menor diff. A cópia do card vai para o commit da vencedora e as outras são apagadas.
+ */
+async function melhorDeN(client: Anthropic | null, card: Card, agente: Agent, wt: Worktree, n: number, sinal: AbortSignal) {
+  const base = await gitEm(wt.caminho, "rev-parse", "HEAD");
+  const modelo = modeloDoAgente(agente, "autor");
+  postFeed(card.sala, agente.id, `${agente.nome} faz ${n} tentativas do ${card.chave} em paralelo; os testes escolhem a melhor`);
+  const tentativas = await Promise.allSettled(
+    Array.from({ length: n }, async (_, i) => {
+      const v: Worktree = { ...wt, caminho: `${wt.caminho}-t${i + 1}`, branch: `${wt.branch}-t${i + 1}` };
+      await gitEm(wt.repo, "worktree", "add", "-b", v.branch, v.caminho, base);
+      let entrega: { resumo: string; conteudo: string } | null = null;
+      const ferramentas: Ferramenta[] = [
+        ferramentaMemoria,
+        ferramentaLerCard(card),
+        ...ferramentasDeProjeto(v.caminho),
+        ...ferramentasDeEscrita(v),
+        ...(agente.ferramentas.includes("terminal") ? [ferramentaDeComando(v)] : []),
+        ferramenta("entregar", "Entrega esta tentativa (código já escrito na cópia + o que você fez). Termina a sua vez.", { resumo: { type: "string" }, conteudo: { type: "string" } }, ["resumo", "conteudo"], (e) => {
+          entrega = { resumo: texto(e, "resumo", 300), conteudo: texto(e, "conteudo", 100_000) };
+          return { texto: "Tentativa entregue.", fim: true };
+        }),
+      ];
+      await rodarAgente({
+        client,
+        modelo,
+        agenteId: agente.id,
+        sistema: sistemaAutor(agente),
+        mensagem: `${mensagemExecutar(card)}
+
+(Esta é a tentativa ${i + 1} de ${n} feitas em paralelo, cada uma na sua cópia. Vence a que passar nas verificações com a mudança mais enxuta: faça o necessário, sem sobras.)`,
+        ferramentas,
+        cardId: card.id,
+        sinal,
+        esforco: "high",
+        maxRodadas: 40,
+        lembrete: "Chame entregar com a sua tentativa.",
+      });
+      await commitar(v, agente.id, `${card.chave}: tentativa ${i + 1}`);
+      const verif = await verificarPasta(v.caminho);
+      const stat = await gitEm(v.caminho, "diff", "--shortstat", `${base}..HEAD`).catch(() => "");
+      const linhas = [...stat.matchAll(/(\d+) (insert|delet)/g)].reduce((s, m) => s + Number(m[1]), 0);
+      return { i, v, entrega: entrega as { resumo: string; conteudo: string } | null, passou: !!verif?.passou, falha: verif && !verif.passou ? verif.comando : null, linhas };
+    }),
+  );
+  const ok = tentativas.flatMap((t) => (t.status === "fulfilled" ? [t.value] : []));
+  const venc = [...ok.filter((t) => t.passou && t.entrega)].sort((a, b) => a.linhas - b.linhas)[0] ?? ok.find((t) => t.entrega) ?? null;
+  if (venc) await gitEm(wt.caminho, "reset", "--hard", await gitEm(venc.v.caminho, "rev-parse", "HEAD"));
+  // Placar no card e limpeza das cópias das tentativas (as branches também: o código vencedor está na do card).
+  const placar = tentativas.map((t, i) =>
+    t.status === "rejected"
+      ? `- Tentativa ${i + 1}: não terminou (${String((t.reason as Error)?.message ?? t.reason).slice(0, 120)})`
+      : `- Tentativa ${i + 1}: ${t.value.passou ? "✅ passou" : `❌ falhou em \`${t.value.falha ?? "?"}\``}, ${t.value.linhas} linhas${venc && t.value.i === venc.i ? " — **vencedora**" : ""}`,
+  );
+  comentar(card.id, agente.id, "comentario", `Melhor de ${n}:\n${placar.join("\n")}`);
+  for (let i = 0; i < n; i++) {
+    await gitEm(wt.repo, "worktree", "remove", "--force", `${wt.caminho}-t${i + 1}`).catch(() => {});
+    await gitEm(wt.repo, "branch", "-D", `${wt.branch}-t${i + 1}`).catch(() => {});
+  }
+  if (!venc) {
+    const erro = tentativas.find((t) => t.status === "rejected") as PromiseRejectedResult | undefined;
+    if (erro) throw erro.reason;
+  }
+  return venc?.entrega ?? null;
+}
+
+const ocupado = (agenteId: string) => [...emAndamento.values()].some((t) => t.agenteId === agenteId);
+
 const publicar = () => emit({ type: "motor", estado: estadoMotor() });
 
-export function configurarMotor(c: { pausado?: boolean; orcamentoDiarioUsd?: number; maxSimultaneos?: number }) {
+export function configurarMotor(c: { pausado?: boolean; orcamentoDiarioUsd?: number; maxSimultaneos?: number; modoCusto?: string; limiteCardUsd?: number; limiteCodigoUsd?: number }) {
+  if (c.modoCusto === "economico" || c.modoCusto === "equilibrado" || c.modoCusto === "maximo") setSetting("modo_custo", c.modoCusto);
+  if (typeof c.limiteCardUsd === "number" && c.limiteCardUsd >= 0.1 && c.limiteCardUsd <= 200) setSetting("motor_limite_card_usd", String(c.limiteCardUsd));
+  if (typeof c.limiteCodigoUsd === "number" && c.limiteCodigoUsd >= 0.1 && c.limiteCodigoUsd <= 500) setSetting("motor_limite_codigo_usd", String(c.limiteCodigoUsd));
   if (typeof c.pausado === "boolean") setSetting("motor_pausado", c.pausado ? "1" : "0");
+  if (c.pausado === true) for (const ctl of controles.values()) ctl.abort("a empresa foi pausada");
   if (typeof c.orcamentoDiarioUsd === "number" && c.orcamentoDiarioUsd >= 0 && c.orcamentoDiarioUsd <= 1000) {
     setSetting("motor_orcamento_usd", String(c.orcamentoDiarioUsd));
   }
@@ -85,11 +248,13 @@ export function iniciarMotor() {
 const peso = (c: Card) => prioridades.findIndex((p) => p.id === c.prioridade);
 const tipoColuna = (c: Card) => colunaDe(c.fluxo, c.coluna)?.tipo;
 
-/** Dependência satisfeita: o card de que este depende já está concluído. */
+/** Dependências satisfeitas: todos os cards de que este depende (um ou vários) já estão concluídos. */
 function dependenciaOk(card: Card, porId: Map<number, Card>) {
-  if (!card.dependeDe) return true;
-  const dep = porId.get(card.dependeDe);
-  return !dep || tipoColuna(dep) === "feito";
+  const deps = [...(card.dependeDe ? [card.dependeDe] : []), ...(card.dependencias ?? [])];
+  return deps.every((id) => {
+    const dep = porId.get(id);
+    return !dep || tipoColuna(dep) === "feito";
+  });
 }
 
 /**
@@ -101,13 +266,29 @@ function antesDoCeo(card: Card) {
   return cols.findIndex((c) => c.id === card.coluna) < cols.findIndex((c) => c.tipo === "ceo");
 }
 
+/** Etiqueta dos cards abertos com pedir_para_outra_area (leads, chamados e bugs também têm pai, mas não são pedidos). */
+export const ETIQUETA_PEDIDO = "pedido";
+
+/** Pedidos deste card a outras áreas que ainda não terminaram (o que já foi validado e espera o CEO conta como pronto). */
+export function filhosAbertos(cardId: number, cards: Iterable<Card>): Card[] {
+  return [...cards].filter(
+    (c) => c.paiId === cardId && c.etiquetas.includes(ETIQUETA_PEDIDO) && !["feito", "perdido", "ceo"].includes(tipoColuna(c) ?? ""),
+  );
+}
+
 export function prontoParaExecutar(card: Card, porId: Map<number, Card>) {
   const tipo = tipoColuna(card);
   return (
     !card.demo && !card.bloqueado && !card.emValidacao && !!card.dono && card.coluna !== "backlog" &&
-    (tipo === "fila" || tipo === "trabalho" || tipo === "bug") && antesDoCeo(card) && dependenciaOk(card, porId)
+    (tipo === "fila" || tipo === "trabalho" || tipo === "bug") && antesDoCeo(card) && dependenciaOk(card, porId) &&
+    // Quem pediu partes do trabalho a outras áreas espera elas terminarem para continuar com o resultado.
+    !filhosAbertos(card.id, porId.values()).length
   );
 }
+
+/** Card que escreve no repositório: código da sala de código, ou trabalho de quem mexe em arquivos com git (Dados, DevOps, Cloud). */
+const escreveCodigo = (card: Card, agente: Agent) =>
+  ehCardDeCodigo(card) || (agente.ferramentas.includes("git") && agente.ferramentas.includes("arquivos") && card.sala !== "arquitetura" && agente.sala === card.sala);
 
 export function prontoParaValidar(card: Card) {
   return !card.demo && !card.bloqueado && card.emValidacao && !!card.validador;
@@ -120,7 +301,9 @@ async function ciclo() {
   const porId = new Map(cards.map((c) => [c.id, c]));
   const trabalhos = [
     ...cards.filter(prontoParaValidar).map((card) => ({ card, tipo: "validar" as const, agente: card.validador! })),
-    ...cards.filter((c) => prontoParaExecutar(c, porId)).map((card) => ({ card, tipo: "executar" as const, agente: card.dono! })),
+    ...cards
+      .filter((c) => prontoParaExecutar(c, porId) && !esperandoEntrega(c.id))
+      .map((card) => ({ card, tipo: "executar" as const, agente: card.dono! })),
   ]
     .filter((t) => !emAndamento.has(t.card.id))
     // Validações primeiro (destravam o fluxo), depois por prioridade e idade.
@@ -129,7 +312,7 @@ async function ciclo() {
   const mudouFila = naFila !== trabalhos.length || semOrcamentoAntes !== estado.semOrcamento;
   naFila = trabalhos.length;
   semOrcamentoAntes = estado.semOrcamento;
-  if (!client || estado.pausado || estado.semOrcamento) {
+  if (estado.pausado || estado.semOrcamento || Date.now() < esperarAte) {
     if (mudouFila) publicar();
     return;
   }
@@ -138,29 +321,55 @@ async function ciclo() {
   for (const t of trabalhos) {
     if (emAndamento.size >= estado.maxSimultaneos) break;
     if (ocupados.has(t.agente) || !agentById[t.agente]) continue; // um card por agente de cada vez
+    // Sem chave do provedor do agente (Claude sem chave, OpenAI sem chave…): o card espera.
+    if (!modeloDisponivel(modeloDoAgente(agentById[t.agente]!, "autor"))) continue;
     ocupados.add(t.agente);
     void rodar(client, t.card, t.tipo, t.agente);
   }
   if (mudouFila) publicar();
 }
 
-async function rodar(client: Anthropic, card: Card, tipo: "executar" | "validar", agenteId: string) {
+async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "validar", agenteId: string) {
+  const controle = new AbortController();
+  controles.set(card.id, controle);
   emAndamento.set(card.id, { cardId: card.id, agenteId, tipo, desde: Date.now() });
   naFila = Math.max(0, naFila - 1);
   publicar();
   try {
-    if (tipo === "executar") await executar(client, card, agentById[agenteId]!);
-    else await validar(client, card, agentById[agenteId]!);
+    if (tipo === "executar") await executar(client, card, agentById[agenteId]!, controle.signal);
+    else await validar(client, card, agentById[agenteId]!, controle.signal);
     falhas.delete(card.id);
+    esperaMs = 0;
+    apagarRetomada(card.id);
   } catch (err) {
-    tratarFalha(card, agenteId, err);
+    if (controle.signal.aborted || err instanceof ErroInterrompido) avisarInterrupcao(card.id, agenteId, String(controle.signal.reason ?? "interrompido"));
+    else tratarFalha(card, agenteId, err);
   } finally {
+    controles.delete(card.id);
     emAndamento.delete(card.id);
-    setAgentStatus(agenteId, "ocioso", null);
-    if (tipo === "validar" && card.dono) setAgentStatus(card.dono, "ocioso", null);
+    // O QA terminou a vez: fecha o navegador do card para o vídeo do teste ficar pronto na atividade.
+    if (agenteId.startsWith("qa")) void fecharSessao(card.id).catch(() => {});
+    if (!ocupado(agenteId)) setAgentStatus(agenteId, "ocioso", null);
+    if (tipo === "validar" && card.dono && !ocupado(card.dono)) setAgentStatus(card.dono, "ocioso", null);
     publicar();
   }
 }
+
+/** Parou no meio porque o CEO mexeu: fica registrado no card (se ele ainda existe). */
+function avisarInterrupcao(cardId: number, agenteId: string, motivo: string) {
+  try {
+    lerCard(cardId);
+  } catch {
+    return; // card apagado
+  }
+  comentar(cardId, agenteId, "comentario", `Parei o que estava fazendo: ${motivo}.`);
+}
+
+/** Erros passageiros da API: limite de uso, sobrecarga, rede. Não são culpa do card. */
+const passageiro = (err: unknown) =>
+  err instanceof Anthropic.RateLimitError || err instanceof Anthropic.InternalServerError || err instanceof Anthropic.APIConnectionError ||
+  (err instanceof Anthropic.APIError && (err.status === 529 || err.status === 503)) ||
+  (err instanceof ErroProvedor && err.passageiro);
 
 function tratarFalha(card: Card, agenteId: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -169,10 +378,37 @@ function tratarFalha(card: Card, agenteId: string, err: unknown) {
     postChat("chief-of-staff", "Pausei a empresa: a chave da API foi recusada. Confira a chave e despause no topo da tela.");
     return;
   }
+  if (err instanceof ErroProvedor && (err.status === 401 || err.status === 403)) {
+    // Chave de outro provedor recusada: só os agentes dele param; o resto da empresa segue no Claude.
+    editarCard(card.id, { bloqueado: true });
+    comentar(card.id, agenteId, "comentario", `${msg} Comente aqui para eu tentar de novo depois de corrigir.`);
+    return;
+  }
+  if (err instanceof ErroLimiteCard) {
+    const c = lerCard(card.id);
+    editarCard(card.id, { bloqueado: true, etiquetas: [...new Set([...c.etiquetas, ETIQUETA_LIMITE])] });
+    comentar(card.id, agenteId, "comentario", `Parei para não gastar demais: este card já custou US$ ${c.custoUsd.toFixed(2)} (teto: US$ ${tetoDoCard(c).toFixed(2)}). Clique em "Liberar mais" (aqui, na Caixa de entrada ou no Telegram) e eu continuo exatamente de onde parei.`);
+    return;
+  }
+  if (err instanceof ErroSemOrcamento) {
+    comentar(card.id, agenteId, "comentario", "Parei: o orçamento de IA de hoje acabou. Retomo quando houver orçamento.");
+    return;
+  }
+  if (passageiro(err)) {
+    // Espera para todos (respeitando o retry-after da API), com recuo exponencial; o card não é penalizado.
+    const pedido = Number((err as { headers?: { get?: (k: string) => string | null } }).headers?.get?.("retry-after"));
+    esperaMs = Math.min(Math.max(esperaMs * 2, 15_000), 5 * 60_000);
+    const ms = Number.isFinite(pedido) && pedido > 0 ? Math.max(pedido * 1000, esperaMs) : esperaMs;
+    const avisar = esperarAte < Date.now();
+    esperarAte = Math.max(esperarAte, Date.now() + ms);
+    if (avisar) postFeed(card.sala, agenteId, `O provedor de IA pediu para esperar (${msg.slice(0, 80)}). A equipe retoma em ${Math.round(ms / 1000)} s.`);
+    publicar();
+    return;
+  }
   const n = (falhas.get(card.id) ?? 0) + 1;
   falhas.set(card.id, n);
   comentar(card.id, agenteId, "comentario", `Não consegui concluir agora: ${msg}`);
-  if (n >= 2 || !(err instanceof Anthropic.APIError)) {
+  if (n >= 2 || !(err instanceof Anthropic.APIError || err instanceof ErroProvedor || err instanceof ErroSemEntrega)) {
     editarCard(card.id, { bloqueado: true });
     comentar(card.id, agenteId, "comentario", "Bloqueei o card depois de falhar. Comente aqui para desbloquear e tentar de novo.");
     falhas.delete(card.id);
@@ -183,7 +419,7 @@ function tratarFalha(card: Card, agenteId: string, err: unknown) {
 
 export { colunaDeEntrada } from "@empresa/shared";
 
-async function executar(client: Anthropic, inicial: Card, agente: Agent) {
+async function executar(client: Anthropic | null, inicial: Card, agente: Agent, sinal: AbortSignal) {
   let card = inicial;
   const tipo = tipoColuna(card);
   if (tipo === "fila" || tipo === "bug") card = mover(card.id, colunaDeTrabalho(card.fluxo, card.sala), agente.id);
@@ -192,11 +428,12 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
   postFeed(card.sala, agente.id, `${agente.nome} começou o ${card.chave}: ${card.titulo}`);
 
   // Fábrica de software (Fase 4): card de código num projeto com git trabalha numa cópia isolada.
-  const projeto = fichaDoProjeto(card.projetoId);
+  const projetoId = projetoDoCard(card);
+  const projeto = fichaDoProjeto(projetoId);
   let wt: Worktree | null = null;
-  if (projeto && card.projetoId !== null && ehCardDeCodigo(card)) {
+  if (projeto && projetoId !== null && escreveCodigo(card, agente)) {
     try {
-      wt = await garantirWorktree(card, projeto.caminho, card.projetoId);
+      wt = await garantirWorktree(card, projeto.caminho, projetoId);
     } catch (e) {
       if (!(e instanceof ErroCard)) throw e;
       comentar(card.id, "devops", "comentario", `${e.message} Por enquanto o código vai só na entrega, sem rodar.`);
@@ -204,12 +441,14 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
   }
 
   let entregou = false;
+  let pedidos = 0;
   // Autocrítica (Fase 2f): a primeira chamada de entregar vira rascunho; o agente confere
   // contra o checklist e chama de novo com a versão final.
   const autocritica = configCritica().autocritica;
   let rascunho: { resumo: string; conteudo: string } | null = null;
   const ferramentas: Ferramenta[] = [
     ferramentaMemoria,
+    ferramentaLerCard(card),
     ferramenta(
       "entregar",
       autocritica
@@ -288,20 +527,30 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
         sala: { type: "string", description: "Id da sala (ver diretório)" },
         descricao: { type: "string", description: "Contexto suficiente para a outra área trabalhar sozinha" },
         dono: { type: "string", description: "Id do agente (opcional; padrão: líder da sala)" },
+        esperar_resultado: {
+          type: "boolean",
+          description: "true (padrão): você precisa do resultado para terminar; a sua entrega espera o pedido e você continua com ele. false: trabalho que segue em paralelo (ex.: bug aberto a partir de um atendimento, que não segura a resposta ao cliente).",
+        },
       },
       ["titulo", "sala", "descricao"],
       (e) => {
         const sala = texto(e, "sala", 40) as RoomId;
         if (!roomById[sala]) return { texto: `Sala inválida: ${sala}`, erro: true };
+        if (listarCards().filter((c) => c.paiId === card.id && c.etiquetas.includes(ETIQUETA_PEDIDO)).length >= MAX_PEDIDOS_POR_CARD) return { texto: `Este card já abriu ${MAX_PEDIDOS_POR_CARD} pedidos. Siga com o que tem ou use perguntar_ao_ceo.`, erro: true };
+        if (pedidos >= MAX_PEDIDOS_POR_VEZ) return { texto: `Você já abriu ${MAX_PEDIDOS_POR_VEZ} pedidos neste card. Junte o que falta num pedido só ou siga com o que tem.`, erro: true };
+        if (profundidade(card) >= MAX_PROFUNDIDADE) return { texto: "Este card já nasceu de um pedido de outro pedido. Resolva com a sua equipe ou use perguntar_ao_ceo.", erro: true };
         const dono = typeof e.dono === "string" && agentById[e.dono]?.sala === sala ? e.dono : liderDe(sala);
         const fluxo = fluxoPadrao(sala);
         const novo = criarCard(
           {
             titulo: texto(e, "titulo", 200), descricao: texto(e, "descricao", 20_000), sala, fluxo, coluna: colunaDeEntrada(fluxo),
             dono, nivel: card.nivel === "N0" ? "N0" : "N1", prioridade: card.prioridade, projetoId: card.projetoId, paiId: card.id,
+            // Só os pedidos que seguram a entrega levam a etiqueta; atendimento nunca segura a resposta ao cliente.
+            etiquetas: (typeof e.esperar_resultado === "boolean" ? e.esperar_resultado : !card.etiquetas.includes("atendimento")) ? [ETIQUETA_PEDIDO] : [],
           },
           agente.id,
         );
+        pedidos++;
         comentar(card.id, agente.id, "comentario", `Pedi para ${nomeDaSala(sala)}: ${novo.chave} — ${novo.titulo}`);
         return { texto: `Card ${novo.chave} criado para ${nomeDaSala(sala)}.` };
       },
@@ -314,13 +563,16 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
   // Máquina do CEO (salas liberadas em ⋯ → Máquina): terminal com aprovação por comando e controle por sessão.
   if (podeUsarMaquina(agente, "terminal")) ferramentas.push(ferramentaDeTerminal(agente, card));
   if (podeUsarMaquina(agente, "controle")) ferramentas.push(ferramentaDeControle(agente, card));
+  // Card que não mexe no código mas nasceu de um card de código: lê a cópia do pai, com o trabalho em andamento.
+  const wtDoPai = wt ? null : worktreeDoCard(card);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ...ferramentasDeEscrita(wt));
-    if (agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
-  } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
+    if (podeRodarComandos() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+  } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
+  else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
-  if (wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
+  if (podeRodarComandos() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
   const urlDoApp = (wt ? urlDaPrevia(card.id, card) : null) ?? projeto?.urlLocal ?? null;
   if (urlDoApp && agente.ferramentas.includes("playwright")) ferramentas.push(ferramentaDeCaptura(card.id, urlDoApp));
   // Navegador do sistema: quem pesquisa na web, testa telas ou usa o navegador.
@@ -330,20 +582,39 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
   // Documentos de verdade (DOCX, PDF, XLSX, CSV) para anexar à entrega.
   ferramentas.push(ferramentaGerarArquivo(card.id));
   // Celular de teste (iPhone no Simulador, Android no emulador): QA, Mobile e Treinamento.
-  if (agente.ferramentas.includes("celular")) ferramentas.push(ferramentaDeCelular(agente, card, [wt?.caminho, projeto?.caminho].filter((c): c is string => !!c)));
+  if (NO_MAC && agente.ferramentas.includes("celular")) ferramentas.push(ferramentaDeCelular(agente, card, [wt?.caminho, projeto?.caminho].filter((c): c is string => !!c)));
 
-  const r = await rodarAgente({
+  // Melhor de N (card marcado, de código, com verificação, primeira versão): tentativas em cópias paralelas;
+  // tipos, lint e testes escolhem a vencedora, que vira a entrega (as outras cópias são apagadas).
+  if (wt && card.etiquetas.includes(ETIQUETA_MELHOR_DE) && podeRodarComandos() && comandoDeTestes(wt.caminho) && !ultimaEntrega(card.id)) {
+    const venc = await melhorDeN(client, card, agente, wt, 3, sinal);
+    if (venc) {
+      registrarEntrega(card.id, agente.id, venc.resumo, await comCodigo(wt, agente.id, card, venc.resumo, venc.conteudo));
+      entregou = true;
+    }
+  }
+
+  const modeloAutor = modeloDoAgente(agente, "autor");
+  const r = entregou ? { texto: "", terminou: true, custoUsd: 0 } : await rodarAgente({
     client,
-    modelo: agente.modelo,
+    agenteId: agente.id,
+    retomar: lerRetomada(card.id, "executar", agente.id, modeloAutor),
+    aoPausar: (m) => salvarRetomada(card.id, "executar", agente.id, modeloAutor, m),
+    aoRodada: (m) => salvarRetomada(card.id, "executar", agente.id, modeloAutor, m),
+    // Código pede mais raciocínio; o resto fica no esforço médio.
+    esforco: wt ? "high" : undefined,
+    modelo: modeloAutor,
     sistema: sistemaAutor(agente),
     mensagem: mensagemExecutar(card),
     imagens: imagensDoTexto(card.descricao),
     arquivos: arquivosDoTexto(card.descricao),
     ferramentas,
     cardId: card.id,
+    sinal,
     maxRodadas: wt ? 40 : undefined,
-    lembrete: "Você ainda não chamou entregar. Chame entregar agora com o trabalho completo (ou perguntar_ao_ceo, se for indispensável).",
+    lembrete: "Você parou sem chamar nenhuma ferramenta. Se ainda falta trabalho, continue agora usando as ferramentas; quando terminar, chame entregar com o trabalho completo (ou perguntar_ao_ceo, se for indispensável).",
   }).finally(() => desligarCelular(card.id));
+  if (sinal.aborted) throw new ErroInterrompido(String(sinal.reason));
 
   // Parou depois do rascunho, sem a chamada final: o rascunho vale como entrega.
   const r0 = rascunho as { resumo: string; conteudo: string } | null;
@@ -351,25 +622,65 @@ async function executar(client: Anthropic, inicial: Card, agente: Agent) {
     registrarEntrega(card.id, agente.id, r0.resumo, wt ? await comCodigo(wt, agente.id, card, r0.resumo, r0.conteudo) : r0.conteudo);
     entregou = true;
   }
-  // Sem chamar entregar, mas com texto: o texto vira a entrega, para não perder trabalho.
+  // Sem chamar entregar, mas com um texto de verdade: o texto vira a entrega, para não perder trabalho.
+  // Uma frase solta ("Vou começar lendo…") não é entrega: tenta de novo (e bloqueia na segunda vez).
   if (!entregou && !lerCard(card.id).bloqueado) {
-    if (!r.texto.trim()) throw new Error("O agente terminou sem entregar.");
+    const t = r.texto.trim();
+    if (t.length < 400) throw new ErroSemEntrega(`O agente parou sem entregar${t ? ` (escreveu só: "${t.slice(0, 120)}")` : ""}.`);
     registrarEntrega(card.id, agente.id, "Entrega (texto final do agente)", r.texto);
     entregou = true;
   }
   if (!entregou) return;
 
   card = lerCard(card.id);
+  const abertos = filhosAbertos(card.id, listarCards());
+  if (abertos.length) {
+    comentar(card.id, agente.id, "comentario", `Versão salva. Antes da validação, espero os pedidos que fiz terminarem (${abertos.map((c) => c.chave).join(", ")}) e sigo com o resultado deles.`);
+    postFeed(card.sala, agente.id, `${agente.nome} aguarda ${abertos.map((c) => c.chave).join(", ")} para terminar o ${card.chave}`);
+    return;
+  }
+  // Verificação determinística (tipos → lint → testes) na branch antes de qualquer revisor gastar com o card:
+  // se falhar, o erro real volta para o autor corrigir. Três falhas seguidas: para e pede ajuda ao CEO.
+  if (wt && podeRodarComandos() && comandoDeTestes(wt.caminho)) {
+    const v = await testarCard(card.id, agente.id).catch((e: unknown) => {
+      comentar(card.id, agente.id, "comentario", `Não consegui rodar a verificação: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    });
+    if (v && !v.passou) {
+      const recentes = listarComentarios(card.id).reverse();
+      let seguidas = 0;
+      for (const c of recentes) {
+        if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || c.autor === "voce") break;
+        if (c.texto.startsWith("❌ Verificação falhou")) seguidas++;
+      }
+      if (seguidas >= 3) {
+        editarCard(card.id, { bloqueado: true });
+        comentar(card.id, agente.id, "comentario", "❓ Pergunta para o CEO: a verificação falhou 3 vezes seguidas e não consegui resolver sozinho (saídas acima). Como prefere seguir?");
+        postChat(agente.id, `Travei no ${card.chave}: a verificação falhou 3 vezes seguidas. Pode dar uma olhada?`);
+        return;
+      }
+      comentar(card.id, agente.id, "comentario", "Volto a corrigir antes da revisão: a verificação falhou (saída acima).");
+      return;
+    }
+  }
   postFeed(card.sala, agente.id, `${agente.nome} entregou o ${card.chave}`);
   if (card.validador) {
     // Código do Squad 1: vai para a etapa de validação atual (review, performance, segurança ou QA).
-    const etapa = etapaDoCodigo(card);
-    if (etapa !== null && card.validador !== etapasDoCodigo[etapa]!.validador) {
-      card = editarCard(card.id, { validador: etapasDoCodigo[etapa]!.validador });
+    const etapas = etapasDoCodigoDe(card.fluxo, card.dono);
+    const etapa = etapaDoCodigoDe(card);
+    if (etapa !== null && card.validador !== etapas[etapa]!.validador) {
+      card = editarCard(card.id, { validador: etapas[etapa]!.validador });
     }
-    const coluna = etapa !== null ? etapasDoCodigo[etapa]!.coluna : colunaDeValidacao(card.fluxo, card.sala);
+    // Ninguém valida o próprio trabalho.
+    if (card.validador === agente.id) {
+      const outro = revisorAlternativo(card, agente.id);
+      card = editarCard(card.id, { validador: outro });
+      if (!outro) return finalizar(card, agente.id);
+    }
+    const coluna = etapa !== null ? etapas[etapa]!.coluna : colunaDeValidacao(card.fluxo, card.sala);
     if (coluna) card = mover(card.id, coluna, agente.id);
     marcarValidacao(card.id, true);
+    if (card.validador) emit({ type: "repasse", de: agente.id, para: card.validador, cardId: card.id, motivo: "validacao" });
   } else {
     finalizar(card, agente.id);
   }
@@ -380,12 +691,11 @@ const COM_INFRA = new Set(["devops", "sre", "sysadmin", "engenheiro-cloud", "red
 function ferramentasDaArea(agente: Agent, card: Card): Ferramenta[] {
   const out: Ferramenta[] = [...ferramentasDeFinancas(agente.id), ...ferramentasDeAtendimento(card)];
   if (COM_INFRA.has(agente.id)) out.push(...ferramentasDeInfra());
-  if (agente.ferramentas.includes("banco-de-dados") && card.projetoId !== null && conexaoDoProjeto(card.projetoId)) out.push(ferramentaDeBanco(card.projetoId));
+  const projetoId = projetoDoCard(card);
+  if (agente.ferramentas.includes("banco-de-dados") && projetoId !== null && conexaoDoProjeto(projetoId)) out.push(ferramentaDeBanco(projetoId));
   return out;
 }
 
-/** Cards que mexem no código do projeto: trabalho do Desenvolvimento e bugs. */
-const ehCardDeCodigo = (c: Card) => c.fluxo === "software" && (c.sala === "desenvolvimento" || c.tipo === "bug");
 
 /** Commit automático da entrega e o resumo do que mudou, anexado ao texto da entrega. */
 async function comCodigo(wt: Worktree, autor: string, card: Card, resumo: string, conteudo: string): Promise<string> {
@@ -403,8 +713,38 @@ ${c?.stat || "(sem mudanças desde o início)"}
 
 /** Qual checklist o validador usa: o da especialidade da etapa (código) ou o da área do card. */
 function focoDaEtapa(card: Card) {
-  const etapa = etapaDoCodigo(card);
-  return etapa === null ? undefined : etapasDoCodigo[etapa]!.foco;
+  const etapa = etapaDoCodigoDe(card);
+  return etapa === null ? undefined : etapasDoCodigoDe(card.fluxo, card.dono)[etapa]!.foco;
+}
+
+/** Quantos pedidos acima deste card (o card de um pedido tem profundidade 1). */
+function profundidade(card: Card) {
+  let n = 0;
+  for (let pai = card.paiId; pai && n < 10; n++) {
+    try {
+      pai = lerCard(pai).paiId;
+    } catch {
+      break;
+    }
+  }
+  return n;
+}
+
+/** Outro revisor quando o validador seria o próprio autor: líder da sala, um colega, o coordenador do escritório. */
+function revisorAlternativo(card: Card, autor: string): string | null {
+  const daSala = Object.values(agentById).filter((a) => a.sala === card.sala && a.id !== autor);
+  const coord = coordenadorDe(escritorioDe(card.sala));
+  return daSala.find((a) => a.lider)?.id ?? daSala[0]?.id ?? (coord && coord.id !== autor ? coord.id : null);
+}
+
+/** Devoluções deste validador desde a última aprovação ou decisão do CEO (as rodadas da etapa atual). */
+function rodadasDaEtapa(cardId: number, validadorId: string) {
+  let n = 0;
+  for (const c of listarComentarios(cardId).reverse()) {
+    if (c.autor === "voce" || c.tipo === "aprovacao") break;
+    if (c.tipo === "devolucao" && c.autor === validadorId) n++;
+  }
+  return n;
 }
 
 const liderDe = (sala: RoomId) =>
@@ -436,7 +776,7 @@ function jaQuestionado(card: Card) {
   return listarComentarios(card.id).some((c) => c.tipo === "critica" && c.ts >= entrega.ts);
 }
 
-async function advogadoDoDiabo(client: Anthropic, card: Card, validador: Agent) {
+async function advogadoDoDiabo(client: Anthropic | null, card: Card, validador: Agent, sinal: AbortSignal) {
   const advogado = escolherAdvogado(card, validador);
   if (!advogado) return;
   const autor = card.dono ? agentById[card.dono] : undefined;
@@ -445,11 +785,13 @@ async function advogadoDoDiabo(client: Anthropic, card: Card, validador: Agent) 
   try {
     const r = await rodarAgente({
       client,
-      modelo: advogado.modelo,
+      modelo: modeloDoAgente(advogado, "apoio"),
       sistema: sistemaAdvogado(advogado, card.sala),
       mensagem: mensagemAdvogado(card),
       ferramentas: [],
       cardId: card.id,
+      sinal,
+      agenteId: advogado.id,
       esforco: "medium",
       exigeFerramenta: false,
       lembrete: "",
@@ -467,9 +809,9 @@ async function advogadoDoDiabo(client: Anthropic, card: Card, validador: Agent) 
 
 /* ---------- Validar ---------- */
 
-async function validar(client: Anthropic, inicial: Card, validador: Agent) {
+async function validar(client: Anthropic | null, inicial: Card, validador: Agent, sinal: AbortSignal) {
   const card = inicial;
-  if (configCritica().advogado && importante(card) && !jaQuestionado(card)) await advogadoDoDiabo(client, card, validador);
+  if (configCritica().advogado && importante(card) && !jaQuestionado(card)) await advogadoDoDiabo(client, card, validador, sinal);
   const autor = card.dono ? agentById[card.dono] : undefined;
   focus(card.sala, validador.id);
   setAgentStatus(validador.id, "validando", `Validando ${card.chave}`, autor?.id ?? null);
@@ -478,6 +820,7 @@ async function validar(client: Anthropic, inicial: Card, validador: Agent) {
   let decisao: { tipo: "aprovar" | "devolver"; texto: string } | null = null;
   const ferramentas: Ferramenta[] = [
     ferramentaMemoria,
+    ferramentaLerCard(card),
     ferramenta(
       "aprovar",
       "Aprova a entrega: ela está pronta para seguir. Termina a validação.",
@@ -499,13 +842,16 @@ async function validar(client: Anthropic, inicial: Card, validador: Agent) {
       },
     ),
   ];
-  const projeto = fichaDoProjeto(card.projetoId);
+  const projeto = fichaDoProjeto(projetoDoCard(card));
   // Código: o validador lê a branch do card, vê o diff e (QA, performance, segurança) roda os testes.
   const wt = worktreeDoCard(card);
-  let mensagem = mensagemValidar(card);
+  // Fora do código (que já traz o diff da branch), o validador vê o que mudou entre a versão anterior e a atual.
+  const versoes = listarEntregas(card.id);
+  const mudancas = !worktreeDoCard(card) && versoes.length >= 2 ? await diferencaDeTexto(versoes.at(-2)!.conteudo, versoes.at(-1)!.conteudo) : "";
+  let mensagem = mensagemValidar(card, mudancas);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ferramentaDeDiff(card.id));
-    if (validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+    if (podeRodarComandos() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
     if (projeto?.urlLocal && validador.id.startsWith("qa")) ferramentas.push(ferramentaDeNavegador(card.id, validador.id, projeto.urlLocal));
     const c = await codigoDoCard(card);
     if (c) mensagem += `
@@ -517,12 +863,18 @@ ${c.stat}
 
 \`\`\`diff
 ${c.patch.slice(0, 20_000)}
-\`\`\`${validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
+\`\`\`${podeRodarComandos() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
   } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
 
+  const modeloValidador = modeloDoAgente(validador, etapaDoCodigoDe(card) !== null ? "validador-codigo" : "validador");
   await rodarAgente({
     client,
-    modelo: validador.modelo,
+    agenteId: validador.id,
+    retomar: lerRetomada(card.id, "validar", validador.id, modeloValidador),
+    aoPausar: (m) => salvarRetomada(card.id, "validar", validador.id, modeloValidador, m),
+    aoRodada: (m) => salvarRetomada(card.id, "validar", validador.id, modeloValidador, m),
+    esforco: etapaDoCodigoDe(card) !== null ? "high" : undefined,
+    modelo: modeloValidador,
     sistema: sistemaValidador(validador, card.sala, focoDaEtapa(card), card.dono),
     mensagem,
     imagens: imagensDoTexto(card.descricao),
@@ -530,17 +882,29 @@ ${c.patch.slice(0, 20_000)}
     maxRodadas: wt ? 24 : undefined,
     ferramentas,
     cardId: card.id,
+    sinal,
     lembrete: "Você ainda não decidiu. Chame aprovar ou devolver agora.",
   });
 
+  if (sinal.aborted) throw new ErroInterrompido(String(sinal.reason));
   const d = decisao as { tipo: "aprovar" | "devolver"; texto: string } | null;
   if (!d) throw new Error("O validador terminou sem aprovar nem devolver.");
 
   if (d.tipo === "devolver") {
     const devolvido = registrarDevolucao(card.id, validador.id, d.texto, colunaDeTrabalho(card.fluxo, card.sala));
     postFeed(card.sala, validador.id, `${validador.nome} devolveu o ${card.chave} (rodada ${devolvido.devolucoes})`);
-    // O código passa por 4 etapas: tem mais rodadas antes de subir para o CEO.
-    if (devolvido.devolucoes >= (etapaDoCodigo(card) !== null ? MAX_RODADAS + 2 : MAX_RODADAS)) {
+    if (card.dono) emit({ type: "repasse", de: validador.id, para: card.dono, cardId: card.id, motivo: "devolucao" });
+    // Conta as rodadas desta etapa com este validador (o código tem 4 etapas, cada uma com as suas).
+    // Andando em círculo: duas devoluções seguidas dizendo praticamente o mesmo sobem para o CEO mais cedo.
+    const minhas = listarComentarios(card.id).filter((c) => c.tipo === "devolucao" && c.autor === validador.id);
+    const circulo = minhas.length >= 3 && semelhanca(minhas.at(-1)!.texto, minhas.at(-2)!.texto) >= 0.55 && semelhanca(minhas.at(-2)!.texto, minhas.at(-3)!.texto) >= 0.55;
+    if (circulo && rodadasDaEtapa(card.id, validador.id) >= 3) {
+      const coord = coordenadorDe(escritorioDe(card.sala))?.id ?? "chief-of-staff";
+      comentar(card.id, coord, "comentario", `${validador.nome} devolveu três vezes seguidas pelos mesmos motivos: o autor não está conseguindo resolver sozinho. Decida você: aprove a última versão ou devolva com a sua orientação.`);
+      mover(card.id, colunaDoCeo(card.fluxo), coord);
+      return;
+    }
+    if (rodadasDaEtapa(card.id, validador.id) >= MAX_RODADAS) {
       const coord = coordenadorDe(escritorioDe(card.sala))?.id ?? "chief-of-staff";
       comentar(card.id, coord, "comentario", `Sem consenso depois de ${MAX_RODADAS} rodadas entre o autor e ${validador.nome}. Decida você: aprove a última versão ou devolva com a sua orientação.`);
       mover(card.id, colunaDoCeo(card.fluxo), coord);
@@ -554,21 +918,23 @@ ${c.patch.slice(0, 20_000)}
 
   // Código do Squad 1: segue para a próxima etapa (performance → segurança → QA).
   const atual = lerCard(card.id);
-  const etapa = etapaDoCodigo(atual);
-  if (etapa !== null && etapa < etapasDoCodigo.length - 1) {
-    const prox = etapasDoCodigo[etapa + 1]!;
+  const etapas = etapasDoCodigoDe(atual.fluxo, atual.dono);
+  const etapa = etapaDoCodigoDe(atual);
+  if (etapa !== null && etapa < etapas.length - 1) {
+    const prox = etapas[etapa + 1]!;
     editarCard(atual.id, { validador: prox.validador });
     mover(atual.id, prox.coluna, validador.id);
     marcarValidacao(atual.id, true);
+    emit({ type: "repasse", de: validador.id, para: prox.validador, cardId: atual.id, motivo: "proxima-etapa" });
     postFeed(atual.sala, validador.id, `${atual.chave} seguiu para ${agentById[prox.validador]!.nome} (${prox.foco})`);
     return;
   }
   finalizar(atual, validador.id);
 }
 
-/** Depois da validação: N0 conclui; o resto vai para a aprovação do CEO. */
+/** Depois da validação: N0 conclui; o resto vai para a aprovação do CEO. Código sempre passa por você. */
 function finalizar(card: Card, quem: string) {
-  if (card.nivel === "N0") {
+  if (card.nivel === "N0" && !ehCardDeCodigo(card) && registroDoCard(card.id)?.status !== "ativo") {
     const concluido = mover(card.id, fluxos[card.fluxo]!.aprovarPara, quem);
     postFeed(card.sala, quem, `${card.chave} concluído (N0, não precisa do CEO)`);
     void extrairLicao(concluido).catch((e) => console.error("Falha ao extrair lição:", e));

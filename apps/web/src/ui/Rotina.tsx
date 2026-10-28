@@ -4,6 +4,9 @@ import { agentById, roomById, rooms, nomeDaSala } from "@empresa/org";
 import { useStore } from "../store.ts";
 import { api } from "../api.ts";
 import { Markdown } from "./Markdown.tsx";
+import { falar, paraFala, pararDeFalar, sinteseSuportada } from "../voz/falar.ts";
+import { Volume2 } from "lucide-react";
+import { Botao } from "./kit/index.ts";
 import { AbaConquistas, AbaOperacao } from "./Operacao.tsx";
 
 type Aba = "metas" | "indicadores" | "rituais" | "atas" | "operacao" | "conquistas";
@@ -17,7 +20,7 @@ export function Rotina() {
   if (!aberta) return null;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-ink/35 p-4 backdrop-blur-sm" onClick={fechar}>
+    <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-overlay p-4 backdrop-blur-sm" onClick={fechar}>
       <div
         className="flex h-[min(760px,100%)] w-[min(1040px,100%)] flex-col overflow-hidden rounded-2xl bg-surface shadow-3 ring-1 ring-line"
         onClick={(e) => e.stopPropagation()}
@@ -435,9 +438,28 @@ export function AbaAtas() {
               {a.atrasado && <span className="ml-1 font-semibold text-warning-fg">atrasado</span>}
             </span>
           </summary>
+          {sinteseSuportada && (
+            <Botao tamanho="p" variante="discreto" icone={Volume2} className="mt-2" onClick={() => narrarAta(a.conteudo, a.autor)}>
+              Ouvir
+            </Botao>
+          )}
           <Markdown texto={a.conteudo} className="mt-2 text-pequeno text-fg" />
         </details>
       ))}
     </div>
   );
+}
+
+/**
+ * Lê a ata em voz alta: cada fala ("**Nome:** …" ou "Nome: …") com a voz do agente que falou,
+ * o resto com a voz de quem escreveu a ata.
+ */
+function narrarAta(md: string, autor: string) {
+  pararDeFalar();
+  const porNome = new Map(Object.values(agentById).map((a) => [a.nome.toLowerCase(), a.id]));
+  for (const bloco of md.split(/\n{1,}/).map((l) => l.trim()).filter(Boolean)) {
+    const m = /^[-*\s]*\**([A-ZÀ-Ú][\wÀ-ú]+)\**\s*[:—-]\s*(.+)$/.exec(bloco);
+    const quem = m ? porNome.get(m[1]!.toLowerCase()) : undefined;
+    falar(paraFala(quem ? m![2]! : bloco), quem ?? autor);
+  }
 }

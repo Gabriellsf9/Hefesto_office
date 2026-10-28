@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
 import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, isAbsolute, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import type { Projeto } from "@empresa/shared";
 import { db, garantirColuna, getSetting, setSetting } from "./db.ts";
 import { emit } from "./bus.ts";
 import { DATA_DIR, ROOT } from "./paths.ts";
+import { NO_MAC } from "./plataforma.ts";
 import { aoAprovar, ErroCard, listarCards, ultimaEntrega } from "./tarefas.ts";
 import { urlLocalValida } from "./fabrica/capturas.ts";
 
@@ -115,6 +117,11 @@ export async function adicionarProjeto(caminhoBruto: string): Promise<Projeto> {
   const proibidas = [sep, homedir(), await realpath(ROOT), await realpath(DATA_DIR)];
   if (proibidas.includes(caminho)) throw new ErroCard("Escolha a pasta de um projeto específico, não uma pasta do sistema.");
   if (caminho.startsWith(await realpath(ROOT) + sep)) throw new ErroCard("Essa pasta faz parte do próprio Hefesto.");
+  // Nem uma pasta que CONTÉM o Hefesto (os agentes chegariam aos dados dele). No Docker, a pasta do Mac vem em HEFESTO_PASTA_HOST.
+  for (const h of [await realpath(ROOT), process.env.HEFESTO_PASTA_HOST].filter((x): x is string => !!x)) {
+    if (h.startsWith(caminho + sep) || h === caminho) throw new ErroCard("Essa pasta contém o próprio Hefesto. Escolha a pasta de um projeto específico.");
+    if (caminho.startsWith(h + sep)) throw new ErroCard("Essa pasta faz parte do próprio Hefesto.");
+  }
 
   const existente = db.prepare("SELECT * FROM projetos WHERE caminho = ?").get(caminho) as Linha | undefined;
   if (existente) {
@@ -128,6 +135,44 @@ export async function adicionarProjeto(caminhoBruto: string): Promise<Projeto> {
   const id = Number(r.lastInsertRowid);
   definirAtivo(id);
   return listarProjetos().find((p) => p.id === id)!;
+}
+
+/** Onde dá para escolher projetos: no Mac, a sua pasta pessoal; no Docker, as pastas montadas (HEFESTO_PROJETOS, separadas por ":"). */
+async function raizesDePastas(): Promise<string[]> {
+  const brutas = process.env.HEFESTO_PROJETOS ? process.env.HEFESTO_PROJETOS.split(":") : [homedir()];
+  const ok: string[] = [];
+  for (const r of brutas.filter(Boolean)) {
+    try {
+      ok.push(await realpath(r));
+    } catch {
+      // pasta não montada
+    }
+  }
+  return ok;
+}
+
+const NAO_LISTAR = new Set(["node_modules", "Library", "Applications", "dist", "build", "target", "vendor", "__pycache__"]);
+
+/** Pastas dentro de um caminho, para o seletor de pastas da própria interface (no Docker não há janela do Mac). */
+export async function listarPastas(caminhoBruto?: string) {
+  const raizes = await raizesDePastas();
+  if (!raizes.length) {
+    return { nativo: NO_MAC, caminho: null, pai: null, raizes, pastas: [], aviso: "Nenhuma pasta de projetos montada no contêiner. Veja o docker-compose.yml." };
+  }
+  let alvo: string;
+  try {
+    alvo = caminhoBruto ? await realpath(resolve(caminhoBruto)) : raizes[0]!;
+  } catch {
+    throw new ErroCard("Pasta não encontrada.");
+  }
+  if (!raizes.some((r) => alvo === r || alvo.startsWith(r + sep))) throw new ErroCard("Essa pasta está fora das pastas permitidas.");
+  const itens = await readdir(alvo, { withFileTypes: true });
+  const pastas = itens
+    .filter((d) => d.isDirectory() && !d.name.startsWith(".") && !NAO_LISTAR.has(d.name))
+    .map((d) => ({ nome: d.name, caminho: join(alvo, d.name), git: existsSync(join(alvo, d.name, ".git")) }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+    .slice(0, 500);
+  return { nativo: NO_MAC, caminho: alvo, pai: raizes.includes(alvo) ? null : dirname(alvo), raizes, pastas, git: existsSync(join(alvo, ".git")) };
 }
 
 /** Abre a janela nativa do macOS para escolher uma pasta. Null se você cancelar. */

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { Card, CodigoDoCard } from "@empresa/shared";
+import { colunaDe, type Card, type CodigoDoCard } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { db } from "../db.ts";
 import { DATA_DIR } from "../paths.ts";
@@ -40,7 +40,7 @@ export interface Worktree {
 
 const deLinha = (r: Linha): Worktree => ({ cardId: r.card_id, repo: r.repo, caminho: r.caminho, branch: r.branch, base: r.base, status: r.status as Worktree["status"] });
 
-async function g(cwd: string, ...args: string[]) {
+export async function g(cwd: string, ...args: string[]) {
   const r = await git("git", ["-C", cwd, ...args], { maxBuffer: 50 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
   return r.stdout.trim();
 }
@@ -78,7 +78,8 @@ export async function garantirWorktree(card: Card, repo: string, projetoId: numb
   } catch {
     throw new ErroCard("O repositório ainda não tem nenhum commit. Faça o primeiro commit e tente de novo.");
   }
-  const pasta = join(DATA_DIR, "workspace", String(projetoId));
+  // No Docker as cópias ficam em /workspace (os agentes escrevem ali; nunca em /data).
+  const pasta = join(process.env.EMPRESA_WORKSPACE_DIR ?? join(DATA_DIR, "workspace"), String(projetoId));
   mkdirSync(pasta, { recursive: true });
   const caminho = join(pasta, card.chave);
   const branch = `empresa/${card.chave.toLowerCase()}-${slug(card.titulo)}`;
@@ -159,4 +160,55 @@ export async function descartar(cardId: number) {
   await g(wt.repo, "branch", "-D", wt.branch).catch(() => {});
   db.prepare("UPDATE worktrees SET status = 'descartado' WHERE card_id = ?").run(card.id);
   comentar(card.id, "voce", "comentario", `Código descartado: a branch \`${wt.branch}\` e a cópia isolada foram apagadas.`);
+}
+
+/**
+ * Limpeza: tira a pasta da cópia isolada de cards apagados ou perdidos há mais de um dia.
+ * A branch fica (nada de código se perde); só some a pasta de trabalho e o registro dela no git.
+ */
+export async function limparCopiasAntigas(): Promise<number> {
+  const ativas = db.prepare("SELECT * FROM worktrees WHERE status = 'ativo'").all() as Linha[];
+  let limpas = 0;
+  for (const r of ativas) {
+    const wt = deLinha(r);
+    let abandonada = false;
+    try {
+      const card = lerCard(wt.cardId);
+      abandonada = colunaDe(card.fluxo, card.coluna)?.tipo === "perdido" && Date.now() - card.atualizadoEm > 24 * 3600_000;
+    } catch {
+      abandonada = true; // card apagado
+    }
+    if (!abandonada) continue;
+    await g(wt.repo, "worktree", "remove", "--force", wt.caminho).catch(() => {});
+    await g(wt.repo, "worktree", "prune").catch(() => {});
+    db.prepare("UPDATE worktrees SET status = 'arquivado' WHERE card_id = ?").run(wt.cardId);
+    limpas++;
+  }
+  return limpas;
+}
+
+/**
+ * No Docker com sandbox, as cópias ficam em /workspace (onde os agentes podem escrever). Cópias antigas
+ * criadas em /data/workspace são movidas para lá ao iniciar (git worktree move) e recebem permissão de grupo.
+ */
+export async function migrarCopiasParaWorkspace(): Promise<number> {
+  const destinoRaiz = process.env.EMPRESA_WORKSPACE_DIR;
+  if (!destinoRaiz) return 0;
+  const antiga = join(DATA_DIR, "workspace");
+  let movidas = 0;
+  for (const r of db.prepare("SELECT * FROM worktrees WHERE status = 'ativo'").all() as Linha[]) {
+    const wt = deLinha(r);
+    if (!wt.caminho.startsWith(antiga + "/")) continue;
+    const novo = join(destinoRaiz, wt.caminho.slice(antiga.length + 1));
+    try {
+      mkdirSync(join(novo, ".."), { recursive: true });
+      await g(wt.repo, "worktree", "move", wt.caminho, novo);
+      await git("chmod", ["-R", "g+rwX", novo]);
+      db.prepare("UPDATE worktrees SET caminho = ? WHERE card_id = ?").run(novo, wt.cardId);
+      movidas++;
+    } catch (e) {
+      console.error(`Não consegui mover a cópia do card ${wt.cardId}:`, e);
+    }
+  }
+  return movidas;
 }

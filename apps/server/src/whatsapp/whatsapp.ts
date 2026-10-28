@@ -8,6 +8,7 @@ import { apagarSegredo, lerSegredo, salvarSegredo } from "../secrets.ts";
 import { ErroCard } from "../tarefas.ts";
 import { adicionarNaoContatar, listarNaoContatar, soDigitos } from "../prospeccao.ts";
 import { salvarImagem } from "../imagens.ts";
+import { HOST } from "../plataforma.ts";
 
 // WhatsApp da empresa pela API oficial da Meta (WhatsApp Business Cloud API), pedido do CEO em 27/10/2026.
 // - Recebe: a Meta chama um webhook. Ele roda num servidor SEPARADO (127.0.0.1:4318) que só tem essa rota e
@@ -454,7 +455,7 @@ function iniciarServidor(): Promise<void> {
   });
   return new Promise((ok, falha) => {
     servidor!.once("error", falha);
-    servidor!.listen(PORTA, "127.0.0.1", () => ok());
+    servidor!.listen(PORTA, HOST, () => ok());
   });
 }
 

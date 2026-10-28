@@ -51,7 +51,9 @@ export function apiKeyHint(apiKey: string | null): string | null {
 /** Confere a chave fazendo uma chamada leve à API (lista de modelos). */
 export async function validateApiKey(apiKey: string): Promise<{ ok: true } | { ok: false; erro: string }> {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+    // Respeita ANTHROPIC_BASE_URL (proxy, gateway corporativo ou testes), como o cliente do SDK.
+    const base = (process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com").replace(/\/$/, "");
+    const res = await fetch(`${base}/v1/models?limit=1`, {
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
     });
     if (res.ok) return { ok: true };

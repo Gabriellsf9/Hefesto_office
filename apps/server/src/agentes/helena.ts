@@ -15,6 +15,7 @@ import { ferramentasDeConectores } from "../mcp/ferramentas.ts";
 import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ErroEntrada, ferramenta, rodarAgente, texto } from "./loop.ts";
 import { colunaDeEntrada } from "./motor.ts";
+import { modeloDisponivel, modeloDoAgente } from "../provedores.ts";
 import { sistemaHelena } from "./prompts.ts";
 
 // Helena (Chief of Staff) atende o CEO no chat: transforma pedidos em cards e
@@ -74,13 +75,15 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
   const HELENA_ = coord.id;
   const naSede = escritorio === SEDE;
   focus(coord.sala, HELENA_);
-  if (!client) {
+  const modelo = modeloDoAgente(coord, "coordenador");
+  if (!modeloDisponivel(modelo)) {
     postChat(HELENA_, "Para eu e a equipe trabalharmos de verdade, configure a chave da API no botão \"Chave\" do topo.");
     return;
   }
   setAgentStatus(HELENA_, "pensando", "Lendo o pedido do CEO");
   const criados: string[] = [];
-  const ativo = projetoAtivo();
+  // Num escritório criado por você, o projeto é o do escritório (não o ativo da sede).
+  const ativo = escritorio === SEDE ? projetoAtivo() : (definicaoDe(escritorio)?.projetoId ?? null);
 
   const criarCards = ferramenta(
     "criar_cards",
@@ -104,6 +107,7 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
             nivel: { type: "string", enum: ["N0", "N1", "N2", "N3"] },
             tipo: { type: "string", enum: ["epico", "historia", "tarefa", "bug", "lead", "conteudo"] },
             depende_de: { type: "integer", description: "Índice (começando em 0) de outro card desta mesma lista que precisa terminar antes" },
+            depende_tambem_de: { type: "array", items: { type: "integer" }, description: "Outros índices desta lista que também precisam terminar antes (quando depende de mais de um, ex.: o frontend espera o backend E o protótipo)" },
             data: { type: "string", description: "Prazo ou data de publicação em ISO (2026-11-03 ou 2026-11-03T18:30). Use nos posts do calendário editorial" },
             usar_projeto_ativo: { type: "boolean", description: "Liga o card ao projeto ativo do CEO, se houver" },
           },
@@ -114,40 +118,54 @@ async function atender(pedido: string, imagens: string[] = [], arquivos: string[
     (e) => {
       const lista = e.cards;
       if (!Array.isArray(lista) || !lista.length) throw new ErroEntrada("Envie pelo menos um card em cards.");
-      const ids: number[] = [];
+      const ids: (number | undefined)[] = [];
       const chaves: string[] = [];
+      const erros: string[] = [];
+      // Cada card é independente: um inválido não desfaz nem duplica os outros (o modelo reenvia só o que falhou).
       lista.slice(0, 12).forEach((bruto, i) => {
-        const c = bruto as Record<string, unknown>;
-        const sala = texto(c, "sala", 40) as RoomId;
-        if (!roomById[sala] || escritorioDe(sala) !== escritorio) throw new ErroEntrada(`Card ${i}: sala inválida "${sala}" (use as salas do diretório).`);
-        const donoPedido = typeof c.dono === "string" ? c.dono : "";
-        const dono = agentById[donoPedido]?.sala === sala ? donoPedido : undefined;
-        const dep = typeof c.depende_de === "number" && c.depende_de >= 0 && c.depende_de < i ? ids[c.depende_de] : undefined;
-        const fluxo = fluxoPadrao(sala);
-        const card = criarCard(
-          {
-            titulo: texto(c, "titulo", 200),
-            descricao: texto(c, "descricao", 20_000) + imagensEmMarkdown(imagens) + arquivosEmMarkdown(arquivos),
-            criterios: typeof c.criterios === "string" ? c.criterios : "",
-            sala,
-            fluxo,
-            coluna: colunaDeEntrada(fluxo),
-            dono: dono ?? Object.values(agentById).find((a) => a.sala === sala && a.lider)?.id ?? null,
-            prioridade: (["P0", "P1", "P2", "P3"].includes(c.prioridade as string) ? c.prioridade : "P2") as "P2",
-            nivel: (["N0", "N1", "N2", "N3"].includes(c.nivel as string) ? c.nivel : "N1") as "N1",
-            tipo: (["epico", "historia", "tarefa", "bug", "lead", "conteudo"].includes(c.tipo as string) ? c.tipo : "tarefa") as "tarefa",
-            dependeDe: dep ?? null,
-            prazo: typeof c.data === "string" && Number.isFinite(Date.parse(c.data)) ? Date.parse(c.data.length === 10 ? `${c.data}T09:00:00` : c.data) : null,
-            projetoId: c.usar_projeto_ativo ? ativo : null,
-          },
-          HELENA_,
-        );
-        ids.push(card.id);
-        chaves.push(`${card.chave} → ${nomeDaSala(sala)} (${card.dono ? agentById[card.dono]!.nome : "sem dono"})${dep ? `, depois do ${`EMP-${dep}`}` : ""}`);
+        try {
+          const c = bruto as Record<string, unknown>;
+          const sala = texto(c, "sala", 40) as RoomId;
+          if (!roomById[sala] || escritorioDe(sala) !== escritorio) throw new ErroEntrada(`Card ${i}: sala inválida "${sala}" (use as salas do diretório).`);
+          const donoPedido = typeof c.dono === "string" ? c.dono : "";
+          const dono = agentById[donoPedido]?.sala === sala ? donoPedido : undefined;
+          const dep = typeof c.depende_de === "number" && c.depende_de >= 0 && c.depende_de < i ? ids[c.depende_de] : undefined;
+          const fluxo = fluxoPadrao(sala);
+          const card = criarCard(
+            {
+              titulo: texto(c, "titulo", 200),
+              descricao: texto(c, "descricao", 20_000) + imagensEmMarkdown(imagens) + arquivosEmMarkdown(arquivos),
+              criterios: typeof c.criterios === "string" ? c.criterios : "",
+              sala,
+              fluxo,
+              coluna: colunaDeEntrada(fluxo),
+              dono: dono ?? Object.values(agentById).find((a) => a.sala === sala && a.lider)?.id ?? null,
+              prioridade: (["P0", "P1", "P2", "P3"].includes(c.prioridade as string) ? c.prioridade : "P2") as "P2",
+              nivel: (["N0", "N1", "N2", "N3"].includes(c.nivel as string) ? c.nivel : "N1") as "N1",
+              tipo: (["epico", "historia", "tarefa", "bug", "lead", "conteudo"].includes(c.tipo as string) ? c.tipo : "tarefa") as "tarefa",
+              dependeDe: dep ?? null,
+            dependencias: (Array.isArray(c.depende_tambem_de) ? c.depende_tambem_de : [])
+              .filter((j): j is number => typeof j === "number" && j >= 0 && j < i)
+              .map((j) => ids[j])
+              .filter((x): x is number => typeof x === "number"),
+              prazo: typeof c.data === "string" && Number.isFinite(Date.parse(c.data)) ? Date.parse(c.data.length === 10 ? `${c.data}T09:00:00` : c.data) : null,
+              projetoId: c.usar_projeto_ativo ? ativo : null,
+            },
+            HELENA_,
+          );
+          ids.push(card.id);
+          chaves.push(`${card.chave} → ${nomeDaSala(sala)} (${card.dono ? agentById[card.dono]!.nome : "sem dono"})${donoPedido && !dono ? ` [o dono "${donoPedido}" não é dessa sala; ficou com o líder]` : ""}${dep ? `, depois do ${`EMP-${dep}`}` : ""}`);
+        } catch (err) {
+          ids.push(undefined);
+          erros.push(`Card ${i}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       });
+      if (!chaves.length) throw new ErroEntrada(`Nenhum card criado.\n${erros.join("\n")}`);
       criados.push(...chaves);
       postFeed(coord.sala, HELENA_, `${coord.nome} criou ${chaves.length} card(s) a partir do pedido do CEO`);
-      return { texto: `Cards criados:\n${chaves.join("\n")}\nAgora responda ao CEO em poucas linhas.` };
+      return {
+        texto: `Cards criados:\n${chaves.join("\n")}${erros.length ? `\n\nNÃO criados (corrija e reenvie só estes, sem repetir os criados):\n${erros.join("\n")}` : "\nAgora responda ao CEO em poucas linhas."}`,
+      };
     },
   );
 
@@ -189,7 +207,7 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. $
     setAgentStatus(HELENA_, "trabalhando", "Respondendo ao CEO");
     const r = await rodarAgente({
       client,
-      modelo: agentById[HELENA_]!.modelo,
+      modelo,
       sistema: sistemaHelena(escritorio),
       mensagem,
       ferramentas: [

@@ -7,6 +7,7 @@ import { roomById } from "@empresa/org";
 import { getSetting, setSetting } from "../db.ts";
 import { ErroCard } from "../tarefas.ts";
 import { ErroEntrada, ferramenta, texto, type Ferramenta } from "../agentes/loop.ts";
+import { NO_MAC } from "../plataforma.ts";
 import { pedirAprovacao, registrarExecucao, registrarExecutor } from "../mcp/ferramentas.ts";
 
 // Terminal do Mac (pedido do CEO em 27/10/2026): os agentes podem rodar comandos no seu terminal.
@@ -92,7 +93,8 @@ registrarExecutor(ID_TERMINAL, async (args) => rodarNoTerminal(String(args.coman
 
 export function podeUsarMaquina(agente: Agent, recurso: "terminal" | "controle"): boolean {
   const c = configMaquina();
-  return c[recurso] && c.salas.includes(agente.sala);
+  // No Docker não existe "o Mac do CEO" para controlar.
+  return NO_MAC && c[recurso] && c.salas.includes(agente.sala);
 }
 
 export function ferramentaDeTerminal(agente: Agent, card: Card | null): Ferramenta {

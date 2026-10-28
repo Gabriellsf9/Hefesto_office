@@ -9,6 +9,7 @@ import { ErroCard } from "../tarefas.ts";
 import { ErroEntrada, ferramenta, type Ferramenta } from "../agentes/loop.ts";
 import { perfilSandbox, rodarComando } from "./comandos.ts";
 import { worktreeDoCard } from "./workspace.ts";
+import { comoAgente, NO_MAC, podeRodarComandos, SO_NO_MAC } from "../plataforma.ts";
 
 // Prévia do app por card (pedido do CEO em 27/10/2026): sobe o app a partir da cópia isolada do card
 // (git worktree), numa porta livre, dentro da mesma sandbox dos comandos da fábrica (sem internet, sem
@@ -26,15 +27,33 @@ export const lerPrevia = (cardId: number): Previa | null => {
   return p ? publica(p) : null;
 };
 
-function portaLivre(): Promise<number> {
-  return new Promise((ok, falha) => {
+// No Docker as prévias usam uma faixa de portas publicada só no localhost do Mac (HEFESTO_PREVIA_PORTAS=4450-4469)
+// e escutam em todas as interfaces do contêiner, para você abrir no seu navegador. No Mac, qualquer porta livre em 127.0.0.1.
+const FAIXA = /^(\d+)-(\d+)$/.exec(process.env.HEFESTO_PREVIA_PORTAS ?? "");
+const HOST_PREVIA = FAIXA ? "0.0.0.0" : "127.0.0.1";
+
+function tentarPorta(porta: number): Promise<number | null> {
+  return new Promise((ok) => {
     const s = createServer();
-    s.once("error", falha);
-    s.listen(0, "127.0.0.1", () => {
-      const porta = (s.address() as { port: number }).port;
-      s.close(() => ok(porta));
+    s.once("error", () => ok(null));
+    s.listen(porta, HOST_PREVIA, () => {
+      const p = (s.address() as { port: number }).port;
+      s.close(() => ok(p));
     });
   });
+}
+
+async function portaLivre(): Promise<number> {
+  if (!FAIXA) {
+    const p = await tentarPorta(0);
+    if (p) return p;
+  } else {
+    for (let p = Number(FAIXA[1]); p <= Number(FAIXA[2]); p++) {
+      if ([...previas.values()].some((x) => x.url?.endsWith(`:${p}`))) continue;
+      if (await tentarPorta(p)) return p;
+    }
+  }
+  throw new ErroCard("Nenhuma porta livre para a prévia (pare uma prévia aberta e tente de novo).");
 }
 
 interface Plano {
@@ -55,16 +74,16 @@ function planejar(pasta: string, porta: number): Plano {
     const corpo = pkg.scripts![script]!;
     // Vite, Next, Astro, Nuxt e companhia aceitam --port; o resto costuma ler PORT.
     const aceitaPorta = /\b(vite|next|astro|nuxt|nuxi|remix|svelte-kit|webpack(-dev-server| serve)|ng serve|vue-cli-service)\b/.test(corpo);
-    const extra = aceitaPorta ? [...(pm === "npm" ? ["--"] : []), "--port", String(porta), ...(/\bvite\b/.test(corpo) ? ["--strictPort", "--host", "127.0.0.1"] : [])] : [];
+    const extra = aceitaPorta ? [...(pm === "npm" ? ["--"] : []), "--port", String(porta), ...(/\bvite\b/.test(corpo) ? ["--strictPort", "--host", HOST_PREVIA] : /\bnext\b/.test(corpo) ? ["--hostname", HOST_PREVIA] : [])] : [];
     return {
       instalar: existsSync(join(pasta, "node_modules")) ? undefined : `${pm} install`,
       prog: pm,
       args: ["run", script, ...extra],
-      env: { PORT: String(porta), HOST: "127.0.0.1", BROWSER: "none", NODE_ENV: "development" },
+      env: { PORT: String(porta), HOST: HOST_PREVIA, HOSTNAME: HOST_PREVIA, BROWSER: "none", NODE_ENV: "development" },
     };
   }
-  if (existsSync(join(pasta, "manage.py"))) return { prog: "python3", args: ["manage.py", "runserver", `127.0.0.1:${porta}`, "--noreload"], env: {} };
-  if (existsSync(join(pasta, "bin", "rails"))) return { prog: "bundle", args: ["exec", "rails", "server", "-p", String(porta), "-b", "127.0.0.1"], env: {} };
+  if (existsSync(join(pasta, "manage.py"))) return { prog: "python3", args: ["manage.py", "runserver", `${HOST_PREVIA}:${porta}`, "--noreload"], env: {} };
+  if (existsSync(join(pasta, "bin", "rails"))) return { prog: "bundle", args: ["exec", "rails", "server", "-p", String(porta), "-b", HOST_PREVIA], env: {} };
   throw new ErroCard("Prévia automática ainda não sabe rodar este tipo de projeto (suporta Node, Django e Rails).");
 }
 
@@ -82,6 +101,7 @@ function programarParada(cardId: number) {
 }
 
 export async function iniciarPrevia(card: Card): Promise<Previa> {
+  if (!podeRodarComandos()) throw new ErroCard(SO_NO_MAC);
   const wt = worktreeDoCard(card);
   if (!wt) throw new ErroCard("Este card não tem cópia isolada do projeto (só cards de código num projeto com git).");
   const atual = previas.get(card.id);
@@ -106,12 +126,10 @@ export async function iniciarPrevia(card: Card): Promise<Previa> {
       }
       registrarLog(p, `$ ${p.comando}`);
       // Mesma sandbox dos comandos: sem internet (só localhost), sem ler segredos, gravando só na cópia.
-      const proc = spawn("/usr/bin/sandbox-exec", ["-p", perfilSandbox(wt.caminho, false), plano.prog, ...plano.args], {
-        cwd: wt.caminho,
-        detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: homedir(), TMPDIR: tmpdir(), LANG: "pt_BR.UTF-8", FORCE_COLOR: "0", NO_COLOR: "1", ...plano.env },
-      });
+      const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: homedir(), TMPDIR: tmpdir(), LANG: "pt_BR.UTF-8", FORCE_COLOR: "0", NO_COLOR: "1", ...plano.env };
+      // No Docker: como o usuário "agente" (só localhost, sem /data).
+      const exe = NO_MAC ? { prog: "/usr/bin/sandbox-exec", args: ["-p", perfilSandbox(wt.caminho, false), plano.prog, ...plano.args] } : comoAgente(plano.prog, plano.args, false, env as Record<string, string>);
+      const proc = spawn(exe.prog, exe.args, { cwd: wt.caminho, detached: true, stdio: ["ignore", "pipe", "pipe"], env });
       p.proc = proc;
       proc.stdout!.on("data", (b: Buffer) => registrarLog(p, b.toString()));
       proc.stderr!.on("data", (b: Buffer) => registrarLog(p, b.toString()));

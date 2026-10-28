@@ -1,5 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
-import { Office } from "./scene/Office.tsx";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useStore } from "./store.ts";
 import { useNav } from "./nav.ts";
 import { DetalheCard } from "./ui/trabalho/DetalheCard.tsx";
@@ -21,6 +20,8 @@ import "./ui/shell/tema.ts";
 // Casca da aplicação (DESIGN-INTERFACE.md §3): barra lateral + cabeçalho + página.
 // O escritório 3D fica montado (a câmera e os agentes não reiniciam), mas só desenha quando está à vista.
 
+// O 3D (three.js, ~1 MB) carrega sob demanda: só baixa e monta depois da primeira visita ao Escritório.
+const Office = lazy(() => import("./scene/Office.tsx").then((m) => ({ default: m.Office })));
 const PaginaEntrada = lazy(() => import("./ui/paginas/Entrada.tsx"));
 const PaginaTrabalho = lazy(() => import("./ui/paginas/Trabalho.tsx"));
 const PaginaClientes = lazy(() => import("./ui/paginas/Clientes.tsx"));
@@ -33,6 +34,10 @@ const PaginaEscritorios = lazy(() => import("./ui/paginas/Escritorios.tsx"));
 export function App() {
   const rota = useNav((s) => s.rota);
   const noEscritorio = rota.area === "escritorio";
+  const [visitouEscritorio, setVisitouEscritorio] = useState(noEscritorio);
+  useEffect(() => {
+    if (noEscritorio) setVisitouEscritorio(true);
+  }, [noEscritorio]);
   useAvisoSonoro();
 
   // Trocar de página fecha o que é passageiro (janela de novo card, menu da equipe).
@@ -52,9 +57,13 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Cabecalho />
         <main className="relative min-h-0 flex-1 overflow-hidden">
-          <div className={noEscritorio ? "absolute inset-0" : "invisible absolute inset-0"} aria-hidden={!noEscritorio}>
-            <Office ativo={noEscritorio} />
-          </div>
+          {visitouEscritorio && (
+            <div className={noEscritorio ? "absolute inset-0" : "invisible absolute inset-0"} aria-hidden={!noEscritorio}>
+              <Suspense fallback={null}>
+                <Office ativo={noEscritorio} />
+              </Suspense>
+            </div>
+          )}
           {noEscritorio && (
             <div className="pointer-events-none absolute inset-0 z-[100]">
               <PainelSalas />

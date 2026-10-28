@@ -1,9 +1,10 @@
 import {
   colunaDe, fluxoDaSala, fluxos, type Card, type CardEditavel, type Comentario, type Entrega, type FluxoId, type RoomId,
-  type TipoComentario, fluxoPadrao } from "@empresa/shared";
-import { agentById, roomById, salaDe } from "@empresa/org";
-import { db, garantirColuna } from "./db.ts";
-import { emit, focus } from "./bus.ts";
+  type TipoComentario, fluxoPadrao, colunaDeTrabalho, salaDoCodigo, ehCardDeCodigo } from "@empresa/shared";
+import { agentById, etapaDoCodigoDe, etapasDoCodigoDe, roomById, salaDe } from "@empresa/org";
+import { db, garantirColuna, getSetting, setSetting } from "./db.ts";
+import { limitePorCard, limitePorCardDeCodigo } from "./custo.ts";
+import { emit, focus, postFeed } from "./bus.ts";
 
 // Backlog central (PLANO.md, seção 4.2-B): nada é feito sem um card.
 // Toda mudança de coluna vira um registro no histórico do card.
@@ -58,6 +59,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS entregas_card ON entregas(card_id);
 `);
 garantirColuna("cards", "depende_de", "INTEGER");
+garantirColuna("cards", "dependencias", "TEXT");
 
 export class ErroCard extends Error {
   constructor(message: string, readonly status = 400) {
@@ -89,6 +91,7 @@ function deLinha(r: Linha): Card {
     paiId: (r.pai_id as number | null) ?? null,
     bugDe: (r.bug_de as number | null) ?? null,
     dependeDe: (r.depende_de as number | null) ?? null,
+    dependencias: r.dependencias ? (JSON.parse(r.dependencias as string) as number[]) : [],
     severidade: (r.severidade as Card["severidade"]) ?? null,
     devolucoes: r.devolucoes as number,
     bloqueado: r.bloqueado === 1,
@@ -127,7 +130,7 @@ function fimDaColuna(fluxo: FluxoId, coluna: string) {
 const campos: Record<keyof CardEditavel, string> = {
   titulo: "titulo", descricao: "descricao", criterios: "criterios", tipo: "tipo", prioridade: "prioridade",
   nivel: "nivel", sala: "sala", dono: "dono", validador: "validador", etiquetas: "etiquetas", prazo: "prazo",
-  paiId: "pai_id", severidade: "severidade", bloqueado: "bloqueado", projetoId: "projeto_id", dependeDe: "depende_de",
+  paiId: "pai_id", severidade: "severidade", bloqueado: "bloqueado", projetoId: "projeto_id", dependeDe: "depende_de", dependencias: "dependencias",
 };
 
 function validar(dados: CardEditavel) {
@@ -147,6 +150,7 @@ function validar(dados: CardEditavel) {
 
 function paraColuna(campo: keyof CardEditavel, v: unknown) {
   if (campo === "etiquetas") return JSON.stringify((v as string[]).map((e) => e.trim()).filter(Boolean).slice(0, 10));
+  if (campo === "dependencias") return JSON.stringify([...new Set((Array.isArray(v) ? v : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 12));
   if (campo === "bloqueado") return v ? 1 : 0;
   if (typeof v === "string") return v.slice(0, campo === "titulo" ? 200 : 20000);
   return (v as number | null) ?? null;
@@ -163,6 +167,15 @@ export interface NovoCard extends CardEditavel {
   demo?: boolean;
 }
 
+/**
+ * Cards que um agente acabou de passar para outro (id → quando pode começar): o motor espera a entrega
+ * em mãos no 3D. Vários de uma vez (a Helena distribuindo) são entregues em sequência, mesa a mesa.
+ */
+export const repassadosEm = new Map<number, number>();
+const ultimaEntregaDe = new Map<string, number>();
+const ESPERA_ENTREGA_MS = 12_000;
+const ENTRE_ENTREGAS_MS = 15_000;
+
 export function criarCard(dados: NovoCard, autor = "voce"): Card {
   validar(dados);
   const fluxo = dados.fluxo ?? fluxoPadrao(dados.sala);
@@ -175,18 +188,25 @@ export function criarCard(dados: NovoCard, autor = "voce"): Card {
 
   const r = db.prepare(
     `INSERT INTO cards (fluxo, coluna, ordem, tipo, titulo, descricao, criterios, prioridade, nivel, sala, dono, validador,
-       etiquetas, prazo, pai_id, bug_de, severidade, projeto_id, demo, criado_em, atualizado_em, depende_de)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       etiquetas, prazo, pai_id, bug_de, severidade, projeto_id, demo, criado_em, atualizado_em, depende_de, dependencias)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     fluxo, coluna, fimDaColuna(fluxo, coluna), dados.tipo ?? "tarefa", dados.titulo.trim().slice(0, 200),
     dados.descricao ?? "", dados.criterios ?? "", dados.prioridade ?? "P2", dados.nivel ?? "N1", sala,
     dados.dono ?? null, validador ?? null, JSON.stringify(dados.etiquetas ?? []), dados.prazo ?? null,
     dados.paiId ?? null, dados.bugDe ?? null, dados.severidade ?? null, dados.projetoId ?? null,
-    dados.demo ? 1 : 0, agora, agora, dados.dependeDe ?? null,
+    dados.demo ? 1 : 0, agora, agora, dados.dependeDe ?? null, paraColuna("dependencias", dados.dependencias ?? []),
   );
   const id = Number(r.lastInsertRowid);
   comentar(id, autor, "movimento", `Criou o card em "${colunaDe(fluxo, coluna)!.nome}"`);
-  return publicar(id);
+  const card = publicar(id);
+  if (agentById[autor] && card.dono && card.dono !== autor && !card.demo) {
+    const liberaEm = Math.max(Date.now() + ESPERA_ENTREGA_MS, (ultimaEntregaDe.get(autor) ?? 0) + ENTRE_ENTREGAS_MS);
+    ultimaEntregaDe.set(autor, liberaEm);
+    repassadosEm.set(id, liberaEm);
+    emit({ type: "repasse", de: autor, para: card.dono, cardId: id, motivo: "pedido" });
+  }
+  return card;
 }
 
 export function editarCard(id: number, dados: CardEditavel): Card {
@@ -210,6 +230,10 @@ export function removerCard(id: number) {
   db.prepare("DELETE FROM comentarios WHERE card_id = ?").run(id);
   db.prepare("DELETE FROM entregas WHERE card_id = ?").run(id);
   db.prepare("UPDATE cards SET depende_de = NULL WHERE depende_de = ?").run(id);
+  for (const r of db.prepare("SELECT id, dependencias FROM cards WHERE dependencias LIKE ?").all(`%${id}%`) as { id: number; dependencias: string }[]) {
+    const lista = (JSON.parse(r.dependencias) as number[]).filter((d) => d !== id);
+    db.prepare("UPDATE cards SET dependencias = ? WHERE id = ?").run(JSON.stringify(lista), r.id);
+  }
   db.prepare("DELETE FROM cards WHERE id = ?").run(id);
   emit({ type: "card.removido", id });
 }
@@ -282,7 +306,14 @@ export function devolver(id: number, comentario: string): Card {
   const card = lerCard(id);
   if (!exigeAprovacao(card)) throw new ErroCard("Este card não está aguardando a sua aprovação.");
   if (!comentario?.trim()) throw new ErroCard("Diga o que precisa mudar ao devolver.");
-  return registrarDevolucao(id, "voce", comentario.trim().slice(0, 5000), fluxos[card.fluxo]!.devolverPara);
+  // Código devolvido pelo CEO volta a passar por todas as etapas (review, performance, segurança, QA).
+  const etapa = etapaDoCodigoDe(card);
+  if (etapa !== null && etapa > 0) editarCard(id, { validador: etapasDoCodigoDe(card.fluxo, card.dono)[0]!.validador });
+  // Volta para a coluna escolhida no fluxo; se ela é de outra área (Produto não vai parar em "Em dev"), para a de trabalho do card.
+  const escolhida = fluxos[card.fluxo]!.devolverPara;
+  const sala = colunaDe(card.fluxo, escolhida)?.sala;
+  const destino = sala && sala !== card.sala ? colunaDeTrabalho(card.fluxo, card.sala) : escolhida;
+  return registrarDevolucao(id, "voce", comentario.trim().slice(0, 5000), destino);
 }
 
 /* ---------- Bugs ---------- */
@@ -293,20 +324,24 @@ export function abrirBug(
   autor = "voce",
 ): Card {
   const origem = lerCard(deId);
-  if (origem.fluxo !== "software") throw new ErroCard("Bugs são abertos em cards de software.");
+  const salaCodigo = salaDoCodigo(origem.fluxo);
+  if (!salaCodigo) throw new ErroCard("Bugs são abertos em cards de software.");
+  const dono = dados.dono ?? origem.dono;
+  // Quem confere a correção é a última etapa do código (o QA), como no fluxo normal.
+  const qa = etapasDoCodigoDe(origem.fluxo, dono).at(-1)?.validador ?? salaDe(salaCodigo).validador;
   const bug = criarCard(
     {
       titulo: dados.titulo,
       descricao: dados.descricao ?? "",
       tipo: "bug",
-      sala: "desenvolvimento",
-      fluxo: "software",
-      coluna: "bug",
+      sala: salaCodigo,
+      fluxo: origem.fluxo,
+      coluna: colunaDe(origem.fluxo, "bug") ? "bug" : colunaDeTrabalho(origem.fluxo, salaCodigo),
       prioridade: dados.severidade === "S1" ? "P0" : dados.severidade === "S2" ? "P1" : "P2",
       severidade: dados.severidade ?? "S3",
       nivel: "N0",
-      dono: dados.dono ?? origem.dono,
-      validador: "qa-lead",
+      dono,
+      validador: qa,
       bugDe: origem.id,
       projetoId: origem.projetoId,
       demo: origem.demo,
@@ -342,16 +377,63 @@ export function listarEntregas(cardId: number): Entrega[] {
 export const ultimaEntrega = (cardId: number): Entrega | undefined => listarEntregas(cardId).at(-1);
 
 export function somarCusto(cardId: number, usd: number) {
+  const antes = lerCard(cardId).custoUsd;
   db.prepare("UPDATE cards SET custo_usd = custo_usd + ? WHERE id = ?").run(usd, cardId);
-  publicar(cardId);
+  const card = publicar(cardId);
+  // Aviso antes de parar: cruzou 80% do que o card pode gastar.
+  const teto = tetoDoCard(card);
+  if (antes < teto * 0.8 && card.custoUsd >= teto * 0.8 && card.custoUsd < teto) {
+    comentar(cardId, card.dono ?? "chief-of-staff", "comentario", `Aviso de gasto: este card já custou US$ ${card.custoUsd.toFixed(2)} de US$ ${teto.toFixed(2)} (80%). No limite eu paro e espero você liberar mais.`);
+    postFeed(card.sala, card.dono ?? "chief-of-staff", `${card.chave} chegou a 80% do limite de gasto (US$ ${card.custoUsd.toFixed(2)} de ${teto.toFixed(2)})`);
+  }
+}
+
+/** Etiqueta do card parado pelo limite de gasto (aparece na Caixa de entrada com o botão Liberar). */
+export const ETIQUETA_LIMITE = "limite-de-gasto";
+
+/** Card que mexe no código (cópia isolada própria): tem o limite de código, maior. */
+function temCopiaPropria(id: number) {
+  try {
+    return !!db.prepare("SELECT 1 FROM worktrees WHERE card_id = ? AND status = 'ativo'").get(id);
+  } catch {
+    return false; // tabela da fábrica ainda não criada
+  }
+}
+
+/** Limite de gasto do tipo do card (geral ou código). */
+export const limiteDoCard = (card: Card) => (ehCardDeCodigo(card) || temCopiaPropria(card.id) ? limitePorCardDeCodigo() : limitePorCard());
+
+/** Teto atual do card: o limite do tipo dele mais o que você já liberou. */
+export const tetoDoCard = (card: Card) => limiteDoCard(card) + Number(getSetting(`card_${card.id}_liberado_usd`) ?? 0);
+
+/** Libera mais um limite para o card parado (botão Liberar, comentário ou Telegram) e ele continua de onde parou. */
+export function liberarGasto(id: number, autor = "voce"): Card {
+  const card = lerCard(id);
+  const lim = limiteDoCard(card);
+  const extra = Number(getSetting(`card_${id}_liberado_usd`) ?? 0);
+  setSetting(`card_${id}_liberado_usd`, String(Math.max(extra, card.custoUsd - lim) + lim));
+  db.prepare("UPDATE cards SET bloqueado = 0, etiquetas = ?, atualizado_em = ? WHERE id = ?").run(JSON.stringify(card.etiquetas.filter((e) => e !== ETIQUETA_LIMITE)), Date.now(), id);
+  comentar(id, autor, "comentario", `Liberou mais US$ ${lim.toFixed(2)} para este card (novo teto: US$ ${(Math.max(extra, card.custoUsd - lim) + 2 * lim).toFixed(2)}).`);
+  return publicar(id);
+}
+
+/** O card já gastou o que podia: o limite do tipo dele, mais o que você liberou. */
+export function cardPassouDoLimite(id: number): boolean {
+  const card = lerCard(id);
+  return card.custoUsd >= tetoDoCard(card);
 }
 
 /** Comentário do CEO num card bloqueado (pergunta de um agente) desbloqueia o card. */
 export function comentarComoCeo(cardId: number, texto: string): Comentario {
   const c = comentar(cardId, "voce", "comentario", texto);
-  if (lerCard(cardId).bloqueado) {
-    db.prepare("UPDATE cards SET bloqueado = 0, atualizado_em = ? WHERE id = ?").run(Date.now(), cardId);
-    publicar(cardId);
+  const card = lerCard(cardId);
+  if (card.bloqueado) {
+    // Parado pelo limite de gasto: comentar também libera mais um limite (como o botão Liberar).
+    if (card.etiquetas.includes(ETIQUETA_LIMITE) || cardPassouDoLimite(cardId)) liberarGasto(cardId);
+    else {
+      db.prepare("UPDATE cards SET bloqueado = 0, atualizado_em = ? WHERE id = ?").run(Date.now(), cardId);
+      publicar(cardId);
+    }
   }
   return c;
 }
@@ -362,6 +444,17 @@ export function comentar(cardId: number, autor: string, tipo: TipoComentario, te
   const comentario: Comentario = { id: Number(r.lastInsertRowid), cardId, autor, tipo, texto, ts };
   emit({ type: "comentario", comentario });
   return comentario;
+}
+
+/** Devoluções recebidas por um agente em outros cards (memória do agente), as mais recentes primeiro. */
+export function listarDevolucoesDoAgente(agente: string, excetoCard: number, limite = 5): { chave: string; texto: string }[] {
+  const linhas = db
+    .prepare(
+      `SELECT c.card_id AS id, c.texto AS texto FROM comentarios c JOIN cards k ON k.id = c.card_id
+       WHERE c.tipo = 'devolucao' AND k.dono = ? AND c.card_id <> ? AND c.autor <> ? AND k.demo = 0 ORDER BY c.id DESC LIMIT ?`,
+    )
+    .all(agente, excetoCard, agente, limite) as { id: number; texto: string }[];
+  return linhas.map((l) => ({ chave: `EMP-${l.id}`, texto: l.texto }));
 }
 
 export function listarComentarios(cardId: number): Comentario[] {

@@ -1,8 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { registrarUso } from "../custo.ts";
-import { somarCusto } from "../tarefas.ts";
-import { buscarNoCodigo, ErroArquivo, lerArquivo, listarArquivos } from "./arquivos.ts";
+import { clienteClaude, orcamentoEsgotado, registrarUso } from "../custo.ts";
+import { provedorDe } from "../provedores.ts";
+import { rodarAgenteCompat } from "./compat.ts";
+import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
+import { buscarNoCodigo, ErroArquivo, lerArquivo, listarArquivos, mapaDoCodigo } from "./arquivos.ts";
 import { blocosDeImagem } from "../imagens.ts";
+import { registrarChamada } from "../chamadas.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
 
 // Laço de um agente: chama a API, executa as ferramentas pedidas e repete até o
@@ -24,9 +27,18 @@ export interface ResultadoFerramenta {
 }
 
 export class ErroEntrada extends Error {}
+/** O trabalho foi interrompido de fora (o CEO mexeu no card, pausou a empresa…). */
+export class ErroInterrompido extends Error {}
+/** O orçamento do dia acabou no meio do trabalho. */
+export class ErroSemOrcamento extends Error {}
+/** O card chegou ao limite de gasto por card. */
+export class ErroLimiteCard extends Error {}
+/** O agente parou sem entregar nada que se aproveite (vale uma nova tentativa antes de bloquear). */
+export class ErroSemEntrega extends Error {}
 
 export interface OpcoesAgente {
-  client: Anthropic;
+  /** Cliente do Claude; sem ele, o laço cria um com a chave cadastrada. Outros provedores não usam. */
+  client?: Anthropic | null;
   modelo: string;
   sistema: string;
   mensagem: string;
@@ -38,8 +50,18 @@ export interface OpcoesAgente {
   lembrete: string;
   /** false: parar sem ferramenta é um final válido (ex.: Helena respondendo uma pergunta). */
   exigeFerramenta?: boolean;
-  /** Fallback de modelo em caso de recusa. O Haiku não tem fallback no servidor: use false. */
+  /** Fallback de modelo em caso de recusa. Padrão: ligado, menos no Haiku (que não tem fallback no servidor). */
   fallback?: boolean;
+  /** Para interromper o trabalho no meio (entre rodadas e durante a chamada à API). */
+  sinal?: AbortSignal;
+  /** Quem está chamando (para o rastreamento de chamadas). */
+  agenteId?: string;
+  /** Chamado ao fim de cada rodada com a conversa até ali (execução durável: uma queda ou reinício retoma daqui). */
+  aoRodada?: (mensagens: Anthropic.Beta.BetaMessageParam[]) => void;
+  /** Conversa salva de uma pausa (gasto, orçamento, reinício): continua dela em vez de começar do zero. */
+  retomar?: Anthropic.Beta.BetaMessageParam[] | null;
+  /** Chamado quando o trabalho pausa por gasto (limite do card ou orçamento do dia), com a conversa até ali. */
+  aoPausar?: (mensagens: Anthropic.Beta.BetaMessageParam[]) => void;
   onTexto?: (parcial: string) => void;
   maxRodadas?: number;
   /** Imagens que acompanham a mensagem (o modelo enxerga). Endereços /api/midia/chat/…. */
@@ -112,6 +134,13 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
       (e) => protegido(() => lerArquivo(raiz, texto(e, "caminho", 1000), e.inicio as number | undefined, e.fim as number | undefined)),
     ),
     ferramenta(
+      "mapa_do_codigo",
+      "Mapa do projeto (ou de uma pasta): para cada arquivo de código, os imports e as assinaturas de funções, classes e tipos, SEM o corpo. Use primeiro para entender a estrutura gastando pouco; depois leia só os arquivos que importam.",
+      { caminho: { type: "string", description: "Pasta ou arquivo relativo à raiz. Padrão: raiz" } },
+      [],
+      (e) => protegido(() => mapaDoCodigo(raiz, typeof e.caminho === "string" ? e.caminho : ".")),
+    ),
+    ferramenta(
       "buscar_no_codigo",
       "Procura um texto em todos os arquivos do projeto e devolve arquivo:linha: trecho (até 100 resultados).",
       { texto: { type: "string" } },
@@ -121,29 +150,75 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
   ];
 }
 
+/** Executa uma ferramenta pedida pelo modelo; falhas viram resultado de erro (o agente fica sabendo e decide). */
+export async function executarFerramenta(porNome: Map<string, Ferramenta>, nome: string, entrada: Record<string, unknown>): Promise<ResultadoFerramenta> {
+  const f = porNome.get(nome);
+  try {
+    if (!f?.executar) throw new ErroEntrada(`Ferramenta desconhecida: ${nome}`);
+    return await f.executar(entrada);
+  } catch (e) {
+    if (e instanceof ErroInterrompido || e instanceof ErroSemOrcamento || e instanceof ErroLimiteCard) throw e;
+    // Falha inesperada da ferramenta (git, disco, rede…): o agente fica sabendo e decide, sem perder o trabalho.
+    if (!(e instanceof ErroEntrada)) console.error(`Ferramenta ${nome} falhou:`, e);
+    return { texto: e instanceof ErroEntrada ? e.message : `A ferramenta ${nome} falhou: ${e instanceof Error ? e.message : String(e)}`, erro: true };
+  }
+}
+
 export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
+  // Modelo de outro provedor (Ollama, OpenAI, Gemini): mesmo laço, outro formato de API.
+  if (provedorDe(o.modelo).provedor !== "claude") return rodarAgenteCompat(o);
+  const client = o.client ?? clienteClaude();
+  if (!client) throw new Error("Sem chave da API da Anthropic: cadastre em Configurações ou escolha outro modelo para este agente.");
   const anexos: Anthropic.Beta.BetaContentBlockParam[] = [...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])];
-  const mensagens: Anthropic.Beta.BetaMessageParam[] = [
-    { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
-  ];
+  // Retomando de uma pausa por gasto: a mesma conversa (com as leituras e o raciocínio de antes) e um aviso para seguir.
+  const mensagens: Anthropic.Beta.BetaMessageParam[] = o.retomar?.length
+    ? [...o.retomar, { role: "user", content: "Você foi pausado (limite de gasto, orçamento do dia ou reinício do sistema) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
+    : [{ role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem }];
   const porNome = new Map(o.ferramentas.flatMap((f) => ("name" in f.def && f.executar ? [[f.def.name, f] as const] : [])));
   let custoUsd = 0;
-  let lembrou = false;
+  let lembretes = 0;
   let tentativasJson = 0;
   let ultimoTexto = "";
+  const fallback = o.fallback ?? !/haiku/i.test(o.modelo);
+  const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
 
   for (let rodada = 0; rodada < (o.maxRodadas ?? 16); rodada++) {
+    if (o.sinal?.aborted) throw interrompido();
+    // Trabalho de card respeita o orçamento a cada rodada, não só no começo.
+    if (o.cardId && rodada > 0 && orcamentoEsgotado()) {
+      o.aoPausar?.(mensagens);
+      throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
+    }
+    if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) {
+      o.aoPausar?.(mensagens);
+      throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
+    }
     let parcial = "";
-    const stream = o.client.beta.messages.stream({
+    const t0 = Date.now();
+    const stream = client.beta.messages.stream({
       model: o.modelo,
       max_tokens: 64000,
-      ...(o.fallback === false ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
+      betas: [...(fallback ? ["server-side-fallback-2026-07-01"] : []), "context-management-2025-06-27"],
+      ...(fallback ? { fallbacks: "default" as const } : {}),
+      // Economia: em tarefas longas (raio-x, código), resultados antigos de ferramentas saem do contexto
+      // (o servidor limpa; não invalida o raciocínio). Só limpa em lotes grandes, para o cache valer a pena.
+      context_management: {
+        edits: [
+          {
+            type: "clear_tool_uses_20250919",
+            trigger: { type: "input_tokens", value: 60_000 },
+            keep: { type: "tool_uses", value: 6 },
+            clear_at_least: { type: "input_tokens", value: 20_000 },
+            exclude_tools: ["entregar", "aprovar", "devolver", "buscar_na_memoria"],
+          },
+        ],
+      },
       output_config: { effort: o.esforco ?? "medium" },
       cache_control: { type: "ephemeral" },
       system: o.sistema,
       ...(o.ferramentas.length ? { tools: o.ferramentas.map((f) => f.def) } : {}),
       messages: mensagens,
-    });
+    }, o.sinal ? { signal: o.sinal } : undefined);
     if (o.onTexto) {
       stream.on("text", (delta) => {
         parcial += delta;
@@ -156,11 +231,25 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
       msg = await stream.finalMessage();
       tentativasJson = 0;
     } catch (err) {
+      if (o.sinal?.aborted) throw interrompido();
       // Com eager_input_streaming, uma entrada de ferramenta ilegível rejeita aqui. Só isso é repetido.
       if (err instanceof Anthropic.APIError || tentativasJson++ >= 2) throw err;
       continue;
     }
     const usd = registrarUso(o.modelo, msg.usage);
+    registrarChamada({
+      cardId: o.cardId ?? null,
+      agente: o.agenteId ?? null,
+      modelo: msg.model || o.modelo,
+      rodada,
+      entrada: msg.usage.input_tokens ?? 0,
+      saida: msg.usage.output_tokens ?? 0,
+      cacheEscrita: msg.usage.cache_creation_input_tokens ?? 0,
+      cacheLeitura: msg.usage.cache_read_input_tokens ?? 0,
+      usd,
+      ms: Date.now() - t0,
+      parada: msg.stop_reason ?? null,
+    });
     custoUsd += usd;
     if (o.cardId) somarCusto(o.cardId, usd);
 
@@ -175,24 +264,20 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
 
     if (!usos.length) {
       if (o.exigeFerramenta === false) return { terminou: true, texto: ultimoTexto, custoUsd };
-      if (lembrou) return { terminou: false, texto: ultimoTexto, custoUsd };
-      lembrou = true;
-      mensagens.push({ role: "user", content: o.lembrete });
+      // Parou sem ferramenta (às vezes só anuncia o que vai fazer): até dois lembretes para continuar.
+      if (lembretes >= 2) return { terminou: false, texto: ultimoTexto, custoUsd };
+      lembretes++;
+      mensagens.push({
+        role: "user",
+        content: lembretes === 1 ? o.lembrete : `Você parou de novo sem usar ferramentas. Não descreva o que vai fazer: faça agora, com as ferramentas, e termine com a ferramenta final. ${o.lembrete}`,
+      });
       continue;
     }
 
     const resultados: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     let fim = false;
     for (const u of usos) {
-      const f = porNome.get(u.name);
-      let r: ResultadoFerramenta;
-      try {
-        if (!f?.executar) throw new ErroEntrada(`Ferramenta desconhecida: ${u.name}`);
-        r = await f.executar((u.input ?? {}) as Record<string, unknown>);
-      } catch (e) {
-        if (!(e instanceof ErroEntrada)) throw e;
-        r = { texto: e.message, erro: true };
-      }
+      const r = await executarFerramenta(porNome, u.name, (u.input ?? {}) as Record<string, unknown>);
       if (r.fim && !r.erro) fim = true;
       const conteudo: Anthropic.Beta.BetaToolResultBlockParam["content"] = r.imagem
         ? [{ type: "text", text: r.texto }, { type: "image", source: { type: "base64", media_type: r.imagem.media, data: r.imagem.base64 } }]
@@ -201,6 +286,7 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     }
     if (fim) return { terminou: true, texto: ultimoTexto, custoUsd };
     mensagens.push({ role: "user", content: resultados });
+    o.aoRodada?.(mensagens);
   }
   return { terminou: false, texto: ultimoTexto, custoUsd };
 }

@@ -1,13 +1,14 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { Bell, ChevronRight, Pause, Play, Search } from "lucide-react";
 import { fluxos, type FluxoId } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { navegar, useNav, type Area } from "../../nav.ts";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
-import { Avatar, Botao, BotaoIcone, Campo, Kbd, Popover, Seletor, avisarErro, cx } from "../kit/index.ts";
+import { Avatar, Botao, BotaoIcone, Kbd, Popover, Seletor, avisarErro, cx } from "../kit/index.ts";
 import { usePendencias } from "./pendencias.ts";
 import { abrirPaleta } from "./Paleta.tsx";
+import { CampoOrcamento } from "../CampoOrcamento.tsx";
 
 // Cabeçalho (56 px): título e trilha à esquerda, busca/comando ⌘K no centro, estado da equipe, custo e Caixa de entrada à direita.
 
@@ -27,7 +28,7 @@ const NOMES_SUB: Record<string, string> = {
   livro: "Livro da Empresa", conhecimento: "Conhecimento", metas: "Metas", indicadores: "Indicadores", rituais: "Rituais e atas", atas: "Rituais e atas", conquistas: "Conquistas",
   whatsapp: "WhatsApp", leads: "Leads", atendimentos: "Atendimentos", "nao-contatar": "Não contatar",
   agentes: "Agentes", "ao-vivo": "Ao vivo",
-  projetos: "Projetos", monitoramento: "Monitoramento", financas: "Finanças", backup: "Backup",
+  hoje: "Hoje", chamadas: "Chamadas de IA", qualidade: "Qualidade", projetos: "Projetos", monitoramento: "Monitoramento", financas: "Finanças", backup: "Backup",
   geral: "Geral", voz: "Voz e sons", escritorio: "Escritório", permissoes: "Permissões dos agentes", conectores: "Conectores", sobre: "Sobre",
 };
 
@@ -43,7 +44,7 @@ export function Cabecalho() {
   return (
     <header className="relative z-[1100] flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
       <nav aria-label="Trilha" className="flex min-w-0 flex-1 items-center gap-1.5 text-corpo">
-        <button type="button" onClick={() => navegar(rota.area)} className={cx("truncate font-semibold", sub ? "text-fg-2 hover:text-fg" : "text-fg")}>
+        <button type="button" onClick={() => navegar(rota.area)} className={cx("min-h-6 truncate font-semibold", sub ? "text-fg-2 hover:text-fg" : "text-fg")}>
           {NOMES_AREA[rota.area]}
         </button>
         {sub && (
@@ -92,11 +93,10 @@ function EstadoEquipe() {
   const aberto = useStore((s) => s.equipeAberta);
   const setAberto = useStore((s) => s.setEquipeAberta);
   const ancora = useRef<HTMLButtonElement>(null);
-  const [orcamento, setOrcamento] = useState(String(motor.orcamentoDiarioUsd));
 
   const configurar = (c: { pausado?: boolean; orcamentoDiarioUsd?: number; maxSimultaneos?: number }) => api("/api/motor", "PUT", c).catch(avisarErro);
   const trabalhando = motor.emAndamento.length;
-  const estado = !chave ? { rotulo: "Sem chave da API", cor: "bg-warning" } : motor.pausado ? { rotulo: "Pausada", cor: "bg-warning" } : motor.semOrcamento ? { rotulo: "Sem orçamento", cor: "bg-danger" } : trabalhando ? { rotulo: `${trabalhando} trabalhando`, cor: "pulsar bg-accent" } : { rotulo: "Livre", cor: "bg-success" };
+  const estado = !chave ? { rotulo: "Sem chave da API", cor: "bg-warning" } : motor.pausado ? { rotulo: "Pausada", cor: "bg-warning" } : motor.semOrcamento ? { rotulo: "Sem orçamento", cor: "bg-danger" } : motor.esperandoApiAte ? { rotulo: "Esperando a API", cor: "pulsar bg-warning" } : trabalhando ? { rotulo: `${trabalhando} trabalhando`, cor: "pulsar bg-accent" } : { rotulo: "Livre", cor: "bg-success" };
 
   return (
     <>
@@ -147,7 +147,7 @@ function EstadoEquipe() {
             </ul>
           )}
           <div className="grid grid-cols-2 gap-2 border-t border-line pt-3">
-            <Campo rotulo="Orçamento por dia (US$)" tamanho="p" type="number" min={0} step={1} value={orcamento} onChange={(e) => setOrcamento(e.target.value)} onBlur={() => void configurar({ orcamentoDiarioUsd: Number(orcamento) })} />
+            <CampoOrcamento tamanho="p" />
             <Seletor rotulo="Ao mesmo tempo" tamanho="p" value={motor.maxSimultaneos} onChange={(e) => void configurar({ maxSimultaneos: Number(e.target.value) })}>
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <option key={n} value={n}>{n} agente{n > 1 ? "s" : ""}</option>

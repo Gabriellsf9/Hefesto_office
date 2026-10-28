@@ -1,12 +1,13 @@
 import { promises as dns } from "node:dns";
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { SessaoNavegador } from "@empresa/shared";
 import { getSetting, setSetting } from "../db.ts";
+import { opcoesDoChrome } from "../plataforma.ts";
 import { emit } from "../bus.ts";
-import { ErroCard } from "../tarefas.ts";
+import { comentar, ErroCard } from "../tarefas.ts";
 import { ErroEntrada, ferramenta, type Ferramenta } from "../agentes/loop.ts";
 import { pastaDeMidia, urlLocalValida } from "./capturas.ts";
 
@@ -105,6 +106,8 @@ interface Sessao {
   pagina: Page;
   urlLocal: string | null;
   usadaEm: number;
+  /** O QA grava em vídeo o que fez no navegador (vai para a atividade do card ao fechar). */
+  gravando: boolean;
 }
 
 let navegador: Browser | null = null;
@@ -113,7 +116,7 @@ const sessoes = new Map<number, Sessao>();
 async function abrirNavegador(): Promise<Browser> {
   if (navegador?.isConnected()) return navegador;
   try {
-    navegador = await chromium.launch({ channel: "chrome", headless: true, timeout: 30_000 });
+    navegador = await chromium.launch({ ...opcoesDoChrome(), headless: true, timeout: 30_000 });
   } catch (e) {
     throw new ErroEntrada(`Não consegui abrir o Google Chrome: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
   }
@@ -132,7 +135,14 @@ async function sessaoDoCard(cardId: number, agenteId: string, urlLocal: string |
     return existente;
   }
   const b = await abrirNavegador();
-  const contexto = await b.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: false, locale: "pt-BR", userAgent: undefined });
+  const gravando = agenteId.startsWith("qa");
+  const contexto = await b.newContext({
+    viewport: { width: 1280, height: 800 },
+    acceptDownloads: false,
+    locale: "pt-BR",
+    userAgent: undefined,
+    ...(gravando ? { recordVideo: { dir: join(pastaDeMidia(cardId), "videos-tmp"), size: { width: 1280, height: 800 } } } : {}),
+  });
   // Toda requisição passa pela política: nada da rede interna (fora o app local e os sites de teste).
   await contexto.route("**/*", async (rota) => {
     const { modo } = await modoDoEndereco(rota.request().url(), urlLocal).catch(() => ({ modo: null }));
@@ -151,6 +161,7 @@ async function sessaoDoCard(cardId: number, agenteId: string, urlLocal: string |
     pagina,
     urlLocal,
     usadaEm: Date.now(),
+    gravando,
   };
   sessoes.set(cardId, s);
   return s;
@@ -300,7 +311,23 @@ export async function fecharSessao(cardId: number) {
   const s = sessoes.get(cardId);
   if (!s) return;
   sessoes.delete(cardId);
+  const video = s.gravando ? s.pagina.video() : null;
   await s.contexto.close().catch(() => {});
+  // O vídeo só fica pronto depois de fechar o contexto: move para a mídia do card e avisa na atividade.
+  if (video) {
+    try {
+      const origem = await video.path();
+      if (existsSync(origem) && statSync(origem).size > 10_000 && s.info.acoes.length) {
+        const pasta = join(pastaDeMidia(cardId), "videos");
+        mkdirSync(pasta, { recursive: true });
+        const nome = `${cardId}-${Date.now()}.webm`;
+        renameSync(origem, join(pasta, nome));
+        comentar(cardId, s.info.agenteId, "comentario", `🎥 [Vídeo do teste no navegador](/api/midia/${cardId}/videos/${nome}) (${s.info.acoes.length} ações).`);
+      } else rmSync(origem, { force: true });
+    } catch (e) {
+      console.error("Vídeo do QA:", e);
+    }
+  }
   s.info.ativa = false;
   s.info.atualizadoEm = Date.now();
   emit({ type: "navegador", sessao: s.info });

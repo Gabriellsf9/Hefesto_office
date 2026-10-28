@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Check, CheckCheck, ChevronRight, Inbox, Lock, MessageCircle, Plug, RotateCcw, Terminal, X } from "lucide-react";
+import { BookOpen, Check, CheckCheck, ChevronRight, Inbox, Lock, MessageCircle, Plug, RotateCcw, Terminal, X, Wallet } from "lucide-react";
 import { agentById, roomById, nomeDaSala } from "@empresa/org";
 import type { MensagemWhatsapp } from "@empresa/shared";
 import { useStore } from "../../store.ts";
@@ -15,7 +15,7 @@ import { ConviteEntrevista } from "../Entrevista.tsx";
 // Teclado: J/K movem, A aprova, D devolve/recusa, Enter abre.
 
 type Filtro = "tudo" | Pendencia["tipo"];
-const ROTULO: Record<Pendencia["tipo"], string> = { aprovacao: "Aprovações", bloqueado: "Perguntas", acao: "Ações externas", whatsapp: "WhatsApp", conhecimento: "Conhecimento" };
+const ROTULO: Record<Pendencia["tipo"], string> = { aprovacao: "Aprovações", limite: "Limite de gasto", bloqueado: "Perguntas", acao: "Ações externas", whatsapp: "WhatsApp", conhecimento: "Conhecimento" };
 
 export default function PaginaEntrada() {
   const todas = usePendencias();
@@ -30,6 +30,10 @@ export default function PaginaEntrada() {
 
   const aprovar = async (p: Pendencia) => {
     try {
+      if (p.tipo === "limite") {
+        await api(`/api/cards/${p.card.id}/liberar`, "POST");
+        return avisar("Liberado: o agente continua de onde parou");
+      }
       if (p.tipo === "aprovacao") await api(`/api/cards/${p.card.id}/aprovar`, "POST", {});
       else if (p.tipo === "acao") await api(`/api/mcp/pedidos/${p.pedido.id}/aprovar`, "POST");
       else if (p.tipo === "conhecimento") await api(`/api/conhecimento/${p.item.id}/aprovar`, "POST");
@@ -40,7 +44,7 @@ export default function PaginaEntrada() {
     }
   };
   const abrir = (p: Pendencia) => {
-    if (p.tipo === "aprovacao" || p.tipo === "bloqueado") useStore.getState().abrirCard(p.card.id);
+    if (p.tipo === "aprovacao" || p.tipo === "bloqueado" || p.tipo === "limite") useStore.getState().abrirCard(p.card.id);
     else if (p.tipo === "acao" && p.pedido.cardId) useStore.getState().abrirCard(p.pedido.cardId);
     else if (p.tipo === "whatsapp") navegar("clientes", "whatsapp", p.contato.telefone);
     else if (p.tipo === "conhecimento") navegar("empresa", "conhecimento");
@@ -127,7 +131,7 @@ export default function PaginaEntrada() {
           ))}
         </ul>
       )}
-      <p className="mt-3 text-legenda text-fg-3">Atalhos: J/K movem · A aprova · D devolve · Enter abre</p>
+      <p className="mt-3 text-legenda text-fg-3">Atalhos: J/K movem · A aprova (ou libera) · D devolve · Enter abre</p>
 
       <Devolver p={devolvendo} fechar={() => setDevolvendo(null)} />
     </Pagina>
@@ -135,7 +139,7 @@ export default function PaginaEntrada() {
 }
 
 function ItemPendencia({ p, marcado, marcar, aprovar, devolver, abrir }: { p: Pendencia; marcado: boolean; marcar?: () => void; aprovar: () => void; devolver: () => void; abrir: () => void }) {
-  if (p.tipo === "aprovacao" || p.tipo === "bloqueado") {
+  if (p.tipo === "aprovacao" || p.tipo === "bloqueado" || p.tipo === "limite") {
     const c = p.card;
     const autor = c.dono ? agentById[c.dono] : null;
     const validador = c.validador ? agentById[c.validador] : null;
@@ -147,9 +151,15 @@ function ItemPendencia({ p, marcado, marcar, aprovar, devolver, abrir }: { p: Pe
           <span className="w-4" />
         )}
         {autor ? <Avatarzinho agent={autor} tamanho={36} /> : <span className="size-9" />}
-        <button type="button" onClick={abrir} className="min-w-0 flex-1 text-left">
+        <button type="button" onClick={abrir} aria-label={`Abrir ${c.chave}: ${c.titulo}`} className="min-w-0 flex-1 text-left">
           <div className="flex flex-wrap items-center gap-2">
-            {p.tipo === "bloqueado" ? <Etiqueta tom="alerta" icone={Lock}>Pergunta para você</Etiqueta> : <Etiqueta tom="sucesso" icone={Check}>Pronto para aprovar</Etiqueta>}
+            {p.tipo === "limite" ? (
+              <Etiqueta tom="alerta" icone={Wallet}>Parou no limite de gasto · US$ {c.custoUsd.toFixed(2)}</Etiqueta>
+            ) : p.tipo === "bloqueado" ? (
+              <Etiqueta tom="alerta" icone={Lock}>Pergunta para você</Etiqueta>
+            ) : (
+              <Etiqueta tom="sucesso" icone={Check}>Pronto para aprovar</Etiqueta>
+            )}
             {c.nivel !== "N1" && <Etiqueta tom="info">{c.nivel}</Etiqueta>}
             {c.devolucoes > 0 && <Etiqueta tom="alerta" icone={RotateCcw}>devolvido {c.devolucoes}×</Etiqueta>}
           </div>
@@ -163,7 +173,9 @@ function ItemPendencia({ p, marcado, marcar, aprovar, devolver, abrir }: { p: Pe
         </button>
         <SeloPrioridade p={c.prioridade} />
         <div className="flex shrink-0 gap-1.5">
-          {p.tipo === "aprovacao" ? (
+          {p.tipo === "limite" ? (
+            <Botao tamanho="p" variante="principal" icone={Wallet} onClick={aprovar}>Liberar mais</Botao>
+          ) : p.tipo === "aprovacao" ? (
             <>
               <Botao tamanho="p" variante="discreto" icone={RotateCcw} onClick={devolver}>Devolver</Botao>
               <Botao tamanho="p" variante="sucesso" icone={Check} onClick={aprovar}>Aprovar</Botao>
@@ -184,7 +196,7 @@ function ItemPendencia({ p, marcado, marcar, aprovar, devolver, abrir }: { p: Pe
       <div className="flex items-start gap-3 px-4 py-3.5">
         <span className="w-4" />
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-warning-soft text-warning-fg"><Icone className="size-4" /></span>
-        <button type="button" onClick={abrir} className="min-w-0 flex-1 text-left">
+        <button type="button" onClick={abrir} aria-label={`Abrir pedido: ${x.servidor} · ${x.ferramenta}`} className="min-w-0 flex-1 text-left">
           <Etiqueta tom="alerta">Ação fora da empresa</Etiqueta>
           <div className="mt-1 text-corpo font-medium text-fg">{x.servidor} · {x.ferramenta}</div>
           {x.motivo && <div className="mt-0.5 text-pequeno text-fg-2">{x.motivo}</div>}

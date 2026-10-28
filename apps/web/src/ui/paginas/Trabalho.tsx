@@ -181,7 +181,7 @@ function AvisoLink({ texto, rotulo, fazer }: { texto: string; rotulo: string; fa
   return (
     <div className="mb-3 flex items-center gap-3 rounded-card bg-accent-soft px-4 py-2 text-pequeno text-accent-fg">
       <span className="flex-1">{texto}</span>
-      <button type="button" onClick={fazer} className="flex items-center gap-1 font-semibold hover:underline">{rotulo} <ArrowRight className="size-3.5" /></button>
+      <button type="button" onClick={fazer} className="flex min-h-6 items-center gap-1 font-semibold hover:underline">{rotulo} <ArrowRight className="size-3.5" /></button>
     </div>
   );
 }

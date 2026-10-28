@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2 } from "lucide-react";
-import { colunaDe, fluxos, niveis, prioridades, severidades, tiposCard, type Card, type CardEditavel, type Comentario, type Entrega } from "@empresa/shared";
+import { Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2, Wallet } from "lucide-react";
+import { baseDoFluxo, colunaDe, ehCardDeCodigo, fluxos, niveis, prioridades, severidades, tiposCard, type Card, type CardEditavel, type Comentario, type Entrega } from "@empresa/shared";
 import { agentById, agents, rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
@@ -88,19 +88,26 @@ function Corpo({ card }: { card: Card }) {
             {agentById[trabalho.agenteId]?.nome} está {trabalho.tipo === "validar" ? "validando" : "trabalhando"} neste card agora.
           </p>
         )}
-        {card.bloqueado && (
+        {card.bloqueado && card.etiquetas.includes("limite-de-gasto") ? (
+          <div className="flex items-center gap-3 rounded-card bg-warning-soft px-3.5 py-2.5 text-pequeno text-warning-fg">
+            <Wallet className="size-4 shrink-0" />
+            <span className="flex-1">Parou no limite de gasto (US$ {card.custoUsd.toFixed(2)}). Liberando, o agente continua exatamente de onde parou.</span>
+            <Botao tamanho="p" variante="principal" onClick={() => void api(`/api/cards/${card.id}/liberar`, "POST").then(() => avisar("Liberado")).catch(avisarErro)}>Liberar mais</Botao>
+          </div>
+        ) : card.bloqueado && (
           <p className="flex items-start gap-2 rounded-card bg-warning-soft px-3.5 py-2.5 text-pequeno text-warning-fg">
             <Lock className="mt-0.5 size-4 shrink-0" />
             <span>Pausado. Se um agente fez uma pergunta, responda na atividade abaixo: o seu comentário desbloqueia o card e ele volta a trabalhar.</span>
           </p>
         )}
+        <Dependencias card={card} />
         {coluna?.tipo === "ceo" && <Aprovacao card={card} />}
 
         <TextoEditavel rotulo="Descrição" valor={card.descricao} onSalvar={(descricao) => editar({ descricao })} />
         <TextoEditavel rotulo="Critérios de aceite" valor={card.criterios} onSalvar={(criterios) => editar({ criterios })} />
 
         {card.tipo === "lead" && <FichaLead card={card} />}
-        {card.fluxo === "software" && card.projetoId !== null && <SecaoCodigo card={card} />}
+        {ehCardDeCodigo(card) && card.projetoId !== null && <SecaoCodigo card={card} />}
         {card.fluxo === "marketing" && <FichaPeca card={card} />}
 
         <Entregas entregas={entregas} />
@@ -110,7 +117,7 @@ function Corpo({ card }: { card: Card }) {
             <LinhaCard card={origem} />
           </Bloco>
         )}
-        {card.fluxo === "software" && card.tipo !== "bug" && (
+        {baseDoFluxo(card.fluxo) === "software" && card.tipo !== "bug" && (
           <Bloco titulo={`Bugs ligados${bugs.length ? ` · ${bugs.length}` : ""}`}>
             {bugs.map((b) => <LinhaCard key={b.id} card={b} />)}
             <NovoBug card={card} />
@@ -425,3 +432,25 @@ function TextoEditavel({ rotulo, valor, onSalvar }: { rotulo: string; valor: str
   );
 }
 
+
+/** De quem este card depende (um ou vários): só começa quando todos terminarem. */
+function Dependencias({ card }: { card: Card }) {
+  const cards = useStore((s) => s.cards);
+  const ids = [...(card.dependeDe ? [card.dependeDe] : []), ...(card.dependencias ?? [])];
+  if (!ids.length) return null;
+  return (
+    <p className="flex flex-wrap items-center gap-1.5 text-pequeno text-fg-2">
+      <span className="font-medium">Espera:</span>
+      {ids.map((id) => {
+        const d = cards[id];
+        if (!d) return null;
+        const feito = colunaDe(d.fluxo, d.coluna)?.tipo === "feito";
+        return (
+          <button key={id} type="button" onClick={() => useStore.getState().abrirCard(id)} className="rounded-full bg-sunken px-2 py-0.5 text-legenda hover:bg-hover">
+            {feito ? "✓" : "…"} {d.chave} · {d.titulo.slice(0, 40)}
+          </button>
+        );
+      })}
+    </p>
+  );
+}

@@ -8,6 +8,7 @@ import { escritorioAtivo, escritorioDoFluxoId } from "@empresa/org";
 export type Pendencia =
   | { tipo: "aprovacao"; chave: string; card: Card; ts: number; peso: number }
   | { tipo: "bloqueado"; chave: string; card: Card; ts: number; peso: number }
+  | { tipo: "limite"; chave: string; card: Card; ts: number; peso: number }
   | { tipo: "acao"; chave: string; pedido: PedidoMcp; ts: number; peso: number }
   | { tipo: "whatsapp"; chave: string; contato: ContatoWhatsapp; ts: number; peso: number }
   | { tipo: "conhecimento"; chave: string; item: ItemConhecimento; ts: number; peso: number };
@@ -26,6 +27,7 @@ export function usePendencias(): Pendencia[] {
       // Cards de outros escritórios aparecem quando você entra neles.
       if (escritorioDoFluxoId(c.fluxo) !== aqui) continue;
       if (colunaDe(c.fluxo, c.coluna)?.tipo === "ceo") lista.push({ tipo: "aprovacao", chave: `card-${c.id}`, card: c, ts: c.atualizadoEm, peso: 20 + pesoPrioridade(c.prioridade) });
+      else if (c.bloqueado && c.etiquetas.includes("limite-de-gasto")) lista.push({ tipo: "limite", chave: `lim-${c.id}`, card: c, ts: c.atualizadoEm, peso: 8 + pesoPrioridade(c.prioridade) });
       else if (c.bloqueado) lista.push({ tipo: "bloqueado", chave: `bloq-${c.id}`, card: c, ts: c.atualizadoEm, peso: 10 + pesoPrioridade(c.prioridade) });
     }
     for (const p of pedidos) if (p.status === "pendente") lista.push({ tipo: "acao", chave: `acao-${p.id}`, pedido: p, ts: p.criadoEm, peso: 12 });

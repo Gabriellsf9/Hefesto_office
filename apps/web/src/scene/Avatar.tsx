@@ -75,7 +75,8 @@ export function AgentActor({ agent }: { agent: Agent }) {
       </group>
       <StatusRing cor={info.cor} ativo={ativo} destaque={selecionado || hover} />
       {ativo && <StatusBubble cor={info.cor} status={status} />}
-      {!ativo && <BalaoEmoji ctrl={ctrl} />}
+      {(status === "trabalhando" || status === "testando") && <FaiscasDeTrabalho ctrl={ctrl} cor={info.cor} />}
+      <BalaoEmoji ctrl={ctrl} alto={ativo} />
       {/* Sempre montado e só escondido: montar/desmontar Html do drei a cada hover gera avisos do React. */}
       <Html position={[0, 2.5, 0]} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
         <div
@@ -120,6 +121,7 @@ function Person({ agent, status, ctrl }: { agent: Agent; status: AgentStatus; ct
   const bracoD = useRef<Group>(null);
   const itens = useRef<Group>(null);
   const emPe = useRef(0); // 0 = sentado, 1 = em pé (interpolado)
+  const aqueceuEm = useRef(-1); // quando sentou para trabalhar (alongamento antes de digitar)
   const fase = useRef(Math.random() * 10);
   const { camisa, pele, cabelo } = agent.aparencia;
   const visual = useMemo(() => visualDe(agent), [agent]);
@@ -143,22 +145,42 @@ function Person({ agent, status, ctrl }: { agent: Agent; status: AgentStatus; ct
     pernaD.current.rotation.x = lerp(-Math.PI / 2, -balanco, s);
 
     // Braços: digitando na mesa, balançando ao andar, segurando algo no tempo livre.
-    const naMesaTrabalhando = sentado && ctrl.alturaAssento === 0 && (status === "trabalhando" || status === "testando");
-    const segurando = ctrl.item !== null && !andando;
+    const naMesa = sentado && ctrl.alturaAssento === 0;
+    const naMesaTrabalhando = naMesa && (status === "trabalhando" || status === "testando");
+    // A pasta de uma tarefa vai na mão também andando; o resto (café, livro…) só parado.
+    const segurando = ctrl.item !== null && (!andando || ctrl.item === "pasta");
+    // Começou a trabalhar: alonga os braços e estala os dedos antes de digitar.
+    if (status === "ocioso") aqueceuEm.current = -1;
+    else if (naMesaTrabalhando && aqueceuEm.current < 0) aqueceuEm.current = t;
+    const aquecendo = naMesaTrabalhando ? (t - aqueceuEm.current) / 1.6 : 1;
+    // Pausas curtas no meio da digitação: mão no mouse, olhando a tela.
+    const noMouse = (t % 7) > 5.7;
     let alvoE = sentado ? -0.35 : -0.08;
     let alvoD = alvoE;
-    if (naMesaTrabalhando) {
-      alvoE = -1.15 + Math.sin(t * 14) * 0.15;
-      alvoD = -1.15 + Math.sin(t * 14 + 1.5) * 0.15;
+    if (naMesaTrabalhando && aquecendo < 1) {
+      alvoE = alvoD = aquecendo < 0.55 ? -2.95 : -1.6;
+    } else if (naMesaTrabalhando) {
+      const ritmo = 0.6 + 0.4 * Math.abs(Math.sin(t * 0.9));
+      alvoE = -1.15 + Math.sin(t * 17) * 0.17 * ritmo;
+      alvoD = noMouse ? -0.95 : -1.15 + Math.sin(t * 17 + 1.5) * 0.17 * ritmo;
+    } else if (naMesa && status === "pensando") {
+      alvoE = -1.0; // mão no queixo, pensando
+      alvoD = -2.25;
+    } else if (!sentado && !andando && status === "validando") {
+      alvoD = -1.3 + Math.sin(t * 2.2) * 0.15; // apontando para a tela do colega
     } else if (andando) {
       alvoE = -balanco * 0.8;
       alvoD = balanco * 0.8;
     }
-    if (segurando) alvoD = -1.25 + Math.sin(t * 0.8) * 0.12;
+    if (segurando) alvoD = ctrl.item === "pasta" ? -1.05 : -1.25 + Math.sin(t * 0.8) * 0.12;
+    // Recebeu uma tarefa: pulinho e aceno.
+    const desdeRecebeu = ctrl.relogio - ctrl.recebeuEm;
+    if (desdeRecebeu < 1.4 && !segurando) alvoD = -2.7 + Math.sin(t * 14) * 0.25;
     bracoE.current.rotation.x += (alvoE - bracoE.current.rotation.x) * Math.min(1, dt * 12);
     bracoD.current.rotation.x += (alvoD - bracoD.current.rotation.x) * Math.min(1, dt * 12);
     if (naMesaTrabalhando) q.position.y += Math.sin(t * 7) * 0.008;
     else if (sentado) q.position.y += Math.sin(t * 1.6) * 0.012;
+    if (desdeRecebeu < 0.8) q.position.y += Math.sin((desdeRecebeu / 0.8) * Math.PI) * (sentado ? 0.06 : 0.16);
 
     itens.current.children.forEach((c) => (c.visible = segurando && c.name === ctrl.item));
 
@@ -166,10 +188,12 @@ function Person({ agent, status, ctrl }: { agent: Agent; status: AgentStatus; ct
     let alvoZ = 0;
     if (status === "pensando") alvoZ = Math.sin(t * 1.2) * 0.18;
     if (status === "validando" || status === "em-reuniao") alvoY = Math.sin(t * 1.3) * 0.35;
+    if (naMesaTrabalhando && noMouse) alvoY = Math.sin(t * 0.7) * 0.25;
     if (!andando && ctrl.item === "livro") alvoZ = 0.15;
-    // Falando em voz alta: acena com a cabeça enquanto a voz toca.
+    // Falando em voz alta: acena com a cabeça enquanto a voz toca. Digitando: inclinado para a tela.
     const falando = useStore.getState().voz.falando === agent.id;
-    cabeca.current.rotation.x = falando ? Math.sin(t * 9) * 0.09 : cabeca.current.rotation.x * 0.85;
+    const alvoX = naMesaTrabalhando && aquecendo >= 1 ? 0.12 + Math.sin(t * 3.1) * 0.025 : 0;
+    cabeca.current.rotation.x = falando ? Math.sin(t * 9) * 0.09 : cabeca.current.rotation.x + (alvoX - cabeca.current.rotation.x) * Math.min(1, dt * 6);
     cabeca.current.rotation.y += (alvoY - cabeca.current.rotation.y) * Math.min(1, dt * 4);
     cabeca.current.rotation.z += (alvoZ - cabeca.current.rotation.z) * Math.min(1, dt * 4);
   });
@@ -207,6 +231,7 @@ function Person({ agent, status, ctrl }: { agent: Agent; status: AgentStatus; ct
           <Ancora parte="copo" cor="#9fd3f5" name="copo" />
           <Ancora parte="fruta" cor="#e63946" name="fruta" />
           <Ancora parte="livro" cor="#005f73" name="livro" rotation={[0, 0, Math.PI / 2]} />
+          <Ancora parte="pasta" cor="#e9b949" name="pasta" position={[0, 0.02, 0.1]} rotation={[-0.35, 0, 0]} />
         </group>
       </group>
       {/* Cabeça */}
@@ -268,8 +293,8 @@ function texturaBalao(emoji: string) {
   return t;
 }
 
-/** Balão com emoji sobre a cabeça no tempo livre (☕ no café, 💬 conversando…). Um sprite, sem DOM. */
-function BalaoEmoji({ ctrl }: { ctrl: Comportamento }) {
+/** Balão com emoji sobre a cabeça (☕ no café, 💬 conversando, 📥 tarefa recebida…). Um sprite, sem DOM. */
+function BalaoEmoji({ ctrl, alto }: { ctrl: Comportamento; alto: boolean }) {
   const sprite = useRef<Sprite>(null);
   const atual = useRef<string | null>(null);
   useFrame(({ clock }) => {
@@ -283,7 +308,8 @@ function BalaoEmoji({ ctrl }: { ctrl: Comportamento }) {
       (s.material as SpriteMaterial).map = texturaBalao(emoji);
       (s.material as SpriteMaterial).needsUpdate = true;
     }
-    s.position.y = 2.25 + Math.sin(clock.elapsedTime * 2 + ctrl.x) * 0.05;
+    // Trabalhando, fica acima do indicador de status.
+    s.position.y = (alto ? 2.6 : 2.25) + Math.sin(clock.elapsedTime * 2 + ctrl.x) * 0.05;
   });
   return (
     <sprite ref={sprite} scale={[0.6, 0.6, 0.6]} visible={false}>
@@ -317,6 +343,37 @@ function StatusBubble({ cor, status }: { cor: string; status: AgentStatus }) {
           <meshBasicMaterial color={cor} />
         </mesh>
       )}
+    </group>
+  );
+}
+
+/** Trabalhando na mesa: faíscas na cor do status sobem do teclado enquanto digita. */
+const N_FAISCAS = 6;
+function FaiscasDeTrabalho({ ctrl, cor }: { ctrl: Comportamento; cor: string }) {
+  const g = useRef<Group>(null);
+  const fases = useMemo(() => Array.from({ length: N_FAISCAS }, (_, i) => ({ fase: i / N_FAISCAS, x: (Math.random() - 0.5) * 0.4 })), []);
+  useFrame(({ clock }) => {
+    const grupo = g.current;
+    if (!grupo) return;
+    grupo.visible = ctrl.sentadoNaMesa;
+    if (!grupo.visible) return;
+    const t = clock.elapsedTime * 0.7;
+    grupo.children.forEach((m, i) => {
+      const f = fases[i]!;
+      const p = (t + f.fase) % 1;
+      m.position.set(f.x + Math.sin((t + i) * 3) * 0.04, 0.95 + p * 0.75, 0.5 - p * 0.1);
+      m.rotation.set(p * 4, p * 6, 0);
+      ((m as unknown as { material: MeshBasicMaterial }).material).opacity = p < 0.15 ? p / 0.15 : 1 - (p - 0.15) / 0.85;
+    });
+  });
+  return (
+    <group ref={g}>
+      {fases.map((_, i) => (
+        <mesh key={i}>
+          <boxGeometry args={[0.045, 0.045, 0.045]} />
+          <meshBasicMaterial color={cor} transparent depthWrite={false} />
+        </mesh>
+      ))}
     </group>
   );
 }

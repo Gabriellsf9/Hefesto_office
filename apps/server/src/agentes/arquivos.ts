@@ -106,3 +106,93 @@ export async function buscarNoCodigo(raiz: string, texto: string): Promise<strin
   await andar(base);
   return achados.length ? achados.join("\n") : "Nada encontrado.";
 }
+
+/* ---------- Mapa do código (contexto cirúrgico) ---------- */
+
+const EXT_CODIGO = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|py|go)$/;
+const MAX_MAPA = 40_000;
+
+/** Assinaturas de um arquivo TS/JS pela árvore sintática (sem o corpo das funções). */
+async function mapaTs(nome: string, texto: string): Promise<string[]> {
+  const ts = (await import("typescript")).default;
+  const kind = /\.tsx$/.test(nome) ? ts.ScriptKind.TSX : /\.jsx$/.test(nome) ? ts.ScriptKind.JSX : /\.(js|mjs|cjs)$/.test(nome) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(nome, texto, ts.ScriptTarget.Latest, true, kind);
+  const curto = (n: object | undefined, max = 140) => (n ? (n as { getText: (s: typeof sf) => string }).getText(sf).replace(/\s+/g, " ").slice(0, max) : "");
+  const exportado = (n: { modifiers?: readonly { kind: number }[] } & object) =>
+    "modifiers" in n && n.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ? "export " : "";
+  const params = (ps: readonly object[]) => ps.map((p) => curto(p, 60)).join(", ");
+  const out: string[] = [];
+  const imports: string[] = [];
+  for (const st of sf.statements) {
+    if (ts.isImportDeclaration(st)) imports.push((st.moduleSpecifier as { text?: string }).text ?? "");
+    else if (ts.isFunctionDeclaration(st) && st.name) out.push(`${exportado(st)}function ${st.name.text}(${params(st.parameters)})${st.type ? `: ${curto(st.type, 80)}` : ""}`);
+    else if (ts.isClassDeclaration(st)) {
+      const membros = st.members
+        .map((m) => (ts.isMethodDeclaration(m) && m.name ? `${curto(m.name, 40)}(${params(m.parameters)})` : ts.isPropertyDeclaration(m) && m.name ? curto(m.name, 40) : ""))
+        .filter(Boolean)
+        .slice(0, 25);
+      out.push(`${exportado(st)}class ${st.name?.text ?? "(anônima)"} { ${membros.join("; ")} }`);
+    } else if (ts.isInterfaceDeclaration(st)) out.push(`${exportado(st)}interface ${st.name.text} { ${st.members.map((m) => curto(m, 50)).slice(0, 20).join(" ")} }`);
+    else if (ts.isTypeAliasDeclaration(st)) out.push(`${exportado(st)}type ${st.name.text} = ${curto(st.type, 120)}`);
+    else if (ts.isEnumDeclaration(st)) out.push(`${exportado(st)}enum ${st.name.text}`);
+    else if (ts.isVariableStatement(st)) {
+      for (const d of st.declarationList.declarations) {
+        const nomeVar = curto(d.name, 50);
+        if (!nomeVar) continue;
+        const ini = d.initializer;
+        if (ini && (ts.isArrowFunction(ini) || ts.isFunctionExpression(ini))) out.push(`${exportado(st)}const ${nomeVar} = (${params(ini.parameters)})${ini.type ? `: ${curto(ini.type, 80)}` : ""} =>`);
+        else out.push(`${exportado(st)}const ${nomeVar}${d.type ? `: ${curto(d.type, 80)}` : ""}`);
+      }
+    } else if (ts.isExportAssignment(st)) out.push(`export default ${curto(st.expression, 60)}`);
+  }
+  if (imports.length) out.unshift(`importa: ${imports.join(", ")}`);
+  return out;
+}
+
+/** Assinaturas de Python e Go (por padrão de linha: def/class e func). */
+function mapaPorLinha(nome: string, texto: string): string[] {
+  const re = nome.endsWith(".go") ? /^func\s+(\([^)]*\)\s*)?[A-Za-z_]\w*\s*\([^)]*\)[^{]*/ : /^\s{0,4}(async\s+)?(def|class)\s+\w+[^:]*/;
+  return texto
+    .split("\n")
+    .filter((l) => re.test(l))
+    .map((l) => l.replace(/\s+/g, " ").trim().slice(0, 160))
+    .slice(0, 60);
+}
+
+/**
+ * Mapa do código: para cada arquivo, os imports e as assinaturas (funções, classes, tipos), sem o corpo.
+ * Os agentes enxergam a estrutura do projeto inteiro gastando pouco contexto e só depois leem o que precisam.
+ */
+export async function mapaDoCodigo(raiz: string, rel = "."): Promise<string> {
+  const { base, alvo } = await dentro(raiz, rel);
+  const arquivos: string[] = [];
+  const andar = async (pasta: string, nivel: number) => {
+    if (nivel > 8 || arquivos.length >= 400) return;
+    for (const it of await readdir(pasta, { withFileTypes: true }).catch(() => [])) {
+      if (IGNORAR.has(it.name) || it.name.startsWith(".")) continue;
+      const p = join(pasta, it.name);
+      if (it.isDirectory()) await andar(p, nivel + 1);
+      else if (EXT_CODIGO.test(it.name) && !ehSegredo(it.name) && !/\.(test|spec)\.|\.d\.ts$|\.min\.js$/.test(it.name)) arquivos.push(p);
+    }
+  };
+  if ((await stat(alvo)).isDirectory()) await andar(alvo, 0);
+  else arquivos.push(alvo);
+  const partes: string[] = [];
+  let total = 0;
+  for (const a of arquivos.sort()) {
+    const info = await stat(a);
+    if (info.size > 300_000) continue;
+    const texto = await readFile(a, "utf8");
+    const linhas = /\.(py|go)$/.test(a) ? mapaPorLinha(a, texto) : await mapaTs(a, texto).catch(() => mapaPorLinha(a, texto));
+    if (!linhas.length) continue;
+    const limpas = linhas.filter((l) => l.trim());
+    const bloco = `## ${relative(base, a)}\n${limpas.map((l) => `- ${l}`).join("\n")}`;
+    if (total + bloco.length > MAX_MAPA) {
+      partes.push(`…(mapa cortado em ${partes.length} de ${arquivos.length} arquivos: peça um caminho mais específico)`);
+      break;
+    }
+    partes.push(bloco);
+    total += bloco.length;
+  }
+  return partes.length ? partes.join("\n\n") : "Nenhum arquivo de código (TS, JS, Python ou Go) encontrado aqui.";
+}

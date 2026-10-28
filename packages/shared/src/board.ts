@@ -41,6 +41,7 @@ export const fluxos: Record<FluxoId, Fluxo> = {
     colunas: [
       { id: "backlog", nome: "Backlog", tipo: "fila" },
       { id: "a-fazer", nome: "A fazer", tipo: "fila", sala: "produto" },
+      { id: "especificacao", nome: "Especificação", tipo: "trabalho", sala: "produto" },
       { id: "design", nome: "Design", tipo: "trabalho", sala: "design" },
       { id: "em-dev", nome: "Em dev", tipo: "trabalho", sala: "desenvolvimento" },
       { id: "code-review", nome: "Code review", tipo: "validacao", sala: "code-review" },
@@ -148,7 +149,7 @@ export const baseDoFluxo = (fluxo: FluxoId): BaseFluxo => fluxos[fluxo]?.base ??
 
 // Em que coluna da board de software cada sala trabalha e valida.
 const colunaSoftware: Partial<Record<RoomId, string>> = {
-  produto: "a-fazer", arquitetura: "a-fazer", design: "design", desenvolvimento: "em-dev",
+  produto: "especificacao", arquitetura: "especificacao", design: "design", desenvolvimento: "em-dev",
   "code-review": "code-review", seguranca: "seguranca", qa: "em-qa",
 };
 
@@ -184,9 +185,30 @@ export function etapaDoCodigo(card: Pick<Card, "fluxo" | "sala" | "validador">) 
   return i >= 0 ? i : 0;
 }
 
+/**
+ * Sala que escreve código num fluxo de software: na sede, Desenvolvimento; num escritório criado
+ * a partir de um modelo, a sala da coluna "Em dev". Null em fluxos que não são de software.
+ */
+export function salaDoCodigo(fluxo: FluxoId): RoomId | null {
+  if (baseDoFluxo(fluxo) !== "software") return null;
+  if (fluxo === "software") return "desenvolvimento";
+  const cols = fluxos[fluxo]?.colunas ?? [];
+  return cols.find((c) => c.id === "em-dev")?.sala ?? null;
+}
+
+/** Card que mexe no código do projeto: trabalho da sala de código ou bug, num fluxo de software. */
+export const ehCardDeCodigo = (c: Pick<Card, "fluxo" | "sala" | "tipo">) => {
+  const sala = salaDoCodigo(c.fluxo);
+  return !!sala && (c.sala === sala || c.tipo === "bug");
+};
+
 /** Coluna de validação da sala no fluxo, se houver; senão a validação é só um selo no card. */
 export function colunaDeValidacao(fluxo: FluxoId, sala: RoomId): string | null {
-  if (fluxo === "software") return sala === "desenvolvimento" ? "code-review" : null;
+  // Fluxos de software: só o código passa pelas colunas de validação (review, segurança, QA).
+  if (baseDoFluxo(fluxo) === "software") {
+    if (sala !== salaDoCodigo(fluxo)) return null;
+    return fluxos[fluxo]!.colunas.find((c) => c.tipo === "validacao")?.id ?? null;
+  }
   const cols = fluxos[fluxo]!.colunas;
   return (cols.find((c) => c.tipo === "validacao" && c.sala === sala) ?? cols.find((c) => c.tipo === "validacao"))?.id ?? null;
 }
@@ -254,6 +276,8 @@ export interface Card {
   bugDe: number | null;
   /** Só começa quando este card estiver concluído; a entrega dele vira contexto. */
   dependeDe: number | null;
+  /** Outros cards que também precisam terminar antes (um card pode esperar por vários: DAG). */
+  dependencias?: number[];
   severidade: Severidade | null;
   devolucoes: number;
   bloqueado: boolean;
@@ -283,7 +307,7 @@ export type CardEditavel = Partial<
   Pick<
     Card,
     | "titulo" | "descricao" | "criterios" | "tipo" | "prioridade" | "nivel" | "sala" | "dono" | "validador" | "etiquetas"
-    | "prazo" | "paiId" | "severidade" | "bloqueado" | "projetoId" | "dependeDe"
+    | "prazo" | "paiId" | "severidade" | "bloqueado" | "projetoId" | "dependeDe" | "dependencias"
   >
 >;
 
@@ -316,6 +340,14 @@ export interface EstadoMotor {
   emAndamento: TrabalhoEmAndamento[];
   /** Cards prontos esperando um agente livre. */
   naFila: number;
+  /** A API pediu para esperar (limite de uso ou sobrecarga) até este horário. */
+  esperandoApiAte?: number | null;
+  /** Qual modelo cada papel usa (economico, equilibrado, maximo). */
+  modoCusto?: "economico" | "equilibrado" | "maximo";
+  /** Quanto um card pode gastar antes de parar e pedir a sua liberação (US$). */
+  limiteCardUsd?: number;
+  /** O mesmo, para cards de código (custam mais). */
+  limiteCodigoUsd?: number;
 }
 
 /* ---------- Projetos da sua máquina ---------- */
@@ -874,4 +906,45 @@ export interface ModeloFluxo {
   nome: string;
   descricao: string;
   fluxo: Fluxo;
+}
+
+/* ---------- Provedores de IA (Claude, Ollama local, OpenAI, Gemini) ---------- */
+
+/**
+ * O Claude continua o principal. Um modelo de outro provedor é escrito com prefixo:
+ * "ollama:qwen3.5:9b", "openai:gpt-…", "gemini:gemini-…". Sem prefixo, é do Claude.
+ */
+export type ProvedorIa = "claude" | "ollama" | "openai" | "gemini";
+
+export interface ModeloDisponivel {
+  /** Id completo, com prefixo (ex.: "ollama:qwen3.5:9b-mlx"). */
+  id: string;
+  nome: string;
+  provedor: ProvedorIa;
+  tamanhoGb?: number;
+  /** null: o provedor não diz. */
+  ferramentas?: boolean | null;
+  visao?: boolean | null;
+  pensamento?: boolean | null;
+  /** Problema conhecido nesta máquina (ex.: formato que o chip não acelera). */
+  aviso?: string;
+}
+
+export interface RecomendacaoLocal {
+  modelo: string;
+  nome: string;
+  tamanhoGb: number;
+  paraQue: string;
+  /** "bom": cabe com folga; "apertado": feche outros apps e use contexto menor. */
+  encaixe: "bom" | "apertado";
+  instalado: boolean;
+}
+
+export interface EstadoProvedores {
+  maquina: { chip: string; memoriaGb: number; nucleos: number; discoLivreGb: number | null };
+  ollama: { url: string; online: boolean; versao: string | null; contexto: number; modelos: ModeloDisponivel[]; erro: string | null; recomendados: RecomendacaoLocal[] };
+  openai: { temChave: boolean; precoEntrada: number; precoSaida: number; modelos: ModeloDisponivel[]; erro: string | null };
+  gemini: { temChave: boolean; precoEntrada: number; precoSaida: number; modelos: ModeloDisponivel[]; erro: string | null };
+  /** Modelo escolhido por agente (id do agente → id do modelo). Quem não está aqui usa o Claude do modo de custo. */
+  escolhas: Record<string, string>;
 }

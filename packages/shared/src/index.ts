@@ -184,6 +184,8 @@ export type ServerEvent =
   | { type: "telegram"; estado: EstadoTelegram }
   | { type: "previa"; previa: Previa }
   | { type: "escritorios"; definicoes: EscritorioDef[] }
+  /** Um agente passou trabalho para outro: o 3D anima a entrega (ir até a mesa, entregar a pasta, o outro recebe). */
+  | { type: "repasse"; de: string; para: string; cardId: number; motivo: "pedido" | "validacao" | "devolucao" | "proxima-etapa" }
   | { type: "whatsapp_contato"; contato: ContatoWhatsapp }
   | { type: "whatsapp_mensagem"; mensagem: MensagemWhatsapp }
   | { type: "controle"; sessao: SessaoControle }

@@ -250,6 +250,10 @@ export const useStore = create<Store>((set, get) => ({
       case "previa":
         set((s) => ({ previas: { ...s.previas, [e.previa.cardId]: e.previa } }));
         break;
+      case "repasse":
+        // O 3D (scene/behavior.ts) anima a entrega da tarefa entre os dois agentes.
+        window.dispatchEvent(new CustomEvent("hefesto:repasse", { detail: e }));
+        break;
       case "whatsapp_contato":
         set((s) => ({ contatosWa: { ...s.contatosWa, [e.contato.telefone]: e.contato } }));
         break;

@@ -431,7 +431,7 @@ Você ──► Helena
 | UI sobre o 3D | **Tailwind CSS** | Painéis, chat, board e abas rápidos de fazer e bonitos |
 | Estado no front | **Zustand** | Simples, ótimo com R3F |
 | Back | **Node.js + Fastify + WebSocket** | Transmite em tempo real o que cada agente está fazendo |
-| Motor dos agentes | **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`) | Já traz o loop de agente com ferramentas (ler/escrever arquivo, terminal, MCP). É o que permite os devs escreverem código de verdade e o QA rodar testes de verdade |
+| Motor dos agentes | **SDK da Anthropic** (`@anthropic-ai/sdk`) com laço próprio: streaming, ferramentas com `eager_input_streaming`, fallback de modelo no servidor (menos Haiku), esforço por chamada, cache de prompt; motor com máquina de estados da board, cancelamento, espera global em 429/529 e orçamento por rodada | Controle total das aprovações (N0–N3), do custo e do que cada agente pode fazer; ferramentas próprias para git, sandbox, MCP, navegador e celulares |
 | Modelos | Opus para líderes e decisões difíceis (Arquitetura, Review), Sonnet para quem executa (Dev, QA, Design, Marketing), Haiku para conversa interna e resumos | Equilíbrio entre qualidade e custo |
 | Banco | **SQLite embutido do Node** (`node:sqlite`) | Local, zero configuração e sem dependência nativa; guarda tarefas, board, mensagens, memória, artefatos |
 | Fila / orquestração | Fila própria em cima do SQLite, com limite de agentes simultâneos | Controla custo e ordem |
@@ -443,7 +443,7 @@ Você ──► Helena
 | Pesquisa na web | Ferramentas de busca e leitura de páginas do Agent SDK; Google Places API (opcional, com chave); dados abertos de CNPJ | Prospecção com dados de fontes oficiais e públicas (seção 4.5) |
 | Projetos locais | Janela nativa do macOS para escolher a pasta + `git worktree` por tarefa | A empresa trabalha no seu projeto sem tocar na pasta original até o merge (seção 4.4) |
 | Código gerado | Uma pasta `workspace/` com repositório git próprio por projeto; opcional GitHub via `gh` | Os agentes trabalham em branches e PRs reais |
-| Empacotamento | Roda local (`pnpm dev`); depois opcional virar app desktop com **Tauri** | Os agentes precisam de acesso a disco e terminal, por isso local primeiro |
+| Empacotamento | Roda local (`pnpm dev`, `pnpm app`); **Docker** (`docker compose up -d --build`, porta 4417) com o que depende do macOS desligado; app nativo com **Tauri** depois | Os agentes precisam de acesso a disco e terminal, por isso local primeiro; o Docker isola a instalação |
 
 ### Estrutura de pastas
 
@@ -543,6 +543,8 @@ A **prospecção vem antes da fábrica de software** porque traz receita direto 
 | Vozes | Por ora, só as vozes do Mac (grátis, offline), filtrando as robóticas; voz neural (ElevenLabs, Azure ou OpenAI) fica para depois |
 | Projetos | Você escolhe pastas da sua máquina; a empresa trabalha em cópia isolada e entrega por merge aprovado (seção 4.4) |
 | Prospecção | Um card por lead com dados públicos, origem de cada dado e mensagem personalizada; envio sempre com sua aprovação, sem raspar redes sociais (seção 4.5) |
+| Escritórios | Um escritório por projeto, com salas, equipe, fluxos e planta próprios; 7 modelos e 8 fluxos prontos; prospecção, WhatsApp e rituais ficam na sede ([DESIGN-ESCRITORIOS.md](DESIGN-ESCRITORIOS.md)) |
+| Docker | Imagem única (servidor serve a interface), portas só em 127.0.0.1, dados em volume próprio; no contêiner nada roda sem a sandbox do macOS (comandos e prévias desligados) |
 
 ## 11. Próximo passo
 
