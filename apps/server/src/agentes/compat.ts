@@ -86,12 +86,19 @@ function limparEsquema(v: unknown): unknown {
 const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536, 98_304];
 
 /** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
-const tokensDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3;
+const caracteresDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
+const tokensDe = (msgs: Msg[], porToken = 3) => caracteresDe(msgs) / porToken;
+/**
+ * Caracteres por token medidos na resposta do Ollama (contagem real do prompt), presos entre 3 e 4: a contagem pode
+ * excluir o que veio do cache, e subestimar o tamanho faria o Ollama cortar o começo do prompt em silêncio.
+ */
+export const calibrarCaracteresPorToken = (caracteres: number, tokensReais: number, atual: number) =>
+  tokensReais > 2000 ? Math.min(4, Math.max(3, caracteres / tokensReais)) : atual;
 
-function aparar(msgs: Msg[], limiteTokens: number) {
+function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
   const ferramentas = msgs.flatMap((m, i) => (m.role === "tool" ? [i] : []));
   for (const i of ferramentas.slice(0, -6)) {
-    if (tokensDe(msgs) <= limiteTokens) return;
+    if (tokensDe(msgs, porToken) <= limiteTokens) return;
     if (textoDe(msgs[i]!.content).length > 200) msgs[i]!.content = "[Resultado antigo removido para caber no contexto. Rode a ferramenta de novo se precisar.]";
   }
 }
@@ -319,6 +326,8 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   let custoUsd = 0;
   let lembretes = 0;
   let ultimoTexto = "";
+  // Calibrado a cada resposta do Ollama com a contagem real do prompt (começa no pessimista: 3 caracteres por token).
+  let porToken = 3;
   const replay = novaExecucao(o.cardId, o.agenteId, o.modelo);
   const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
 
@@ -327,17 +336,17 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
     if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
-    aparar(msgs, limiteTokens);
+    aparar(msgs, limiteTokens, porToken);
     // Não cabe no contexto do modelo local nem depois de aparar: o Ollama cortaria o começo (as instruções e o
     // card) em silêncio e o agente trabalharia às cegas. Segue no Claude do agente, que comporta o trabalho.
     // Não cabe no contexto padrão do modelo local: tenta o contexto ampliado (mais memória, só neste trabalho).
     for (const degrau of CONTEXTOS_LOCAIS_AMPLIADOS) {
-      if (provedor !== "ollama" || o.contexto || tokensDe(msgs) <= limiteTokens || contextoLocal >= degrau) continue;
+      if (provedor !== "ollama" || o.contexto || tokensDe(msgs, porToken) <= limiteTokens || contextoLocal >= degrau) continue;
       contextoLocal = degrau;
       limiteTokens = contextoLocal * 0.75;
-      aparar(msgs, limiteTokens);
+      aparar(msgs, limiteTokens, porToken);
     }
-    if (provedor === "ollama" && tokensDe(msgs) > limiteTokens) {
+    if (provedor === "ollama" && tokensDe(msgs, porToken) > limiteTokens) {
       if (o.semReserva) throw new ErroProvedor(`Não cabe no contexto do modelo local (~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}).`, 413, false);
       const claude = modeloPara(agentById[o.agenteId ?? ""]?.modelo ?? "claude-sonnet-5-5", "autor");
       if (modeloDisponivel(claude) && !provedorForaDoAr("claude")) {
@@ -348,6 +357,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
       throw new ErroNaoCabe(`O trabalho não cabe no modelo local (~${Math.round(tokensDe(msgs))} tokens) e o Claude está fora do ar: espero um dos dois.`);
     }
     const onTexto = (t: string) => o.onTexto?.(t);
+    const caracteresEnviados = caracteresDe(msgs);
     const t0 = Date.now();
     let r: Resposta;
     try {
@@ -356,6 +366,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
       if (o.sinal?.aborted) throw interrompido();
       throw e;
     }
+    if (provedor === "ollama") porToken = calibrarCaracteresPorToken(caracteresEnviados, r.entrada, porToken);
     const usd = provedor === "ollama" ? 0 : registrarUsoTokens(r.entrada, r.saida, precoDe(provedor as "openai" | "gemini"));
     // Mesmo rastreamento do Claude (Operação → Chamadas), com os nomes de parada dele.
     registrarChamada({

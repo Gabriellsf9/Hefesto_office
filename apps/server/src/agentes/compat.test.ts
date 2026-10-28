@@ -135,3 +135,11 @@ test("não cabe no local e o Claude está fora do ar: espera (passageiro), sem c
     globalThis.fetch = original;
   }
 });
+
+test("calibração de caracteres por token: usa a contagem real, mas nunca passa de 4 nem fica abaixo de 3", async () => {
+  const { calibrarCaracteresPorToken } = await import("./compat.ts");
+  assert.equal(calibrarCaracteresPorToken(335_000, 90_000, 3), 335_000 / 90_000, "medido (3,7) dentro da faixa");
+  assert.equal(calibrarCaracteresPorToken(335_000, 20_000, 3), 4, "contagem baixa (cache) não deixa subestimar o tamanho");
+  assert.equal(calibrarCaracteresPorToken(30_000, 15_000, 3.5), 3, "nunca abaixo de 3");
+  assert.equal(calibrarCaracteresPorToken(9_000, 1_500, 3.2), 3.2, "resposta pequena demais: mantém o fator anterior");
+});
