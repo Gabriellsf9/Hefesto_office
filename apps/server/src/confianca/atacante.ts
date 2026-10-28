@@ -3,6 +3,7 @@ import type { Agent, Card } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { postFeed, setAgentStatus } from "../bus.ts";
 import { modeloDoAgente } from "../provedores.ts";
+import { modoCusto } from "../custo.ts";
 import { comentar, listarComentarios, ultimaEntrega } from "../tarefas.ts";
 import { ferramenta, ferramentasDeProjeto, rodarAgente } from "../agentes/loop.ts";
 import { auditar } from "./auditoria.ts";
@@ -52,7 +53,8 @@ export async function atacar(client: Anthropic | null, card: Card, atacante: Age
   try {
     await rodarAgente({
       client,
-      modelo: modeloDoAgente(atacante, "apoio"),
+      // Custo: Opus só no modo Qualidade máxima; nos outros, Sonnet basta para ler um diff atrás de falhas.
+      modelo: /opus/i.test(modeloDoAgente(atacante, "apoio")) && modoCusto() !== "maximo" ? "claude-sonnet-5-5" : modeloDoAgente(atacante, "apoio"),
       agenteId: atacante.id,
       cardId: card.id,
       sinal,
