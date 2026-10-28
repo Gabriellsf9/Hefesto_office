@@ -16,7 +16,7 @@ Este plano parte do inventário do que já existe (out/2026). Cada item diz o qu
 
 | Item | Hoje | O que muda |
 |---|---|---|
-| **2.1 Compactação** | Claude limpa resultados antigos de ferramenta; o local corta | Ao encher, a parte antiga da conversa vira um resumo do trabalho (feito por um modelo barato), e as últimas trocas ficam inteiras. Vale para os dois laços |
+| **2.1 Compactação** | Claude limpa resultados antigos de ferramenta; o local corta | No laço do local e do Gemini, ao chegar a 85% do limite, a parte antiga da conversa vira um resumo feito pelo próprio modelo, e as 3 últimas rodadas ficam inteiras. O Claude segue limpando resultados antigos (`context_management`) |
 | **2.2 Índice do código** | Mapa de assinaturas e busca de texto | Índice por função e arquivo (SQLite FTS5) com ferramenta `buscar_no_indice` (pergunta → trechos certos). Atualiza sozinho quando o arquivo muda |
 | **2.3 Escolha de modelo por passo** | Um modelo por rodada inteira do card | Ferramenta `pesquisar_no_projeto`: um subagente barato ou local lê, procura e resume, e devolve só a resposta. O modelo principal fica com o contexto pequeno: é isso que barateia o uso misto e alivia o local |
 | **2.4 Helena dimensiona pelo executor** | Cria cards sem saber quem executa | Recebe a capacidade do modelo de cada agente: card para o local nasce pequeno (uma tela, um endpoint) |

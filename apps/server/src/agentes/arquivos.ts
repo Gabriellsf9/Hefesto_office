@@ -4,7 +4,7 @@ import { basename, join, relative, sep } from "node:path";
 // Leitura do projeto do CEO pelos agentes (raio-x, contexto de tarefas).
 // Somente leitura, presa à pasta do projeto, e sem tocar em arquivos de segredo.
 
-const IGNORAR = new Set([
+export const IGNORAR = new Set([
   "node_modules", ".git", "dist", "build", ".next", ".nuxt", "out", "target", "vendor", ".venv", "venv", "__pycache__",
   ".turbo", ".cache", "coverage", ".idea", ".vscode", "Pods", ".gradle", ".dart_tool",
   // Ferramentas de IA guardam ali cópias inteiras do projeto em outras branches (worktrees): ler essas

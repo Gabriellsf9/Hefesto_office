@@ -45,6 +45,7 @@ import { arquivosDoDiff, relatorioVarredura, varrerSegredos, verificarLicencas }
 import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confianca/atacante.ts";
 import { auditar } from "../confianca/auditoria.ts";
 import { ETIQUETA_ORCAMENTO_PROJETO, projetoSemOrcamento } from "../planejamento.ts";
+import { ferramentaDePesquisa } from "./pesquisa.ts";
 import { ETIQUETA_PARTE, mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
@@ -855,6 +856,10 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     }
   }
   if (!wt && !wtDoPai && projeto && !referencia) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
+  // Pesquisa delegada: um modelo barato (ou local) lê o projeto e devolve só a resposta; o contexto do autor fica pequeno.
+  const raizDoProjeto = wt?.caminho ?? wtDoPai?.caminho ?? referencia?.caminho ?? projeto?.caminho;
+  const pesquisa = raizDoProjeto ? ferramentaDePesquisa(raizDoProjeto, { cardId: card.id, agenteId: agente.id, sinal }) : null;
+  if (pesquisa) ferramentas.push(pesquisa);
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
   if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));

@@ -68,3 +68,15 @@ test("card dividido: o autor volta com o resultado das partes e junta sem copiar
   assert.match(msg, /Não copie de novo/);
   assert.doesNotMatch(msg, /Pedidos que você fez a outras áreas/, "parte não é pedido a outra área");
 });
+
+test("Helena sabe quem trabalha no modelo local e cria cards pequenos para eles", async () => {
+  const { capacidadeDosExecutores } = await import("./prompts.ts");
+  const { setSetting } = await import("../db.ts");
+  setSetting("modelos_agentes", "{}");
+  assert.equal(capacidadeDosExecutores(), "", "ninguém no local: nada a dizer");
+  setSetting("modelos_agentes", JSON.stringify({ "dev-backend": "ollama:qwen3.5-hefesto:9b" }));
+  const t = capacidadeDosExecutores();
+  assert.match(t, /\(dev-backend\)/);
+  assert.match(t, /uma tela, um endpoint/);
+  setSetting("modelos_agentes", "{}");
+});

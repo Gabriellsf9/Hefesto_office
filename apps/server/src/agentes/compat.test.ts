@@ -275,3 +275,44 @@ test("modelo local que para sem ferramenta, volta a trabalhar e para de novo nã
     setSetting("provedores", "{}");
   }
 });
+
+test("conversa longa no modelo local: a parte antiga vira um resumo (compactação) e o agente segue com as últimas rodadas inteiras", async () => {
+  const recebidos: { messages: { role: string; content: string }[]; tools?: unknown[] }[] = [];
+  let leituras = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const pedido = JSON.parse(corpo);
+      recebidos.push(pedido);
+      const fim = `\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`;
+      // Pedido de resumo (sem ferramentas): devolve o resumo.
+      if (!pedido.tools) return void res.end(JSON.stringify({ message: { content: "- Li os arquivos a0 a a5 de backend/; a função criarTicket fica em tickets.go.\n- Falta escrever o handler e entregar." } }) + fim);
+      const compactada = pedido.messages.some((m: { content: string }) => String(m.content).includes("Resumo do que você já fez"));
+      const chamada = compactada || leituras >= 12 ? { name: "entregar", arguments: { conteudo: "ok" } } : { name: "ler", arguments: { caminho: `a${leituras++}.go` } };
+      res.end(JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } }) + fim);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", maxRodadas: 20,
+      ferramentas: [
+        ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], (e) => ({ texto: `conteúdo de ${String(e.caminho)}: ${"x".repeat(5000)}` })),
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true);
+    assert.ok(recebidos.some((p) => !p.tools), "pediu um resumo");
+    const depois = recebidos.at(-1)!.messages;
+    assert.equal(depois[0]!.role, "system");
+    assert.equal(depois[1]!.content, "faça", "o pedido original fica");
+    assert.match(String(depois[2]!.content), /criarTicket fica em tickets\.go/, "o resumo entra no lugar da parte antiga");
+    assert.ok(depois.filter((m) => m.role === "tool").length <= 3, "só as últimas rodadas ficam inteiras");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});

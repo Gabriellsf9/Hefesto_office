@@ -16,7 +16,7 @@ import { ferramentaDeTerminal, podeUsarMaquina } from "../maquina/terminal.ts";
 import { ErroEntrada, ferramenta, rodarAgente, texto } from "./loop.ts";
 import { colunaDeEntrada } from "./motor.ts";
 import { modeloDisponivel, modeloDoAgente } from "../provedores.ts";
-import { sistemaHelena } from "./prompts.ts";
+import { capacidadeDosExecutores, sistemaHelena } from "./prompts.ts";
 
 // Helena (Chief of Staff) atende o CEO no chat: transforma pedidos em cards e
 // distribui; responde perguntas de andamento com base na board.
@@ -258,7 +258,7 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. $
     const r = await rodarAgente({
       client,
       modelo,
-      sistema: sistemaHelena(escritorio),
+      sistema: sistemaHelena(escritorio) + capacidadeDosExecutores(),
       mensagem,
       ferramentas: [
         ferramentaMemoria,

@@ -1,5 +1,6 @@
 import { colunaDe, prioridades, secoesLivro, type Agent, type Card, type RoomId } from "@empresa/shared";
 import { projetoDoCard, agentById, agents, checklistPerformance, conhecimentoStacks, especialidades, playbookPadrao, playbooks, referencias, roomById, rooms, salasTecnicas, nomeDaSala, salaDe, agentesDe, coordenadorDe, definicaoDe, escritorioDe, salasDe, SEDE } from "@empresa/org";
+import { modeloDoAgente, provedorDe } from "../provedores.ts";
 import { lerLivro } from "../livro.ts";
 import { conhecimentoDaSala } from "../conhecimento.ts";
 import { contextoDoLead } from "../prospeccao.ts";
@@ -227,6 +228,19 @@ export function mensagemAdvogado(card: Card): string {
 }
 
 /** System prompt da Helena orquestrando os pedidos do CEO. */
+/**
+ * Quem executa no modelo local (contexto curto): a Helena cria cards já no tamanho que ele aguenta, em vez de o card
+ * nascer grande e só se dividir depois.
+ */
+export function capacidadeDosExecutores(): string {
+  const locais = agents.filter((a) => provedorDe(modeloDoAgente(a, "autor")).provedor === "ollama");
+  if (!locais.length) return "";
+  return `
+
+## Quem trabalha no modelo local (memória curta)
+${locais.map((a) => `${a.nome} (${a.id})`).join(", ")} trabalham agora num modelo local que comporta só uma tarefa pequena por vez. Para eles, crie cards pequenos: uma tela, um endpoint, uma migração ou um documento por card, com descrição completa e critérios próprios, encadeados com depende_de. Um card grande para eles trava ou sai fraco.`;
+}
+
 export function sistemaHelena(escritorio = SEDE): string {
   const helena = coordenadorDe(escritorio) ?? agentById["chief-of-staff"]!;
   if (escritorio !== SEDE) return sistemaCoordenador(helena, escritorio);
@@ -343,12 +357,15 @@ export function trechoDaEntregaAnterior(card: Card, conteudo: string, limite = L
 /** Etiqueta das partes criadas com dividir_em_partes (são pedidos do card ao próprio dono). */
 export const ETIQUETA_PARTE = "parte";
 
+const LER_POUCO_NO_LOCAL = `## Leia pouco (contexto curto)
+Para entender o projeto, prefira pesquisar_no_projeto (outro modelo lê e te devolve só a resposta) e buscar_no_indice (os trechos certos com arquivo:linha). Leia arquivos inteiros só quando for editar.`;
+
 const DIVIDIR_NO_LOCAL = `## Você está no modelo local (memória curta)
 Este trabalho roda num modelo local que comporta só uns 24 mil tokens de conversa: leituras longas e entregas grandes não cabem. Se o card tem mais de uma entrega que dá para fazer separada (várias telas, vários endpoints, serviços ou documentos), chame dividir_em_partes AGORA, antes de ler o projeto: 2 a 4 partes pequenas, na ordem em que devem ser feitas, cada uma com título, descrição completa (o que fazer, onde, em que se basear) e critérios de aceite, para ser feita sem ler este card. Quando todas terminarem, você volta a este card para juntar o resultado. Se o card já é pequeno, faça direto e leia só o necessário.`;
 
 /** Todo trabalho num projeto parte do que já existe: código, regras e a interface de hoje. */
 const ESTUDAR_O_PROJETO = `### Antes de decidir, estude o projeto
-Obrigatório antes de propor ou mudar qualquer coisa: entenda como o projeto funciona hoje lendo o código (mapa_do_codigo, listar_arquivos, buscar_no_codigo, ler_arquivo): as telas, os fluxos e as regras que o seu trabalho toca. Construa em cima do que existe e não reinvente o que já está pronto. Cite na entrega os arquivos que você leu e que embasam as decisões.
+Obrigatório antes de propor ou mudar qualquer coisa: entenda como o projeto funciona hoje lendo o código (buscar_no_indice para achar o trecho certo pela pergunta, mapa_do_codigo, listar_arquivos, buscar_no_codigo, ler_arquivo): as telas, os fluxos e as regras que o seu trabalho toca. Construa em cima do que existe e não reinvente o que já está pronto. Cite na entrega os arquivos que você leu e que embasam as decisões.
 Interface e design: antes de desenhar ou mudar uma tela, VEJA como o produto é hoje. Procure prints da interface no projeto (public/, docs/, e2e/, pastas de screenshots) com listar_arquivos e abra com ver_imagem; depois leia o tema (cores, fontes, espaçamentos: tailwind.config, variáveis CSS, tokens), o layout principal e os componentes das telas parecidas. Siga esse padrão à risca: mesma navegação, mesmos componentes, mesmas cores e fonte. Uma tela nova precisa parecer parte do mesmo produto, não um app diferente. Na entrega, diga em que telas e arquivos você se baseou.`;
 
 /** Debate desde a última entrega: devoluções e comentários do validador e do CEO. */
@@ -409,6 +426,7 @@ export function mensagemExecutar(card: Card, o: { local?: boolean; podeDividir?:
   const debate = debateRecente(card, false, o.local);
   return [
     o.podeDividir ? DIVIDIR_NO_LOCAL : "",
+    o.local ? LER_POUCO_NO_LOCAL : "",
     descreverCard(card),
     contextoExtra(card),
     resultadoDosPedidos(card, o.local),
