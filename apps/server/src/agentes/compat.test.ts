@@ -47,7 +47,7 @@ test("trabalho que não cabe no contexto do modelo local vai para o Claude, em v
       rodarAgente({
         modelo: "ollama:modelo-teste",
         agenteId: "ux-writer",
-        sistema: "regras ".repeat(50000), // ~350 mil caracteres: não cabe nem no maior contexto ampliado (96 mil tokens)
+        sistema: "regras ".repeat(50000), // ~350 mil caracteres: não cabe nem no maior contexto local (32 mil tokens)
         mensagem: "faça",
         ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
         lembrete: "Chame entregar.",
@@ -175,6 +175,39 @@ test("modelo local: a conversa é salva a cada passo e a retomada continua dela 
     const ultima = recebidos.at(-1)!.messages;
     assert.ok(ultima.some((m) => m.role === "tool" && String(m.content).includes("conteúdo de a.go")), "continuou com o que já tinha lido");
     assert.equal(ultima.filter((m) => m.role === "system").length, 1, "não duplicou o início da conversa");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
+
+test("conversa salva que já não cabe no contexto local (de quando ia além da placa) recomeça a partir do card", async () => {
+  const recebidos: { messages: { role: string; content: string }[]; options: { num_ctx: number } }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: { name: "entregar", arguments: { conteudo: "ok" } } }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  const salva = [
+    { role: "system", content: "regras" },
+    { role: "user", content: "faça" },
+    { role: "assistant", content: "rascunho ".repeat(20_000) }, // ~180 mil caracteres: só cabia em 64 mil tokens
+  ];
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", retomar: salva as never,
+      ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
+    });
+    assert.equal(r.terminou, true);
+    assert.equal(recebidos.length, 1);
+    assert.ok(recebidos[0]!.options.num_ctx <= 32_768, "nunca passa do contexto que cabe na placa");
+    assert.deepEqual(recebidos[0]!.messages.map((m) => m.role), ["system", "user"], "recomeçou do card");
   } finally {
     servidor.close();
     setSetting("provedores", "{}");
