@@ -43,3 +43,28 @@ test("autor refazendo: a entrega anterior gigante vai em trecho (o resto por ler
   assert.match(trecho, new RegExp(`ler_card ${card.chave} com a_partir_de: 20000`));
   assert.match(trecho, /entregue o conteúdo completo/);
 });
+
+test("autor no modelo local: mensagem enxuta e, em card grande, a orientação de dividir em partes logo no início", async () => {
+  const { mensagemExecutar } = await import("./prompts.ts");
+  const card = criarCard({ titulo: "Protótipo de 5 telas", sala: "design", dono: "ui-designer", validador: "pm" });
+  registrarEntrega(card.id, "ui-designer", "v1", "x".repeat(78_000));
+  const nuvem = mensagemExecutar(card);
+  const local = mensagemExecutar(card, { local: true, podeDividir: true });
+  assert.ok(local.length < nuvem.length - 10_000, "a entrega anterior vai num trecho bem menor");
+  assert.match(local, /a_partir_de: 6000/);
+  assert.match(local, /dividir_em_partes AGORA/);
+  assert.doesNotMatch(nuvem, /dividir_em_partes/, "na nuvem não há divisão");
+  assert.doesNotMatch(mensagemExecutar(card, { local: true }), /dividir_em_partes/, "card que já foi dividido (ou é parte) não recebe a orientação");
+});
+
+test("card dividido: o autor volta com o resultado das partes e junta sem copiar tudo de novo", async () => {
+  const { mensagemExecutar, ETIQUETA_PARTE } = await import("./prompts.ts");
+  const pai = criarCard({ titulo: "Backend de cards", sala: "desenvolvimento", dono: "dev-backend", validador: "reviewer-1" });
+  const parte = criarCard({ titulo: "parte 1/2: endpoints", sala: "desenvolvimento", dono: "dev-backend", paiId: pai.id, etiquetas: ["pedido", ETIQUETA_PARTE] });
+  registrarEntrega(parte.id, "dev-backend", "Endpoints prontos", "detalhes ".repeat(2000));
+  const msg = mensagemExecutar(pai, { local: true });
+  assert.match(msg, /As partes em que você dividiu este card/);
+  assert.match(msg, new RegExp(parte.chave));
+  assert.match(msg, /Não copie de novo/);
+  assert.doesNotMatch(msg, /Pedidos que você fez a outras áreas/, "parte não é pedido a outra área");
+});

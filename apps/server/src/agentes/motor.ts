@@ -45,7 +45,7 @@ import { arquivosDoDiff, relatorioVarredura, varrerSegredos, verificarLicencas }
 import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confianca/atacante.ts";
 import { auditar } from "../confianca/auditoria.ts";
 import { ETIQUETA_ORCAMENTO_PROJETO, projetoSemOrcamento } from "../planejamento.ts";
-import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
+import { ETIQUETA_PARTE, mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
 // livres para trabalhar nos cards prontos:
@@ -60,6 +60,7 @@ const INTERVALO_MS = 3000;
 const MAX_PEDIDOS_POR_VEZ = 3;
 const MAX_PEDIDOS_POR_CARD = 6;
 const MAX_PROFUNDIDADE = 2;
+const MAX_PARTES = 4;
 
 const emAndamento = new Map<number, TrabalhoEmAndamento>();
 const controles = new Map<number, AbortController>();
@@ -440,6 +441,9 @@ export function esperaParente(card: Card, porId: Map<number, Card>, rodando: Ite
   for (const t of rodando) {
     if (t.tipo !== "executar" || t.cardId === card.id) continue;
     if (t.cardId === card.paiId || porId.get(t.cardId)?.paiId === card.id) return true;
+    // Partes do mesmo card também dividem a cópia: uma de cada vez, na ordem.
+    const outro = porId.get(t.cardId);
+    if (card.paiId && card.etiquetas.includes(ETIQUETA_PARTE) && outro?.paiId === card.paiId && outro.etiquetas.includes(ETIQUETA_PARTE)) return true;
   }
   return false;
 }
@@ -638,7 +642,17 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     }
   }
 
+  // Escalonamento: o modelo sobe conforme o card falha; com "local primeiro", código verificável começa no local.
+  const esc = modeloEscalonado(agente, "autor", card, !!wt && podeVerificar() && !!comandoDeTestes(wt.caminho));
+  const modeloAutor = esc.modelo;
+  // No modelo local (contexto curto) o card grande pode virar partes pequenas, uma vez só e nunca numa parte.
+  const local = provedorDe(modeloAutor).provedor === "ollama";
+  const podeDividir =
+    local && !card.etiquetas.includes(ETIQUETA_PARTE) && profundidade(card) < MAX_PROFUNDIDADE &&
+    !listarCards().some((c) => c.paiId === card.id && c.etiquetas.includes(ETIQUETA_PARTE));
+
   let entregou = false;
+  let dividiu = false;
   let pedidos = 0;
   // Autocrítica (Fase 2f): a primeira chamada de entregar vira rascunho; o agente confere
   // contra o checklist e chama de novo com a versão final.
@@ -754,6 +768,58 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
       },
     ),
   ];
+  if (podeDividir) {
+    ferramentas.push(
+      ferramenta(
+        "dividir_em_partes",
+        `Divide este card em 2 a ${MAX_PARTES} partes menores, feitas por você, uma de cada vez e validadas cada uma. Quando todas terminarem, você volta a este card para juntar o resultado. Termina a sua vez.`,
+        {
+          partes: {
+            type: "array",
+            description: "Na ordem em que devem ser feitas",
+            items: {
+              type: "object",
+              properties: {
+                titulo: { type: "string" },
+                descricao: { type: "string", description: "O que fazer, onde e em que se basear: completo, para ser feito sem ler este card" },
+                criterios: { type: "string", description: "Critérios de aceite verificáveis desta parte" },
+              },
+              required: ["titulo", "descricao"],
+            },
+          },
+        },
+        ["partes"],
+        (e) => {
+          const lista = (Array.isArray(e.partes) ? e.partes : []).filter(
+            (p): p is { titulo: string; descricao: string; criterios?: unknown } => !!p && typeof p.titulo === "string" && p.titulo.trim() !== "" && typeof p.descricao === "string" && p.descricao.trim() !== "",
+          );
+          if (lista.length < 2 || lista.length > MAX_PARTES) return { texto: `Mande de 2 a ${MAX_PARTES} partes, cada uma com titulo e descricao.`, erro: true };
+          const criadas = lista.map((p, i) =>
+            criarCard(
+              {
+                titulo: `${card.chave} · parte ${i + 1}/${lista.length}: ${p.titulo.trim().slice(0, 160)}`,
+                descricao: p.descricao.slice(0, 20_000),
+                criterios: typeof p.criterios === "string" ? p.criterios.slice(0, 5000) : card.criterios,
+                sala: card.sala, fluxo: card.fluxo, coluna: colunaDeEntrada(card.fluxo),
+                dono: agente.id, nivel: card.nivel, prioridade: card.prioridade, projetoId: card.projetoId, paiId: card.id,
+                etiquetas: [ETIQUETA_PEDIDO, ETIQUETA_PARTE],
+              },
+              agente.id,
+            ),
+          );
+          // Cada parte sabe das outras (lê com ler_card o que as anteriores entregaram).
+          const roteiro = criadas.map((c, i) => `${i + 1}. ${c.chave}: ${lista[i]!.titulo.trim()}`).join("\n");
+          for (const c of criadas) {
+            editarCard(c.id, { descricao: `${c.descricao}\n\n---\nParte do ${card.chave} (${card.titulo}). Todas as partes, na ordem:\n${roteiro}\nAntes de começar, leia com ler_card o que as partes anteriores já entregaram e siga o mesmo padrão.` });
+          }
+          dividiu = true;
+          comentar(card.id, agente.id, "comentario", `Dividi este card em ${criadas.length} partes para caber no modelo local:\n${roteiro}\nQuando todas terminarem, volto aqui para juntar o resultado.`);
+          postFeed(card.sala, agente.id, `${agente.nome} dividiu o ${card.chave} em ${criadas.length} partes`);
+          return { texto: `Partes criadas: ${criadas.map((c) => c.chave).join(", ")}. Este card espera por elas.`, fim: true };
+        },
+      ),
+    );
+  }
   if (agente.ferramentas.includes("web") || card.etiquetas.includes("prospeccao")) ferramentas.push(...ferramentasWeb);
   ferramentas.push(...ferramentasDeProspeccao(card, agente.id), ...ferramentasDeMarketing(card), ...ferramentasDaArea(agente, card));
   // Conectores MCP liberados para a sala (Gmail, GitHub, Stripe…): leitura direta, ações com a aprovação do CEO.
@@ -812,9 +878,6 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     }
   }
 
-  // Escalonamento: o modelo sobe conforme o card falha; com "local primeiro", código verificável começa no local.
-  const esc = modeloEscalonado(agente, "autor", card, !!wt && podeVerificar() && !!comandoDeTestes(wt.caminho));
-  const modeloAutor = esc.modelo;
   if (esc.motivo) postFeed(card.sala, agente.id, `${card.chave}: ${esc.motivo}`);
   const r = entregou ? { texto: "", terminou: true, custoUsd: 0 } : await rodarAgente({
     client,
@@ -826,7 +889,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     esforco: wt ? "high" : undefined,
     modelo: modeloAutor,
     sistema: sistemaAutor(agente),
-    mensagem: mensagemExecutar(card) + (referencia ? NOTA_DA_REFERENCIA : ""),
+    mensagem: mensagemExecutar(card, { local, podeDividir }) + (referencia ? NOTA_DA_REFERENCIA : ""),
     imagens: imagensDoCard(card),
     arquivos: arquivosDoTexto(card.descricao),
     ferramentas,
@@ -836,6 +899,8 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     lembrete: "Você parou sem chamar nenhuma ferramenta. Se ainda falta trabalho, continue agora usando as ferramentas; quando terminar, chame entregar com o trabalho completo (ou perguntar_ao_ceo, se for indispensável).",
   }).finally(() => desligarCelular(card.id));
   if (sinal.aborted) throw new ErroInterrompido(String(sinal.reason));
+  // Dividiu em partes: o card espera por elas (filhosAbertos) e volta para juntar quando terminarem.
+  if (dividiu) return;
 
   // Parou depois do rascunho, sem a chamada final: o rascunho vale como entrega.
   const r0 = rascunho as { resumo: string; conteudo: string } | null;

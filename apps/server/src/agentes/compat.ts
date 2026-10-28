@@ -83,10 +83,11 @@ function limparEsquema(v: unknown): unknown {
  */
 /**
  * Degraus de contexto do modelo local quando o trabalho não cabe no padrão. Medido no 9b com 8 GB de VRAM: 32 mil
- * escreve a ~19 tok/s, 64 mil a ~6 e 96 mil a ~3, com a RAM livre quase igual (o Qwen 3.5 guarda pouco por token).
- * Usa o menor que couber: o mais lento só quando precisa.
+ * escreve a ~19 tok/s, 64 mil a ~6 e 96 mil a ~3: acima de 32 mil o modelo não cabe inteiro na placa e parte roda
+ * no processador (uma chamada chegou a 26 minutos). Por isso o teto é 32 mil: o que não cabe é dividido em partes
+ * (dividir_em_partes) ou espera a nuvem.
  */
-const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536, 98_304];
+const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768];
 /** Acima disso (escrita a ~6 tok/s ou menos), o modelo local trabalha sem o modo de raciocínio. */
 const CONTEXTO_COM_RACIOCINIO = 32_768;
 
@@ -106,7 +107,14 @@ function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
     if (tokensDe(msgs, porToken) <= limiteTokens) return;
     if (textoDe(msgs[i]!.content).length > 200) msgs[i]!.content = "[Resultado antigo removido para caber no contexto. Rode a ferramenta de novo se precisar.]";
   }
+  // Ainda não coube (contexto local curto): os recentes, menos o último, ficam só com o começo.
+  for (const i of ferramentas.slice(-6, -1)) {
+    if (tokensDe(msgs, porToken) <= limiteTokens) return;
+    const t = textoDe(msgs[i]!.content);
+    if (t.length > CORTE_RECENTE) msgs[i]!.content = `${t.slice(0, CORTE_RECENTE)}\n[…cortado para caber no contexto. Rode a ferramenta de novo se precisar do resto.]`;
+  }
 }
+const CORTE_RECENTE = 3000;
 
 /* ---------- OpenAI e Gemini (chat completions) ---------- */
 
@@ -326,12 +334,13 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   const anexos = partesDosAnexos([...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])]);
   // Retomada (queda, reinício, pausa): a conversa salva pelo laço local continua de onde parou, sem reler tudo.
   const salva = o.retomar?.length && ehConversaLocal(o.retomar) ? (o.retomar as unknown as Msg[]) : null;
-  const msgs: Msg[] = salva
-    ? [...salva, { role: "user", content: "Você foi pausado (reinício do sistema, limite ou espera de um modelo) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
-    : [
+  const novas = (): Msg[] => [
     { role: "system", content: `${o.sistema}${semWeb ? "\n\n(Neste modelo não há pesquisa na web: trabalhe com as ferramentas disponíveis e com o que você sabe, e diga quando faltar informação atual.)" : ""}` },
     { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
   ];
+  const msgs: Msg[] = salva
+    ? [...salva, { role: "user", content: "Você foi pausado (reinício do sistema, limite ou espera de um modelo) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
+    : novas();
   const salvarRodada = () => o.aoRodada?.(msgs as unknown as Anthropic.Beta.BetaMessageParam[]);
   let contextoLocal = o.contexto ?? configOllama().contexto;
   let limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
@@ -356,6 +365,12 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
       if (provedor !== "ollama" || o.contexto || tokensDe(msgs, porToken) <= limiteTokens || contextoLocal >= degrau) continue;
       contextoLocal = degrau;
       limiteTokens = contextoLocal * 0.75;
+      aparar(msgs, limiteTokens, porToken);
+    }
+    // Conversa salva que já não cabe (de quando o contexto local ia além da placa): recomeça a partir do card, bem menor.
+    if (provedor === "ollama" && rodada === 0 && salva && tokensDe(msgs, porToken) > limiteTokens) {
+      msgs.splice(0, msgs.length, ...novas());
+      registrarPasso(replay, { rodada, tipo: "texto", saida: "(A conversa salva não cabe no contexto do modelo local: recomeço a partir do card.)" });
       aparar(msgs, limiteTokens, porToken);
     }
     if (provedor === "ollama" && tokensDe(msgs, porToken) > limiteTokens) {

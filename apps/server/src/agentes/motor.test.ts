@@ -61,6 +61,14 @@ describe("esperaParente", () => {
     assert.equal(esperaParente(filho, porId, [rodando(pai.id, "validar")]), false);
   });
 
+  test("partes do mesmo card rodam uma de cada vez (dividem a cópia)", () => {
+    const p1 = card({ coluna: "em-dev", paiId: pai.id, etiquetas: ["pedido", "parte"] });
+    const p2 = card({ coluna: "em-dev", paiId: pai.id, etiquetas: ["pedido", "parte"] });
+    const m = mapa(pai, p1, p2);
+    assert.equal(esperaParente(p2, m, [rodando(p1.id)]), true);
+    assert.equal(esperaParente(p2, m, [rodando(p1.id, "validar")]), false);
+  });
+
   test("cards sem parentesco rodam juntos", () => {
     assert.equal(esperaParente(outro, porId, [rodando(pai.id), rodando(filho.id)]), false);
   });

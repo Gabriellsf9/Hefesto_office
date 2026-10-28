@@ -333,10 +333,18 @@ function contextoExtra(card: Card): string {
  * multiplicado por cada passo era a maior parte do custo). O resto ele lê com ler_card quando precisar.
  */
 const LIMITE_ENTREGA_ANTERIOR = 20_000;
-export function trechoDaEntregaAnterior(card: Card, conteudo: string): string {
-  if (conteudo.length <= LIMITE_ENTREGA_ANTERIOR) return conteudo;
-  return `${conteudo.slice(0, LIMITE_ENTREGA_ANTERIOR)}\n\n(A entrega anterior tem ${conteudo.length} caracteres; aqui vão os primeiros ${LIMITE_ENTREGA_ANTERIOR}. Para ler o resto, use ler_card ${card.chave} com a_partir_de: ${LIMITE_ENTREGA_ANTERIOR}. Ao refazer, entregue o conteúdo completo.)`;
+/** No modelo local o contexto inteiro é de ~24 mil tokens: a mensagem do card vai enxuta. */
+const LIMITE_ENTREGA_ANTERIOR_LOCAL = 6000;
+export function trechoDaEntregaAnterior(card: Card, conteudo: string, limite = LIMITE_ENTREGA_ANTERIOR): string {
+  if (conteudo.length <= limite) return conteudo;
+  return `${conteudo.slice(0, limite)}\n\n(A entrega anterior tem ${conteudo.length} caracteres; aqui vão os primeiros ${limite}. Para ler o resto, use ler_card ${card.chave} com a_partir_de: ${limite}. Ao refazer, entregue o conteúdo completo.)`;
 }
+
+/** Etiqueta das partes criadas com dividir_em_partes (são pedidos do card ao próprio dono). */
+export const ETIQUETA_PARTE = "parte";
+
+const DIVIDIR_NO_LOCAL = `## Você está no modelo local (memória curta)
+Este trabalho roda num modelo local que comporta só uns 24 mil tokens de conversa: leituras longas e entregas grandes não cabem. Se o card tem mais de uma entrega que dá para fazer separada (várias telas, vários endpoints, serviços ou documentos), chame dividir_em_partes AGORA, antes de ler o projeto: 2 a 4 partes pequenas, na ordem em que devem ser feitas, cada uma com título, descrição completa (o que fazer, onde, em que se basear) e critérios de aceite, para ser feita sem ler este card. Quando todas terminarem, você volta a este card para juntar o resultado. Se o card já é pequeno, faça direto e leia só o necessário.`;
 
 /** Todo trabalho num projeto parte do que já existe: código, regras e a interface de hoje. */
 const ESTUDAR_O_PROJETO = `### Antes de decidir, estude o projeto
@@ -344,12 +352,13 @@ Obrigatório antes de propor ou mudar qualquer coisa: entenda como o projeto fun
 Interface e design: antes de desenhar ou mudar uma tela, VEJA como o produto é hoje. Procure prints da interface no projeto (public/, docs/, e2e/, pastas de screenshots) com listar_arquivos e abra com ver_imagem; depois leia o tema (cores, fontes, espaçamentos: tailwind.config, variáveis CSS, tokens), o layout principal e os componentes das telas parecidas. Siga esse padrão à risca: mesma navegação, mesmos componentes, mesmas cores e fonte. Uma tela nova precisa parecer parte do mesmo produto, não um app diferente. Na entrega, diga em que telas e arquivos você se baseou.`;
 
 /** Debate desde a última entrega: devoluções e comentários do validador e do CEO. */
-function debateRecente(card: Card, paraValidador = false): string {
+function debateRecente(card: Card, paraValidador = false, local = false): string {
   // O validador não vê a autocrítica do autor: julga a entrega, não a defesa dela.
   const coms = listarComentarios(card.id).filter((c) => c.tipo !== "movimento" && !(paraValidador && c.tipo === "autocritica"));
   if (!coms.length) return "";
   return coms
-    .slice(-12)
+    .slice(local ? -6 : -12)
+    .map((c) => (local && c.texto.length > 1500 ? { ...c, texto: `${c.texto.slice(0, 1500)}… (continua: ler_card ${card.chave})` } : c))
     .map((c) => {
       const quem = c.autor === "voce" ? "CEO" : (agentById[c.autor]?.nome ?? c.autor);
       const rotulo =
@@ -360,16 +369,28 @@ function debateRecente(card: Card, paraValidador = false): string {
 }
 
 /** O que as outras áreas entregaram nos pedidos que este card fez (o autor continua com isso). */
-function resultadoDosPedidos(card: Card): string {
+function resultadoDosPedidos(card: Card, local = false): string {
   const filhos = listarCardsFilhos(card.id);
   if (!filhos.length) return "";
-  return `## Pedidos que você fez a outras áreas\n${filhos
-    .map((f) => {
-      const e = ultimaEntrega(f.id);
-      const col = colunaDe(f.fluxo, f.coluna)?.nome ?? f.coluna;
-      return `### ${f.chave} · ${f.titulo} (${col})\n${e ? `${e.resumo}\n\n${e.conteudo.slice(0, 8000)}${e.conteudo.length > 8000 ? "\n…(continua: use ler_card para ler tudo)" : ""}` : "(sem entrega)"}`;
-    })
-    .join("\n\n")}\n\nUse o resultado desses pedidos na sua entrega.`;
+  const limite = local ? 3000 : 8000;
+  const lista = (fs: Card[]) =>
+    fs
+      .map((f) => {
+        const e = ultimaEntrega(f.id);
+        const col = colunaDe(f.fluxo, f.coluna)?.nome ?? f.coluna;
+        return `### ${f.chave} · ${f.titulo} (${col})\n${e ? `${e.resumo}\n\n${e.conteudo.slice(0, limite)}${e.conteudo.length > limite ? "\n…(continua: use ler_card para ler tudo)" : ""}` : "(sem entrega)"}`;
+      })
+      .join("\n\n");
+  const partes = filhos.filter((f) => f.etiquetas.includes(ETIQUETA_PARTE));
+  const pedidos = filhos.filter((f) => !f.etiquetas.includes(ETIQUETA_PARTE));
+  return [
+    pedidos.length ? `## Pedidos que você fez a outras áreas\n${lista(pedidos)}\n\nUse o resultado desses pedidos na sua entrega.` : "",
+    partes.length
+      ? `## As partes em que você dividiu este card\n${lista(partes)}\n\nJunte as partes numa entrega só: o que cada parte entregou (com a chave dela, para ler com ler_card), como elas se ligam e o que ficou faltando. Não copie de novo o conteúdo inteiro das partes. Não divida de novo.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /** Memória do agente: o que já devolveram a ele em outros cards (para não repetir o mesmo erro). */
@@ -382,17 +403,19 @@ function memoriaDoAgente(card: Card): string {
 
 const blocoMetas = () => `## Metas do trimestre\n${metasEmTexto()}`;
 
-export function mensagemExecutar(card: Card): string {
+/** local: o autor roda no modelo local (mensagem enxuta); podeDividir: ele tem a ferramenta dividir_em_partes. */
+export function mensagemExecutar(card: Card, o: { local?: boolean; podeDividir?: boolean } = {}): string {
   const anterior = ultimaEntrega(card.id);
-  const debate = debateRecente(card);
+  const debate = debateRecente(card, false, o.local);
   return [
+    o.podeDividir ? DIVIDIR_NO_LOCAL : "",
     descreverCard(card),
     contextoExtra(card),
-    resultadoDosPedidos(card),
+    resultadoDosPedidos(card, o.local),
     memoriaDoAgente(card),
     card.dono ? instrucoesAprendidas(card.dono, card.id) : "",
-    blocoMetas(),
-    anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${trechoDaEntregaAnterior(card, anterior.conteudo)}` : "",
+    o.local ? "" : blocoMetas(),
+    anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${trechoDaEntregaAnterior(card, anterior.conteudo, o.local ? LIMITE_ENTREGA_ANTERIOR_LOCAL : LIMITE_ENTREGA_ANTERIOR)}` : "",
     debate ? `## Comentários e devoluções\n${debate}\n\nResolva todos os pontos das devoluções e da conversa com o CEO nesta nova versão.` : "",
     anterior ? "Faça a nova versão completa (não só as mudanças) e chame entregar." : "Faça o trabalho e chame entregar.",
   ]
