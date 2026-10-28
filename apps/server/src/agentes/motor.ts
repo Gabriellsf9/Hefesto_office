@@ -610,6 +610,7 @@ export const semCreditoNaAnthropic = (err: unknown) =>
   err instanceof Anthropic.APIError && (err.status === 400 || err.status === 402) && /credit balance is too low|billing/i.test(err.message);
 const ESPERA_SEM_CREDITO_MS = 30 * 60_000;
 const ESPERA_NAO_CABE_MS = 5 * 60_000;
+const ESPERA_COTA_MS = 60 * 60_000;
 
 function tratarFalha(card: Card, agenteId: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
@@ -660,9 +661,11 @@ function tratarFalha(card: Card, agenteId: string, err: unknown) {
   if (passageiro(err)) {
     // O provedor fica fora do ar (respeitando o retry-after, com recuo exponencial) e os agentes dele seguem no
     // modelo reserva; o card não é penalizado. ErroProvedor só vem de fora do Claude; os erros da Anthropic são do Claude.
-    const p: ProvedorIa = err instanceof ErroProvedor ? provedorDoAgente(agenteId) : "claude";
+    const p: ProvedorIa = err instanceof ErroProvedor ? (err.provedor ?? provedorDoAgente(agenteId)) : "claude";
     const pedido = Number((err as { headers?: { get?: (k: string) => string | null } }).headers?.get?.("retry-after"));
-    const recuo = Math.min(Math.max((esperaMs.get(p) ?? 0) * 2, 15_000), 5 * 60_000);
+    // Cota do dia esgotada (ex.: Gemini "exceeded your current quota"): não volta em minutos; tenta de novo em 1 hora.
+    const cotaEsgotada = /exceeded your current quota|quota exceeded|insufficient_quota/i.test(msg);
+    const recuo = cotaEsgotada ? ESPERA_COTA_MS : Math.min(Math.max((esperaMs.get(p) ?? 0) * 2, 15_000), 5 * 60_000);
     esperaMs.set(p, recuo);
     const ms = Number.isFinite(pedido) && pedido > 0 ? Math.max(pedido * 1000, recuo) : recuo;
     const avisar = !provedorForaDoAr(p);

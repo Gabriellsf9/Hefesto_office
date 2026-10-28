@@ -4,6 +4,7 @@ import { db } from "./db.ts";
 import { emit, postChat } from "./bus.ts";
 import { custoHoje } from "./custo.ts";
 import { estadoMotor } from "./agentes/motor.ts";
+import { listarCards } from "./tarefas.ts";
 import { enviar } from "./telegram.ts";
 
 // Vigia de saúde: a cada minuto procura o que trava a empresa sem ninguém ver (card rodando sem avançar, o mesmo
@@ -166,7 +167,7 @@ function fotografar(agora: number): Fotografia {
   const m = estadoMotor();
   const parada = m.naFila > 0 && m.emAndamento.length === 0 && !m.pausado && !m.semOrcamento;
   filaParadaDesde = parada ? (filaParadaDesde ?? agora) : null;
-  const chaves = new Map((db.prepare("SELECT id, chave FROM cards").all() as { id: number; chave: string }[]).map((c) => [c.id, c.chave]));
+  const chaves = new Map(listarCards().map((c) => [c.id, c.chave]));
   return {
     agora,
     emAndamento: m.emAndamento.map((t) => ({ cardId: t.cardId, agenteId: t.agenteId, desde: t.desde })),
