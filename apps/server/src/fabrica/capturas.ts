@@ -143,7 +143,7 @@ export async function desenharImagem(cardId: number, html: string, nome: string,
 export function ferramentaGerarImagem(cardId: number): Ferramenta {
   return ferramenta(
     "gerar_imagem",
-    `Desenha uma imagem e salva no card: tela ou wireframe (HTML com CSS), fluxo, diagrama de arquitetura ou gráfico (SVG dentro do HTML). Escreva um documento HTML completo, com todo o CSS no próprio arquivo: nada externo carrega (sem CDN, fontes ou imagens da web) e JavaScript não roda. Devolve a linha da imagem em Markdown: coloque-a sozinha numa linha da entrega, para o CEO e os próximos agentes verem.`,
+    `Desenha uma imagem e salva no card: tela ou wireframe (HTML com CSS), fluxo, diagrama de arquitetura ou gráfico (SVG dentro do HTML). Escreva um documento HTML completo, com todo o CSS no próprio arquivo: nada externo carrega (sem CDN, fontes ou imagens da web) e JavaScript não roda. Fontes instaladas: Geist e Geist Mono, Inter, Noto Sans, Liberation; use a fonte que o projeto usa (veja o tema dele), e system-ui/sans-serif viram Inter. Devolve a linha da imagem em Markdown: coloque-a sozinha numa linha da entrega, para o CEO e os próximos agentes verem.`,
     {
       html: { type: "string", description: "Documento HTML completo (CSS em <style>, SVG inline)" },
       nome: { type: "string", description: "Nome curto do arquivo (ex.: tela-de-integracoes)" },

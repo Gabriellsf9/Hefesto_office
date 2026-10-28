@@ -3,7 +3,7 @@ import { clienteClaude, maxTokensQueCabe, orcamentoEsgotado, registrarUso } from
 import { provedorDe } from "../provedores.ts";
 import { rodarAgenteCompat } from "./compat.ts";
 import { cardPassouDoLimite, lerCard, somarCusto, tetoDoCard } from "../tarefas.ts";
-import { buscarNoCodigo, ErroArquivo, lerArquivo, listarArquivos, mapaDoCodigo } from "./arquivos.ts";
+import { buscarNoCodigo, ErroArquivo, lerArquivo, lerImagem, listarArquivos, mapaDoCodigo } from "./arquivos.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { registrarChamada } from "../chamadas.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
@@ -25,7 +25,7 @@ export interface ResultadoFerramenta {
   /** A tarefa terminou com esta chamada; não precisa voltar ao modelo. */
   fim?: boolean;
   /** Imagem que o modelo enxerga junto com o texto (ex.: print do navegador). */
-  imagem?: { media: "image/jpeg" | "image/png"; base64: string };
+  imagem?: { media: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; base64: string };
 }
 
 export class ErroEntrada extends Error {}
@@ -140,6 +140,21 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
       { caminho: { type: "string" }, inicio: { type: "integer", minimum: 1 }, fim: { type: "integer", minimum: 1 } },
       ["caminho"],
       (e) => protegido(() => lerArquivo(raiz, texto(e, "caminho", 1000), e.inicio as number | undefined, e.fim as number | undefined)),
+    ),
+    ferramenta(
+      "ver_imagem",
+      "Mostra uma imagem do projeto (PNG, JPG, WEBP ou GIF): prints da interface, telas de referência, mockups em docs/ ou public/. Use para VER como o produto é hoje antes de desenhar ou mudar telas.",
+      { caminho: { type: "string" } },
+      ["caminho"],
+      async (e) => {
+        const caminho = texto(e, "caminho", 1000);
+        try {
+          return { texto: `Imagem: ${caminho}`, imagem: await lerImagem(raiz, caminho) };
+        } catch (err) {
+          if (err instanceof ErroArquivo) return { texto: err.message, erro: true };
+          throw err;
+        }
+      },
     ),
     ferramenta(
       "mapa_do_codigo",
