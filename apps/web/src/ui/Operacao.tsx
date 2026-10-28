@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { AlertaSaude } from "@empresa/shared";
 import { useStore } from "../store.ts";
 import { api } from "../api.ts";
 
@@ -21,9 +22,44 @@ function useAcao() {
 export function AbaOperacao() {
   return (
     <div className="space-y-6">
+      <SaudeDoTrabalho />
       <Monitoramento />
       <CalculadoraSimples />
     </div>
+  );
+}
+
+/** Alertas do vigia de saúde: o que trava a empresa sem ninguém ver. Resolvem sozinhos quando a condição some. */
+export function SaudeDoTrabalho() {
+  const alertas = useStore((s) => s.alertas);
+  const { erro, acao } = useAcao();
+  useEffect(() => {
+    void api<AlertaSaude[]>("/api/alertas").then((abertos) => useStore.setState({ alertas: abertos })).catch(() => null);
+  }, []);
+  return (
+    <section>
+      <h3 className="text-corpo font-bold">Saúde do trabalho</h3>
+      <p className="mb-3 text-pequeno text-fg-2">
+        O vigia confere a cada minuto: card rodando sem avançar, a mesma falha voltando, ferramenta em loop, chamada de IA lenta, gasto do dia e fila parada. Avisa no chat e no Telegram uma vez; o alerta some sozinho quando o problema passa.
+      </p>
+      {erro && <p className="mb-2 text-pequeno text-danger-fg">{erro}</p>}
+      {!alertas.length ? (
+        <p className="rounded-xl border border-dashed border-line py-6 text-center text-pequeno text-fg-3">Tudo andando: nenhum alerta aberto.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {alertas.map((a) => (
+            <li key={a.id} className="flex items-start gap-3 rounded-xl px-3 py-2 text-pequeno ring-1 ring-line">
+              <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-warning" />
+              <span className="flex-1">{a.texto}</span>
+              <span className="shrink-0 text-legenda text-fg-3">{new Date(a.criadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+              <button onClick={() => acao(async () => useStore.setState({ alertas: await api<AlertaSaude[]>(`/api/alertas/${a.id}/resolver`, "POST") }))} className="shrink-0 text-fg-disabled hover:text-fg" aria-label="Marcar como resolvido">
+                ✓
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

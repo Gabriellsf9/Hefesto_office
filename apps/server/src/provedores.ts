@@ -71,12 +71,34 @@ export function escolhas(): Record<string, string> {
 
 // Quando um provedor limita ou fica sobrecarregado, os agentes dele passam sozinhos para um modelo reserva
 // e voltam ao escolhido quando a espera acaba: nenhum card fica parado esperando um provedor só.
-const foraAte = new Map<ProvedorIa, number>();
-export const provedorForaDoAr = (p: ProvedorIa) => (foraAte.get(p) ?? 0) > Date.now();
-export const foraDoArAte = (p: ProvedorIa) => (provedorForaDoAr(p) ? foraAte.get(p)! : null);
-export function marcarForaDoAr(p: ProvedorIa, ate: number) {
-  foraAte.set(p, Math.max(foraAte.get(p) ?? 0, ate));
+// Fica no banco: sem isso, cada reinício "esquecia" que o Claude estava sem crédito e batia nele de novo.
+const CHAVE_FORA = "provedores_fora_do_ar";
+let foraAte: Map<ProvedorIa, number> | null = null;
+function fora(): Map<ProvedorIa, number> {
+  if (foraAte) return foraAte;
+  try {
+    foraAte = new Map(Object.entries(JSON.parse(getSetting(CHAVE_FORA) ?? "{}") as Record<ProvedorIa, number>) as [ProvedorIa, number][]);
+  } catch {
+    foraAte = new Map();
+  }
+  return foraAte;
 }
+export const provedorForaDoAr = (p: ProvedorIa) => (fora().get(p) ?? 0) > Date.now();
+export const foraDoArAte = (p: ProvedorIa) => (provedorForaDoAr(p) ? fora().get(p)! : null);
+export function marcarForaDoAr(p: ProvedorIa, ate: number) {
+  const m = fora();
+  m.set(p, Math.max(m.get(p) ?? 0, ate));
+  const agora = Date.now();
+  setSetting(CHAVE_FORA, JSON.stringify(Object.fromEntries([...m].filter(([, t]) => t > agora))));
+}
+/** Volta o provedor ao ar antes do prazo (ex.: o CEO recarregou o crédito). */
+export function marcarNoAr(p: ProvedorIa) {
+  const m = fora();
+  if (!m.delete(p)) return;
+  setSetting(CHAVE_FORA, JSON.stringify(Object.fromEntries(m)));
+}
+/** Só para testes: esquece o que foi lido do banco. */
+export const recarregarForaDoAr = () => void (foraAte = null);
 
 /**
  * Reserva, em ordem: o Claude do agente (melhor ou igual ao que caiu); se o Claude caiu, um modelo do Gemini e
@@ -240,6 +262,8 @@ export async function configurarProvedores(corpo: Record<string, unknown>): Prom
       if (!res) throw new ErroCard(`Não consegui falar com a ${p === "openai" ? "OpenAI" : "Google"}. Verifique a internet.`);
       if (!res.ok) throw new ErroCard(res.status === 401 || res.status === 403 || res.status === 400 ? "Chave inválida ou sem permissão." : `O provedor respondeu ${res.status}.`);
       salvarSegredo(CHAVE[p], chave);
+      // Chave nova (ou cota liberada): tenta o provedor de novo agora, sem esperar o prazo da falha anterior.
+      marcarNoAr(p);
     }
     if (d.esquecer === true) apagarSegredo(CHAVE[p]);
     c[p].precoEntrada = numero(d.precoEntrada, 0, 1000) ?? c[p].precoEntrada;

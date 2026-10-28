@@ -34,3 +34,13 @@ test("provedor fora do ar: o agente passa sozinho para a reserva e volta ao esco
     mock.timers.reset();
   }
 });
+
+test("provedor fora do ar fica salvo: um reinício não esquece (e não bate de novo no Claude sem crédito); chave nova volta na hora", async () => {
+  const { recarregarForaDoAr, provedorForaDoAr, marcarNoAr } = await import("./provedores.ts");
+  marcarForaDoAr("claude", Date.now() + 30 * 60_000);
+  recarregarForaDoAr(); // como se o servidor tivesse reiniciado
+  assert.equal(provedorForaDoAr("claude"), true);
+  marcarNoAr("claude");
+  recarregarForaDoAr();
+  assert.equal(provedorForaDoAr("claude"), false);
+});
