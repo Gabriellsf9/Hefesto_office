@@ -40,7 +40,7 @@ test("trabalho que não cabe no contexto do modelo local vai para o Claude, em v
       rodarAgente({
         modelo: "ollama:modelo-teste",
         agenteId: "ux-writer",
-        sistema: "regras ".repeat(4000), // ~28 mil caracteres: não cabe em 4096 tokens
+        sistema: "regras ".repeat(15000), // ~105 mil caracteres: não cabe nem no contexto ampliado (32 mil tokens)
         mensagem: "faça",
         ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
         lembrete: "Chame entregar.",
@@ -97,5 +97,34 @@ test("chamadas a modelos fora do Claude entram no rastreamento (Operação → C
     assert.equal(ch.usd, 0);
   } finally {
     restaurar();
+  }
+});
+
+test("não cabe no local e o Claude está fora do ar: espera (passageiro), sem chamar o Claude em loop", async () => {
+  const { marcarForaDoAr } = await import("../provedores.ts");
+  const { ErroProvedor } = await import("./compat.ts");
+  saveApiKey("sk-ant-teste-falsa");
+  marcarForaDoAr("claude", Date.now() + 60_000);
+  const original = globalThis.fetch;
+  const chamados: string[] = [];
+  globalThis.fetch = (async (entrada: string | URL | Request) => {
+    const url = String(entrada instanceof Request ? entrada.url : entrada);
+    chamados.push(url);
+    if (url.endsWith("/api/show")) return Response.json({ capabilities: ["completion", "tools"] });
+    throw new Error("rede desligada no teste");
+  }) as typeof fetch;
+  try {
+    const erro = await rodarAgente({
+      modelo: "ollama:modelo-teste",
+      agenteId: "dev-backend",
+      sistema: "regras ".repeat(15000),
+      mensagem: "faça",
+      ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
+      lembrete: "Chame entregar.",
+    }).catch((e: unknown) => e);
+    assert.ok(erro instanceof ErroProvedor && erro.passageiro, "erro passageiro: o card espera");
+    assert.ok(!chamados.some((u) => u.includes("anthropic")), "não bate no Claude fora do ar");
+  } finally {
+    globalThis.fetch = original;
   }
 });

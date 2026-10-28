@@ -4,7 +4,7 @@ import { modeloPara, orcamentoEsgotado, registrarUsoTokens } from "../custo.ts";
 import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
-import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel, precoDe, provedorDe } from "../provedores.ts";
+import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel, precoDe, provedorDe, provedorForaDoAr } from "../provedores.ts";
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
 import { conferirOrcamentoDoProjeto, projetoSemOrcamento } from "../planejamento.ts";
 import { registrarChamada } from "../chamadas.ts";
@@ -72,6 +72,9 @@ function limparEsquema(v: unknown): unknown {
  * Para caber no contexto: resultados antigos de ferramentas viram uma nota (os 6 mais recentes ficam),
  * como o context_management faz no Claude. Estimativa grosseira: 3,5 caracteres por token.
  */
+/** Contexto do modelo local quando o trabalho não cabe no padrão (medido: o 9b fica 81% na GPU e sobra RAM). */
+const CONTEXTO_LOCAL_AMPLIADO = 32_768;
+
 /** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
 const tokensDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3;
 
@@ -285,8 +288,8 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     { role: "system", content: `${o.sistema}${semWeb ? "\n\n(Neste modelo não há pesquisa na web: trabalhe com as ferramentas disponíveis e com o que você sabe, e diga quando faltar informação atual.)" : ""}` },
     { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
   ];
-  const contextoLocal = o.contexto ?? configOllama().contexto;
-  const limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
+  let contextoLocal = o.contexto ?? configOllama().contexto;
+  let limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
   let custoUsd = 0;
   let lembretes = 0;
   let ultimoTexto = "";
@@ -301,13 +304,21 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     aparar(msgs, limiteTokens);
     // Não cabe no contexto do modelo local nem depois de aparar: o Ollama cortaria o começo (as instruções e o
     // card) em silêncio e o agente trabalharia às cegas. Segue no Claude do agente, que comporta o trabalho.
+    // Não cabe no contexto padrão do modelo local: tenta o contexto ampliado (mais memória, só neste trabalho).
+    if (provedor === "ollama" && !o.contexto && tokensDe(msgs) > limiteTokens && contextoLocal < CONTEXTO_LOCAL_AMPLIADO) {
+      contextoLocal = CONTEXTO_LOCAL_AMPLIADO;
+      limiteTokens = contextoLocal * 0.75;
+      aparar(msgs, limiteTokens);
+    }
     if (provedor === "ollama" && tokensDe(msgs) > limiteTokens) {
       if (o.semReserva) throw new ErroProvedor(`Não cabe no contexto do modelo local (~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}).`, 413, false);
       const claude = modeloPara(agentById[o.agenteId ?? ""]?.modelo ?? "claude-sonnet-5-5", "autor");
-      if (modeloDisponivel(claude)) {
+      if (modeloDisponivel(claude) && !provedorForaDoAr("claude")) {
         registrarPasso(replay, { rodada, tipo: "texto", saida: `(O trabalho não cabe no contexto do modelo local: ~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}. Continua no ${claude}.)` });
         return rodarAgente({ ...o, modelo: claude });
       }
+      // Nem o local comporta nem o Claude está no ar: espera (o motor tenta de novo depois), sem bater no Claude em loop.
+      throw new ErroProvedor(`O trabalho não cabe no modelo local (~${Math.round(tokensDe(msgs))} tokens) e o Claude está fora do ar: espero um dos dois.`, 503, true);
     }
     const onTexto = (t: string) => o.onTexto?.(t);
     const t0 = Date.now();
