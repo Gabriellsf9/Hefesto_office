@@ -22,14 +22,16 @@ export function custoHoje(): number {
  * Soma o custo de uma resposta ao dia. É uma estimativa: se uma resposta for
  * atendida por um modelo de fallback, ela é cobrada pelo preço do modelo pedido.
  */
-export function registrarUso(modelo: string, usage: Anthropic.Beta.BetaUsage): number {
+/** desconto: fração do preço (0,5 na Batch API). */
+export function registrarUso(modelo: string, usage: Pick<Anthropic.Beta.BetaUsage, "input_tokens" | "output_tokens" | "cache_creation_input_tokens" | "cache_read_input_tokens">, desconto = 1): number {
   const p = PRECOS[modelo] ?? PRECOS["claude-opus-5-5"]!;
   const usd =
     ((usage.input_tokens ?? 0) * p.entrada +
       (usage.cache_creation_input_tokens ?? 0) * p.entrada * 1.25 +
       (usage.cache_read_input_tokens ?? 0) * p.leituraCache +
       (usage.output_tokens ?? 0) * p.saida) /
-    1_000_000;
+    1_000_000 *
+    desconto;
   db.prepare("INSERT INTO uso (dia, usd) VALUES (?, ?) ON CONFLICT(dia) DO UPDATE SET usd = usd + excluded.usd").run(hoje(), usd);
   emit({ type: "custo", hojeUsd: custoHoje() });
   return usd;

@@ -74,11 +74,20 @@ function resolverPasta(p: unknown): string {
   return caminho;
 }
 
+/**
+ * O ambiente do servidor sem chaves, tokens e senhas (nem as variáveis do próprio Hefesto): o comando aprovado
+ * roda com o PATH e as configurações do usuário, mas sem herdar segredos que ele não pediu.
+ */
+export function envSemSegredos(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !SEGREDO_NO_NOME.test(k) && !/^(EMPRESA|HEFESTO)_/.test(k)));
+}
+const SEGREDO_NO_NOME = /KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|PRIVATE|COOKIE|SESSION/i;
+
 /** Roda no zsh de login do usuário (com o PATH dele), na pasta pedida. */
 export function rodarNoTerminal(comando: string, pasta: string): Promise<{ texto: string; erro: boolean }> {
   const inicio = Date.now();
   return new Promise((resolve) => {
-    execFile("/bin/zsh", ["-lc", comando], { cwd: pasta, timeout: TEMPO_MAX_MS, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, TERM: "dumb", NO_COLOR: "1" } }, (err, stdout, stderr) => {
+    execFile("/bin/zsh", ["-lc", comando], { cwd: pasta, timeout: TEMPO_MAX_MS, maxBuffer: 20 * 1024 * 1024, env: { ...envSemSegredos(), TERM: "dumb", NO_COLOR: "1" } }, (err, stdout, stderr) => {
       const tudo = `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
       const saida = tudo.length > SAIDA_MAX ? `…(cortado)\n${tudo.slice(-SAIDA_MAX)}` : tudo;
       const e = err as (NodeJS.ErrnoException & { code?: number | string; killed?: boolean }) | null;
