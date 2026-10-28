@@ -5,6 +5,7 @@ import { rodarAgenteCompat } from "./compat.ts";
 import { cardPassouDoLimite, lerCard, somarCusto, tetoDoCard } from "../tarefas.ts";
 import { buscarNoCodigo, ErroArquivo, lerArquivo, lerImagem, listarArquivos, mapaDoCodigo } from "./arquivos.ts";
 import { buscarNoIndice, formatarAchados } from "./indice.ts";
+import { historicoGit } from "./historico.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { registrarChamada } from "../chamadas.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
@@ -193,11 +194,31 @@ export function ferramentasDeProjeto(raiz: string, opcoes: { enxuto?: boolean } 
       (e) => protegido(async () => formatarAchados(await buscarNoIndice(raiz, texto(e, "pergunta", 300)))),
     ),
     ferramenta(
+      "historico_git",
+      "Histórico do git de um arquivo: os últimos commits que mexeram nele (data, autor, mensagem) e, com linha, quem escreveu as linhas em volta (blame). Use para entender por que o código está assim antes de mudar.",
+      { caminho: { type: "string" }, linha: { type: "integer", minimum: 1 } },
+      ["caminho"],
+      async (e) => {
+        try {
+          return { texto: await historicoGit(raiz, texto(e, "caminho", 500), typeof e.linha === "number" ? e.linha : undefined) };
+        } catch (err) {
+          return { texto: err instanceof Error ? err.message : String(err), erro: true };
+        }
+      },
+    ),
+    ferramenta(
       "buscar_no_codigo",
-      "Procura um texto em todos os arquivos do projeto e devolve arquivo:linha: trecho (até 100 resultados).",
-      { texto: { type: "string" } },
+      "Procura um texto (ou uma expressão regular, com regex: true) nos arquivos do projeto e devolve arquivo:linha: trecho. Use arquivos para limitar por padrão (ex.: \"*.go\", \"backend/**/*.go\", \"src/**\").",
+      {
+        texto: { type: "string" },
+        regex: { type: "boolean", description: "true: texto é uma expressão regular (ex.: \"func \\\\w+Ticket\")" },
+        arquivos: { type: "string", description: "Padrão de arquivos (ex.: \"*.ts\", \"frontend/**\")" },
+      },
       ["texto"],
-      (e) => protegido(() => buscarNoCodigo(raiz, texto(e, "texto", 200), opcoes.enxuto ? 30 : 100)),
+      (e) =>
+        protegido(() =>
+          buscarNoCodigo(raiz, texto(e, "texto", 300), opcoes.enxuto ? 30 : 100, { regex: e.regex === true, arquivos: typeof e.arquivos === "string" ? e.arquivos : undefined }),
+        ),
     ),
   ];
 }

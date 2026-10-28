@@ -46,6 +46,7 @@ import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confian
 import { auditar } from "../confianca/auditoria.ts";
 import { ETIQUETA_ORCAMENTO_PROJETO, projetoSemOrcamento } from "../planejamento.ts";
 import { ferramentaDePesquisa } from "./pesquisa.ts";
+import { ferramentasDeEstacao } from "../fabrica/estacao.ts";
 import { ETIQUETA_PARTE, mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
@@ -989,6 +990,8 @@ ${texto_}`);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho, { enxuto: local }), ...ferramentasDeEscrita(wt));
     if (podeVerificar() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+    // Terminal completo numa estação só do card (contêiner com a linguagem do projeto e a cópia montada).
+    if (agente.ferramentas.includes("terminal")) ferramentas.push(...ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local }));
     // Ambiente do card: o app inteiro rodando no Docker dos agentes, com autonomia para instalar e preparar o que precisar.
     if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho, { enxuto: local }));
@@ -1003,6 +1006,7 @@ ${texto_}`);
       ferramentas.push(
         ...ferramentasDeProjeto(referencia.caminho, { enxuto: local }),
         ...ferramentasDeAmbiente(referencia, `ref-${projetoId}`),
+        ...ferramentasDeEstacao(`ref-${projetoId}`, referencia.caminho, { enxuto: local }),
         ...ferramentasDeEscrita(referencia, { envDeTeste: true }),
         ferramentaDeCaptura(card.id, `http://${HOST_DO_AMBIENTE}`),
       );
@@ -1335,6 +1339,7 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho, { enxuto: local }), ferramentaDeDiff(card.id));
     if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
+    if (validador.ferramentas.includes("terminal")) ferramentas.push(...ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local }));
     // QA sobe o app de verdade no ambiente do card (banco, backend, frontend) e testa no navegador.
     if (validador.id.startsWith("qa") && ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
     const urlQa = projeto?.urlLocal ?? (ambienteAtivo() ? `http://${HOST_DO_AMBIENTE}` : null);

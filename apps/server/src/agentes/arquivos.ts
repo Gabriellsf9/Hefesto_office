@@ -97,9 +97,35 @@ export async function lerArquivo(raiz: string, rel: string, inicio?: number, fim
   return saida || "(arquivo vazio)";
 }
 
-export async function buscarNoCodigo(raiz: string, texto: string, limite = 100): Promise<string> {
+/** "src/**\/*.ts", "*.go": padrão de arquivo (como o Glob do Claude Code) em expressão regular sobre o caminho relativo. */
+export function regexDoPadrao(padrao: string): RegExp {
+  const re = padrao
+    .trim()
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*\//g, "\u0000")
+    .replace(/\*\*/g, "\u0001")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]")
+    .replace(/\u0000/g, "(?:.*/)?")
+    .replace(/\u0001/g, ".*");
+  // Sem barra no padrão ("*.go"), vale em qualquer pasta.
+  return new RegExp(padrao.includes("/") ? `^${re}$` : `(?:^|/)${re}$`, "i");
+}
+
+/** Busca no código: texto (padrão), ou expressão regular com regex: true; arquivos limita por padrão ("*.go", "src/**"). */
+export async function buscarNoCodigo(raiz: string, texto: string, limite = 100, o: { regex?: boolean; arquivos?: string } = {}): Promise<string> {
   const base = await realpath(raiz);
   const q = texto.toLowerCase();
+  let re: RegExp | null = null;
+  if (o.regex) {
+    try {
+      re = new RegExp(texto, "i");
+    } catch (e) {
+      throw new ErroArquivo(`Expressão regular inválida: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  const filtro = o.arquivos?.trim() ? regexDoPadrao(o.arquivos) : null;
+  const casa = (linha: string) => (re ? re.test(linha) : linha.toLowerCase().includes(q));
   const achados: string[] = [];
   let arquivos = 0;
   const andar = async (dir: string) => {
@@ -109,13 +135,14 @@ export async function buscarNoCodigo(raiz: string, texto: string, limite = 100):
       const caminho = join(dir, it.name);
       if (it.isDirectory()) await andar(caminho);
       else if (it.isFile() && !ehSegredo(it.name)) {
+        if (filtro && !filtro.test(relative(base, caminho).split(sep).join("/"))) continue;
         arquivos++;
         const info = await stat(caminho);
         if (info.size > 500_000) continue;
         const buf = await readFile(caminho);
         if (buf.subarray(0, 8000).includes(0)) continue;
         buf.toString("utf8").split("\n").forEach((linha, i) => {
-          if (achados.length < 100 && linha.toLowerCase().includes(q)) {
+          if (achados.length < limite && casa(linha)) {
             achados.push(`${relative(base, caminho)}:${i + 1}: ${linha.trim().slice(0, 200)}`);
           }
         });

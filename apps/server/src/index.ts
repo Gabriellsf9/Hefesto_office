@@ -66,6 +66,7 @@ import { configurarProvedores, estadoProvedores, foraDoArAte, marcarNoAr } from 
 import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
 import { criarRaioX, vincularPasta } from "./projetoNovo.ts";
 import { arquivoDaCopia, lerArquivoDaCopia, pedidoLocal } from "./copiaHttp.ts";
+import { limparEstacoes } from "./fabrica/estacao.ts";
 import { apagarConversa, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
@@ -818,6 +819,8 @@ setInterval(limparPassosAntigos, 24 * 3600_000).unref();
 void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));
 // Limpeza de cópias isoladas abandonadas (cards apagados ou perdidos), uma vez por hora; a branch fica.
 setInterval(() => void limparCopiasAntigas().catch((e) => console.error("Limpeza de cópias:", e)), 3600_000);
+// Estações de trabalho paradas há horas saem do Docker dos agentes (a cópia do card continua).
+setInterval(() => void limparEstacoes().catch((e) => console.error("Limpeza de estações:", e)), 3600_000);
 iniciarLembretesDeMarketing();
 iniciarMonitoramento();
 iniciarVigia();
