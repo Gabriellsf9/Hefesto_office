@@ -528,8 +528,23 @@ const passageiro = (err: unknown) =>
   (err instanceof Anthropic.APIError && (err.status === 529 || err.status === 503)) ||
   (err instanceof ErroProvedor && err.passageiro);
 
+/** A conta da Anthropic ficou sem crédito: o Claude fica fora do ar por um tempo e os agentes vão para a reserva. */
+export const semCreditoNaAnthropic = (err: unknown) =>
+  err instanceof Anthropic.APIError && (err.status === 400 || err.status === 402) && /credit balance is too low|billing/i.test(err.message);
+const ESPERA_SEM_CREDITO_MS = 30 * 60_000;
+
 function tratarFalha(card: Card, agenteId: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
+  // Sem crédito não é falha do card: o Claude sai do ar (os agentes seguem no Gemini ou no modelo local) e o CEO é avisado.
+  if (semCreditoNaAnthropic(err)) {
+    const avisar = !provedorForaDoAr("claude");
+    marcarForaDoAr("claude", Date.now() + ESPERA_SEM_CREDITO_MS);
+    if (avisar) {
+      postChat("chief-of-staff", "A conta da Anthropic ficou sem crédito. Enquanto isso, a equipe segue nos modelos reserva (Gemini e o modelo local) e volta ao Claude sozinha quando houver crédito (tento de novo a cada 30 minutos). Para recarregar: console da Anthropic → Plans & Billing.");
+      publicar();
+    }
+    return;
+  }
   if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
     configurarMotor({ pausado: true });
     postChat("chief-of-staff", "Pausei a empresa: a chave da API foi recusada. Confira a chave e despause no topo da tela.");

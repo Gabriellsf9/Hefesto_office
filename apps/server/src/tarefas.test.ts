@@ -34,3 +34,20 @@ test("card parado porque a resposta não coube no que restava: Liberar mais soma
   assert.ok(tetoDoCard(lerCard(card.id)) > teto, "somou mais um limite");
   assert.equal(lerCard(card.id).bloqueado, false);
 });
+
+test("escada de modelos com o Claude fora do ar: card que já falhou vai para a reserva, não para o Claude", async () => {
+  const { setSetting } = await import("./db.ts");
+  const { salvarSegredo, saveApiKey } = await import("./secrets.ts");
+  const { marcarForaDoAr } = await import("./provedores.ts");
+  const { modeloEscalonado } = await import("./aprendizado.ts");
+  const { agentById } = await import("@empresa/org");
+  saveApiKey("sk-ant-teste-falsa");
+  salvarSegredo("gemini_api_key", "chave-gemini-falsa");
+  setSetting("modelos_agentes", JSON.stringify({ "head-marketing": "gemini:gemini-3.8-flash" }));
+  const card = criarCard({ titulo: "Backend", sala: "desenvolvimento", dono: "dev-backend", validador: "reviewer-1" });
+  comentar(card.id, "reviewer-1", "devolucao", "Falta X.");
+  comentar(card.id, "reviewer-1", "devolucao", "Falta Y.");
+  marcarForaDoAr("claude", Date.now() + 60_000);
+  const { modelo } = modeloEscalonado(agentById["dev-backend"]!, "autor", card);
+  assert.equal(modelo, "gemini:gemini-3.8-flash");
+});

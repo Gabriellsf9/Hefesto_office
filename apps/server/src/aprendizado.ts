@@ -3,7 +3,7 @@ import { agentById } from "@empresa/org";
 import { db, getSetting, setSetting } from "./db.ts";
 import { postFeed } from "./bus.ts";
 import { modeloPara, type Papel } from "./custo.ts";
-import { escolhas, modeloDoAgente, provedorDe } from "./provedores.ts";
+import { escolhas, modeloDoAgente, provedorDe, provedorForaDoAr } from "./provedores.ts";
 import { decisaoDoCeo, listarComentarios, listarDevolucoesDoAgente } from "./tarefas.ts";
 
 // A equipe que aprende sozinha:
@@ -53,6 +53,11 @@ export function modeloEscalonado(agente: Agent, papel: Papel, card: Card, codigo
   const extra = (local && codigoVerificavel) || foraDoClaude ? Math.max(0, falhas - 1) : falhas;
   const niveis = extra >= 4 ? 2 : extra >= 2 ? 1 : 0;
   const modelo = subir(claude, niveis);
+  // A escada é do Claude: com ele fora do ar (limite, sobrecarga, sem crédito), segue no modelo reserva do agente.
+  if (provedorForaDoAr(provedorDe(modelo).provedor)) {
+    const reserva = modeloDoAgente(agente, papel);
+    if (reserva !== modelo) return { modelo: reserva, motivo: `${provedorDe(modelo).provedor} fora do ar: segue em ${reserva.replace(/^(ollama|gemini|openai):/, "")}` };
+  }
   return { modelo, motivo: modelo !== base ? `subiu para ${modelo.replace("claude-", "")} depois de ${falhas} falha(s)` : null };
 }
 
