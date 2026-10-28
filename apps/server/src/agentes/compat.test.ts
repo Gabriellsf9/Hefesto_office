@@ -213,3 +213,35 @@ test("conversa salva que já não cabe no contexto local (de quando ia além da 
     setSetting("provedores", "{}");
   }
 });
+
+test("resultado de ferramenta maior que o contexto local (ex.: mapa do projeto inteiro) é cortado no que cabe, em vez de travar o card", async () => {
+  const recebidos: { messages: { role: string; content: string }[] }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      const chamada = recebidos.length === 1 ? { name: "mapa", arguments: {} } : { name: "entregar", arguments: { conteudo: "ok" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", fallback: false,
+      ferramentas: [
+        ferramenta("mapa", "Mapa.", {}, [], () => ({ texto: "func x() ".repeat(20_000) })), // 180 mil caracteres: passa de 32 mil tokens
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true, "seguiu trabalhando no modelo local");
+    const tool = recebidos[1]!.messages.find((m) => m.role === "tool")!;
+    assert.ok(tool.content.length < 100_000, "o mapa foi cortado");
+    assert.match(tool.content, /Peça algo mais específico/);
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
