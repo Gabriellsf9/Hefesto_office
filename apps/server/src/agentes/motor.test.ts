@@ -138,3 +138,10 @@ test("por que o card não anda: bloqueado, esperando dependência, esperando par
   assert.match(porQueNaoAnda(bloqueado, porId, [])!, /Bloqueado/);
   assert.equal(porQueNaoAnda(livre, porId, []), null, "pronto: o motivo (se houver) vem da fila");
 });
+
+test("vez do modelo local: vale o provedor com que o trabalho começou, não o que o agente usaria agora", async () => {
+  const { localOcupado } = await import("./motor.ts");
+  // A Ana começou no local (com o Claude fora). O Claude "voltou": recalculando, ela pareceria estar no Claude.
+  assert.equal(localOcupado([{ cardId: 11, agenteId: "dev-frontend", tipo: "executar", desde: 0, provedor: "ollama" }]), true);
+  assert.equal(localOcupado([{ cardId: 11, agenteId: "dev-frontend", tipo: "executar", desde: 0, provedor: "claude" }]), false);
+});

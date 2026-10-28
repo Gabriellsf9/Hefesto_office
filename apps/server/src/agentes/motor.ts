@@ -518,6 +518,13 @@ export function esperaParente(card: Card, porId: Map<number, Card>, rodando: Ite
   return false;
 }
 
+/**
+ * Há trabalho rodando no modelo local? Pelo provedor com que cada um COMEÇOU: recalcular pelo agente erra quando outro
+ * provedor volta ao ar no meio (a Ana começou no local com o Claude fora; o prazo do Claude venceu e o motor pôs o
+ * Rafael no local junto, os dois se revezando na placa).
+ */
+export const localOcupado = (rodando: Iterable<TrabalhoEmAndamento>) => [...rodando].some((e) => (e.provedor ?? provedorDoAgente(e.agenteId)) === "ollama");
+
 /* ---------- Por que o card está parado ---------- */
 
 /** Por que cada card que deveria andar não está rodando agora (a tela mostra no card e na fila). */
@@ -595,7 +602,7 @@ async function ciclo() {
     }
     // Modelo local: um trabalho por vez. Dois cards se revezando descartam o cache do Ollama (e trocam o tamanho do
     // contexto, recarregando o modelo), e cada passo relê a conversa inteira do zero: ~2 min por passo em vez de segundos.
-    if (prov === "ollama" && [...emAndamento.values()].some((e) => provedorDoAgente(e.agenteId) === "ollama")) {
+    if (prov === "ollama" && localOcupado(emAndamento.values())) {
       espera("Esperando a vez no modelo local (um trabalho por vez).");
       continue;
     }
@@ -619,7 +626,7 @@ async function ciclo() {
 async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "validar", agenteId: string) {
   const controle = new AbortController();
   controles.set(card.id, controle);
-  emAndamento.set(card.id, { cardId: card.id, agenteId, tipo, desde: Date.now() });
+  emAndamento.set(card.id, { cardId: card.id, agenteId, tipo, desde: Date.now(), provedor: provedorDoAgente(agenteId) });
   naFila = Math.max(0, naFila - 1);
   publicar();
   try {
