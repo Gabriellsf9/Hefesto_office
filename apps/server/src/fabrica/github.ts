@@ -46,33 +46,50 @@ async function api<T>(caminho: string, token: string, metodo = "GET", corpo?: un
   return json;
 }
 
-/** Publica a branch do card e abre (ou reaproveita) o pull request. */
-export async function abrirPullRequest(cardId: number): Promise<{ url: string; numero: number }> {
+/** Para onde vai o push (nos testes, um repositório local no lugar do github.com). */
+const urlDePush = (gh: { dono: string; nome: string }, token: string) =>
+  process.env.HEFESTO_GIT_PUSH_BASE ? `${process.env.HEFESTO_GIT_PUSH_BASE}/${gh.dono}/${gh.nome}.git` : `https://x-access-token:${token}@github.com/${gh.dono}/${gh.nome}.git`;
+
+/** Publica a branch do card no GitHub (sem PR). Usado pelo pull request e pela prévia publicada. */
+export async function publicarBranch(cardId: number): Promise<{ dono: string; nome: string; branch: string; sha: string; token: string }> {
   const token = lerSegredo(SEG);
   if (!token) throw new ErroCard("Cadastre um token do GitHub primeiro.");
   const card = lerCard(cardId);
   const wt = worktreeDoCard(card);
   if (!wt || wt.cardId !== card.id) throw new ErroCard("Este card não tem código.");
-  if (colunaDe(card.fluxo, card.coluna)?.tipo !== "feito") throw new ErroCard("Aprove o card antes de abrir o pull request.");
   const gh = await repositorioDoGithub(wt.repo);
   if (!gh) throw new ErroCard("O remote \"origin\" deste projeto não é do GitHub.");
-  const info = await api<{ default_branch: string }>(`/repos/${gh.dono}/${gh.nome}`, token);
-  await git("git", ["-C", wt.caminho, "push", `https://x-access-token:${token}@github.com/${gh.dono}/${gh.nome}.git`, `HEAD:refs/heads/${wt.branch}`], {
+  await git("git", ["-C", wt.caminho, "push", urlDePush(gh, token), `HEAD:refs/heads/${wt.branch}`], {
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     timeout: 120_000,
   }).catch((e: Error) => {
     // Nunca devolve a mensagem crua: ela pode conter a URL com o token.
     throw new ErroCard(`Não consegui publicar a branch: ${e.message.replaceAll(token, "***").split("\n").slice(0, 2).join(" ")}`);
   });
-  const existentes = await api<{ html_url: string; number: number }[]>(`/repos/${gh.dono}/${gh.nome}/pulls?head=${gh.dono}:${encodeURIComponent(wt.branch)}&state=open`, token);
+  const sha = (await git("git", ["-C", wt.caminho, "rev-parse", "HEAD"])).stdout.trim();
+  return { ...gh, branch: wt.branch, sha, token };
+}
+
+/** Publica a branch do card e abre (ou reaproveita) o pull request. */
+export async function abrirPullRequest(cardId: number): Promise<{ url: string; numero: number }> {
+  const card = lerCard(cardId);
+  if (colunaDe(card.fluxo, card.coluna)?.tipo !== "feito") throw new ErroCard("Aprove o card antes de abrir o pull request.");
+  const gh = await publicarBranch(cardId);
+  const token = gh.token;
+  const info = await api<{ default_branch: string }>(`/repos/${gh.dono}/${gh.nome}`, token);
+  const existentes = await api<{ html_url: string; number: number }[]>(`/repos/${gh.dono}/${gh.nome}/pulls?head=${gh.dono}:${encodeURIComponent(gh.branch)}&state=open`, token);
   if (existentes[0]) return { url: existentes[0].html_url, numero: existentes[0].number };
   const e = ultimaEntrega(card.id);
   const pr = await api<{ html_url: string; number: number }>(`/repos/${gh.dono}/${gh.nome}/pulls`, token, "POST", {
     title: `${card.chave}: ${card.titulo}`,
-    head: wt.branch,
+    head: gh.branch,
     base: info.default_branch,
     body: `${e?.resumo ?? ""}\n\n## Critérios de aceite\n${card.criterios || "(nenhum)"}\n\n---\nAberto pelo Hefesto (${card.chave}), aprovado pelo CEO.`,
   });
   comentar(card.id, "voce", "comentario", `Pull request #${pr.number} aberto no GitHub: ${pr.html_url}`);
+  for (const f of aoAbrirPullRequest) f(card.id);
   return { url: pr.html_url, numero: pr.number };
 }
+
+/** Quem quer saber quando um PR foi aberto (o monitoramento de produção começa a vigiar). */
+export const aoAbrirPullRequest: ((cardId: number) => void)[] = [];

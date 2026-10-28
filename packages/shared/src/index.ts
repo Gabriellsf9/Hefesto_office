@@ -148,6 +148,17 @@ export interface EstadoOnboarding {
   ocupado: boolean;
 }
 
+/** Prévia publicada (deploy de prévia na Vercel) de um card. */
+export interface PreviaPublicada {
+  status: "publicando" | "construindo" | "pronta" | "erro";
+  branch: string;
+  sha: string;
+  url: string | null;
+  inspetor: string | null;
+  desde: number;
+  erro: string | null;
+}
+
 export type ServerEvent =
   | {
       type: "hello";
@@ -183,6 +194,8 @@ export type ServerEvent =
   | { type: "whatsapp"; estado: EstadoWhatsapp }
   | { type: "telegram"; estado: EstadoTelegram }
   | { type: "previa"; previa: Previa }
+  /** Deploy de prévia na Vercel de um card (publicando, construindo, pronta ou erro). */
+  | { type: "previaPublicada"; cardId: number; previa: PreviaPublicada }
   | { type: "escritorios"; definicoes: EscritorioDef[] }
   /** Um agente passou trabalho para outro: o 3D anima a entrega (ir até a mesa, entregar a pasta, o outro recebe). */
   | { type: "repasse"; de: string; para: string; cardId: number; motivo: "pedido" | "validacao" | "devolucao" | "proxima-etapa" }

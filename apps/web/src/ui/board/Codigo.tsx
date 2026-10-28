@@ -3,7 +3,7 @@ import type { Card, CodigoDoCard } from "@empresa/shared";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
 import { ExternalLink, Play, Square, TerminalSquare } from "lucide-react";
-import type { Previa } from "@empresa/shared";
+import type { Previa, PreviaPublicada as TPreviaPublicada } from "@empresa/shared";
 import { Botao, Etiqueta, avisarErro } from "../kit/index.ts";
 
 // Código do card (Fase 4): a branch na cópia isolada, o que mudou e o merge no seu projeto.
@@ -140,6 +140,7 @@ export function SecaoCodigo({ card }: { card: Card }) {
               Rodar testes
             </button>
             <PullRequest card={card} ocupado={ocupado} acao={acao} />
+            <PreviaPublicada card={card} />
             {card.coluna !== "concluido" && <span className="text-legenda text-fg-3">O merge libera depois da sua aprovação.</span>}
             {erro && <span className="text-legenda text-danger-fg">{erro}</span>}
             {ok && <span className="text-legenda text-success-fg">{ok}</span>}
@@ -182,6 +183,41 @@ function PreviaDoApp({ cardId }: { cardId: number }) {
       {p?.erro && <p className="mt-1.5 text-legenda text-danger-fg">{p.erro}</p>}
       {log && p && <pre className="scroll-fino mt-2 max-h-56 overflow-auto rounded-ctl bg-sunken p-2 font-mono text-legenda text-fg-2">{p.log.join("\n")}</pre>}
     </div>
+  );
+}
+
+/** Prévia publicada na Vercel (antes de aprovar): publica a branch no GitHub e acompanha o deploy. Só com o seu clique. */
+function PreviaPublicada({ card }: { card: Card }) {
+  const aoVivo = useStore((s) => s.previasPublicadas[card.id]);
+  const [inicial, setInicial] = useState<TPreviaPublicada | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  useEffect(() => void api<TPreviaPublicada | { semPrevia: true }>(`/api/cards/${card.id}/previa-publicada`).then((r) => setInicial("semPrevia" in r ? null : r)).catch(() => {}), [card.id]);
+  const p = aoVivo ?? inicial;
+  const andando = p && (p.status === "publicando" || p.status === "construindo");
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <button
+        disabled={enviando || !!andando}
+        title="Publica a branch no GitHub e espera o deploy de prévia da Vercel (precisa do GitHub e da Vercel ligados ao projeto)"
+        onClick={() => {
+          if (!confirm("Publicar esta branch no GitHub para a Vercel gerar uma prévia? O código sai do seu Mac para o repositório do projeto.")) return;
+          setEnviando(true);
+          void api<TPreviaPublicada>(`/api/cards/${card.id}/previa-publicada`, "POST")
+            .then(setInicial)
+            .catch(avisarErro)
+            .finally(() => setEnviando(false));
+        }}
+        className="rounded-lg px-3 py-1.5 text-legenda font-semibold text-fg ring-1 ring-line hover:bg-hover disabled:opacity-30"
+      >
+        {andando ? (p!.status === "publicando" ? "Publicando…" : "Vercel construindo…") : p?.status === "pronta" ? "Republicar prévia" : "Prévia na Vercel"}
+      </button>
+      {p?.status === "pronta" && p.url && (
+        <a href={p.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-legenda font-medium text-accent-fg hover:underline">
+          <ExternalLink className="size-3.5" /> Abrir prévia
+        </a>
+      )}
+      {p?.status === "erro" && <span className="text-legenda text-danger-fg" title={p.erro ?? ""}>{p.inspetor ? <a href={p.inspetor} target="_blank" rel="noreferrer" className="underline">deploy falhou</a> : "falhou"}</span>}
+    </span>
   );
 }
 

@@ -68,6 +68,7 @@ import { testarCard } from "./fabrica/testes.ts";
 import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
 import { listarEvals, rodarEvals, tarefasDeEval } from "./evals.ts";
 import { testarModelo } from "./agentes/compat.ts";
+import { conferirMetricas, conferirSentry, configurarProducao, definirMetrica, estadoProducao, iniciarProducao, metricaDoCard, previaPublicadaDo, publicarPrevia, registrarResultadoDaMetrica, vigiarDepoisDoMerge, vincularProjeto, vinculoDoProjeto } from "./fabrica/producao.ts";
 import { conferirReplanejamento, definirOrcamentoDoProjeto, fixarLinhaDeBase, iniciarPlanejamento, planoDoProjeto } from "./planejamento.ts";
 import { auditarRequisicao, listarAuditoria, verificarAuditoria } from "./confianca/auditoria.ts";
 import { execucoesDoCard, limparPassosAntigos } from "./confianca/execucoes.ts";
@@ -203,6 +204,35 @@ app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => confi
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
 app.post("/api/evals", async () => rodarEvals());
+
+/* ---------- Produção: prévia publicada (Vercel), Sentry depois do merge e métrica por card ---------- */
+
+const erro400 = (fn: () => unknown) => async (_req: unknown, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
+  try {
+    return await fn();
+  } catch (e) {
+    return reply.code(400).send({ erro: (e as Error).message });
+  }
+};
+app.get("/api/producao", async () => estadoProducao());
+app.put<{ Body: { vercelToken?: string | null; vercelTime?: string | null; sentryToken?: string | null } }>("/api/producao", async (req, reply) =>
+  erro400(() => configurarProducao(req.body ?? {}))(req, reply),
+);
+app.get<{ Params: { id: string } }>("/api/projetos/:id/producao", async (req) => vinculoDoProjeto(idDe(req.params.id)));
+app.put<{ Params: { id: string }; Body: { vercel?: string | null; sentry?: string | null } }>("/api/projetos/:id/producao", async (req, reply) =>
+  erro400(() => vincularProjeto(idDe(req.params.id), req.body ?? {}))(req, reply),
+);
+app.get<{ Params: { id: string } }>("/api/cards/:id/previa-publicada", async (req) => previaPublicadaDo(idDe(req.params.id)) ?? { semPrevia: true });
+app.post<{ Params: { id: string } }>("/api/cards/:id/previa-publicada", async (req, reply) => erro400(() => publicarPrevia(idDe(req.params.id)))(req, reply));
+app.post("/api/producao/conferir", async () => ({ bugs: await conferirSentry(), perguntas: conferirMetricas() }));
+app.get<{ Params: { id: string } }>("/api/cards/:id/metrica", async (req) => metricaDoCard(idDe(req.params.id)) ?? { semMetrica: true });
+app.put<{ Params: { id: string }; Body: { nome: string; alvo: string; comoMedir?: string; prazoDias: number } | null }>("/api/cards/:id/metrica", async (req, reply) =>
+  erro400(() => definirMetrica(idDe(req.params.id), req.body ?? null) ?? { semMetrica: true })(req, reply),
+);
+app.delete<{ Params: { id: string } }>("/api/cards/:id/metrica", async (req) => (definirMetrica(idDe(req.params.id), null), { semMetrica: true }));
+app.post<{ Params: { id: string }; Body: { resultado?: string; atingiu?: boolean | null } }>("/api/cards/:id/metrica/resultado", async (req, reply) =>
+  erro400(() => registrarResultadoDaMetrica(idDe(req.params.id), String(req.body?.resultado ?? ""), req.body?.atingiu))(req, reply),
+);
 
 /* ---------- Planejamento por projeto ---------- */
 
@@ -495,7 +525,9 @@ app.post<{ Params: { id: string }; Body: { link?: string } }>("/api/pecas/:id/pu
 app.get<{ Params: { id: string } }>("/api/cards/:id/codigo", async (req) => (await codigoDoCard(lerCard(idDe(req.params.id)))) ?? { semCodigo: true });
 app.post<{ Params: { id: string } }>("/api/cards/:id/merge", async (req) => {
   await pararPrevia(idDe(req.params.id), "card mesclado");
-  return mesclar(idDe(req.params.id));
+  const r = await mesclar(idDe(req.params.id));
+  vigiarDepoisDoMerge(idDe(req.params.id));
+  return r;
 });
 app.get<{ Params: { id: string } }>("/api/cards/:id/previa", async (req) => lerPrevia(idDe(req.params.id)) ?? { status: "parada", url: null, log: [], erro: null });
 app.post<{ Params: { id: string } }>("/api/cards/:id/previa", async (req) => iniciarPrevia(lerCard(idDe(req.params.id))));
@@ -686,6 +718,7 @@ iniciarMotor();
 iniciarRelatorioDiario();
 iniciarAprendizado();
 iniciarPlanejamento();
+iniciarProducao();
 limparPassosAntigos();
 setInterval(limparPassosAntigos, 24 * 3600_000).unref();
 void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));

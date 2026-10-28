@@ -11,6 +11,7 @@ import { ChamadasIA, PainelHoje } from "./Hoje.tsx";
 import { Qualidade } from "./Qualidade.tsx";
 import { Auditoria } from "./Auditoria.tsx";
 import { PlanoProjeto } from "./PlanoProjeto.tsx";
+import { ProducaoProjeto } from "./ProducaoProjeto.tsx";
 import { BotaoEscolherPasta } from "../SeletorDePastas.tsx";
 import { Backup } from "./Configuracoes.tsx";
 import { Avatarzinho, usd } from "../comum.tsx";
@@ -174,6 +175,9 @@ function ItemProjeto({ p, ativo }: { p: Projeto; ativo: boolean }) {
         </div>
         <div className="md:col-span-2">
           <PlanoProjeto projetoId={p.id} />
+        </div>
+        <div className="md:col-span-2">
+          <ProducaoProjeto projetoId={p.id} />
         </div>
         <div className="md:col-span-2">
           <BancoDoProjeto p={p} />

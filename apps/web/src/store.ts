@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, Ata, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -101,6 +101,7 @@ interface Store {
   telegram: EstadoTelegram | null;
   /** Prévias do app por card (chegam ao vivo). */
   previas: Record<number, Previa>;
+  previasPublicadas: Record<number, PreviaPublicada>;
   /** Definições de todos os escritórios (para a página Escritórios e o editor). */
   escritorios: EscritorioDef[];
   contatosWa: Record<string, ContatoWhatsapp>;
@@ -197,6 +198,7 @@ export const useStore = create<Store>((set, get) => ({
   whatsapp: null,
   telegram: null,
   previas: {},
+  previasPublicadas: {},
   escritorios: [],
   contatosWa: {},
   mensagensWa: {},
@@ -249,6 +251,9 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "previa":
         set((s) => ({ previas: { ...s.previas, [e.previa.cardId]: e.previa } }));
+        break;
+      case "previaPublicada":
+        set((s) => ({ previasPublicadas: { ...s.previasPublicadas, [e.cardId]: e.previa } }));
         break;
       case "repasse":
         // O 3D (scene/behavior.ts) anima a entrega da tarefa entre os dois agentes.

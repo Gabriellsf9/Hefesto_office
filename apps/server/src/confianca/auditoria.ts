@@ -77,7 +77,7 @@ export function verificarAuditoria(): { ok: boolean; registros: number; quebraEm
 
 /** Rotas que mudam algo e o que registrar delas. Corpo nunca vai inteiro: só campos seguros. */
 const CAMPOS_SEGUROS = new Set(["coluna", "dono", "nivel", "prioridade", "titulo", "bloqueado", "pausado", "modoCusto", "orcamentoDiarioUsd", "maxSimultaneos", "limiteCardUsd", "limiteCodigoUsd", "ativo", "sombraPct", "localPrimeiro", "abAutomatico", "agente", "modelo", "orcamentoUsd", "autocritica", "advogado", "licoes", "atacante", "vereditoCeo", "decisao"]);
-const ROTA_SECRETA = /\/(chave|key|github|telegram|whatsapp|segredos?|provedores|oauth|conexao)/i;
+const ROTA_SECRETA = /\/(chave|key|github|telegram|whatsapp|segredos?|provedores|oauth|conexao|producao\/?$)/i;
 
 export function auditarRequisicao(metodo: string, url: string, status: number, corpo: unknown) {
   if (metodo === "GET" || metodo === "HEAD" || metodo === "OPTIONS" || status >= 400) return;

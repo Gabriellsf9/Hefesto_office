@@ -14,6 +14,7 @@ import { FichaPeca } from "../board/Marketing.tsx";
 import { arquivosCitados } from "../anexos.ts";
 import { ListaArquivos } from "../shell/Dock.tsx";
 import { Replay } from "./Replay.tsx";
+import { MetricaDoCard } from "./Metrica.tsx";
 
 // Detalhe do card (DESIGN-INTERFACE.md §6.3): gaveta larga; à esquerda o conteúdo (pendência, descrição,
 // entrega, debate), à direita as propriedades num painel compacto. Abre por cima de qualquer página.
@@ -112,6 +113,7 @@ function Corpo({ card }: { card: Card }) {
         {card.fluxo === "marketing" && <FichaPeca card={card} />}
 
         <Entregas entregas={entregas} />
+        {!card.demo && card.tipo !== "lead" && <MetricaDoCard key={`m${card.id}`} card={card} />}
 
         {origem && (
           <Bloco titulo="Bug encontrado em">
