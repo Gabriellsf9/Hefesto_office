@@ -114,6 +114,17 @@ export async function raizDoRepositorio(pasta: string): Promise<string> {
   );
 }
 
+/**
+ * A cópia do projeto que um card enxerga: a do próprio card (ou do pai), senão a cópia de referência do projeto
+ * (cards sem código), senão a pasta do projeto. Null se o card não tem projeto.
+ */
+export function raizDaCopiaDoCard(card: Card, projeto: { caminho: string } | null, projetoId: number | null): string | null {
+  const wt = worktreeDoCard(card);
+  if (wt) return wt.caminho;
+  if (projetoId !== null && existsSync(join(pastaDasCopias(projetoId), "referencia", ".git"))) return join(pastaDasCopias(projetoId), "referencia");
+  return projeto?.caminho ?? null;
+}
+
 const pastaDasCopias = (projetoId: number) => join(process.env.EMPRESA_WORKSPACE_DIR ?? join(DATA_DIR, "workspace"), String(projetoId));
 
 /**

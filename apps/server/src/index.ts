@@ -10,7 +10,7 @@ import { configurarMotor, encerrarMotor, estadoMotor, iniciarMotor, interromper,
 import { pedirParaHelena } from "./agentes/helena.ts";
 import { custoHoje } from "./custo.ts";
 import { configurarGatilho, listarGatilhos, type GatilhoId } from "./gatilhos.ts";
-import { codigoDoCard, descartar, mesclar } from "./fabrica/workspace.ts";
+import { codigoDoCard, descartar, mesclar, raizDaCopiaDoCard } from "./fabrica/workspace.ts";
 import { iniciarPrevia, lerPrevia, pararPrevia, pararTodasPrevias } from "./fabrica/previa.ts";
 import { editarPeca, iniciarLembretesDeMarketing, listarPecas, marcarPublicado } from "./marketing.ts";
 import { configurarConexao, conexaoDoProjeto, removerConexao } from "./areas/dados.ts";
@@ -24,7 +24,7 @@ import { configurarNuvem, estadoNuvem, testarNuvem } from "./fabrica/nuvem.ts";
 import { listarPessoas, removerPessoa, salvarPessoa } from "./pessoas.ts";
 import { exportarAgente, exportarEscritorio, exportarFluxo, importarPacote } from "./escritoriosPacote.ts";
 import { carregarEscritorios, excluirEscritorio, listarEscritorios, restaurarSede, salvarEscritorio } from "./escritorios.ts";
-import { escritorioDoModelo, MODELOS_FLUXO, modelosDeEscritorio } from "@empresa/org";
+import { escritorioDoModelo, MODELOS_FLUXO, modelosDeEscritorio, projetoDoCard } from "@empresa/org";
 import { configurarTelegram, desparear, enviar as enviarTelegram, esquecerTelegram, estadoTelegram, iniciarTelegram } from "./telegram.ts";
 import {
   aprovarResposta, atualizarContato, configurarWhatsapp, descartarResposta, enviarModelo, enviarTexto, esquecerWhatsapp, estadoWhatsapp,
@@ -50,7 +50,7 @@ import { configurarRitual, executarRitual, iniciarRituais, listarAtas, listarRit
 import { isDemoActive, setDemo } from "./demo.ts";
 import { ehSecao, lerLivro, marcarRevisada, salvarSecao } from "./livro.ts";
 import { estadoOnboarding, iniciarEntrevista, responder } from "./onboarding.ts";
-import { adicionarProjeto, definirAtivo, definirUrlLocal, escolherPasta, listarPastas, listarProjetos, projetoAtivo, removerProjeto } from "./projetos.ts";
+import { adicionarProjeto, definirAtivo, definirUrlLocal, escolherPasta, fichaDoProjeto, listarPastas, listarProjetos, projetoAtivo, removerProjeto } from "./projetos.ts";
 import { pastaDeMidia } from "./fabrica/capturas.ts";
 import { nomeValido, PASTA_IMAGENS, salvarImagem } from "./imagens.ts";
 import { mimeDe, nomeArquivoValido, nomeOriginal, PASTA_ARQUIVOS, salvarArquivo } from "./arquivos.ts";
@@ -65,6 +65,7 @@ import { HOST } from "./plataforma.ts";
 import { configurarProvedores, estadoProvedores, foraDoArAte, marcarNoAr } from "./provedores.ts";
 import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
 import { criarRaioX, vincularPasta } from "./projetoNovo.ts";
+import { arquivoDaCopia, lerArquivoDaCopia, pedidoLocal } from "./copiaHttp.ts";
 import { apagarConversa, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
@@ -694,6 +695,16 @@ app.put<{ Params: { id: string }; Body: { urlLocal: string | null } }>("/api/pro
 app.post<{ Body: { dados?: string } }>("/api/imagens", { bodyLimit: 8 * 1024 * 1024 }, async (req) => salvarImagem(req.body?.dados));
 app.post<{ Body: { nome?: string; dados?: string } }>("/api/arquivos", { bodyLimit: 22 * 1024 * 1024 }, async (req) => salvarArquivo(req.body?.nome, req.body?.dados));
 const baixar = (nomeArquivo: string) => `attachment; filename*=UTF-8''${encodeURIComponent(nomeArquivo)}`;
+// Cópia do projeto de um card, para o navegador dos agentes abrir protótipos e arquivos estáticos sem subir servidor.
+app.get<{ Params: { card: string; "*": string } }>("/copia/:card/*", async (req, reply) => {
+  if (!pedidoLocal(req.ip)) return reply.code(404).send();
+  const card = lerCard(idDe(req.params.card));
+  const projetoId = projetoDoCard(card);
+  const raiz = raizDaCopiaDoCard(card, fichaDoProjeto(projetoId), projetoId);
+  const arq = raiz ? await arquivoDaCopia(raiz, req.params["*"]) : null;
+  if (!arq) return reply.code(404).send("Não encontrado na cópia do projeto.");
+  return reply.header("content-type", arq.tipo).header("x-content-type-options", "nosniff").send(lerArquivoDaCopia(arq.caminho));
+});
 app.get<{ Params: { arquivo: string } }>("/api/midia/arquivos/:arquivo", async (req, reply) => {
   const { arquivo } = req.params;
   if (!nomeArquivoValido(arquivo) || !existsSync(join(PASTA_ARQUIVOS, arquivo))) throw new ErroCard("Não encontrado.", 404);
