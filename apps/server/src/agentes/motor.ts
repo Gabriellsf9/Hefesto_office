@@ -769,18 +769,25 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     // Ambiente do card: o app inteiro rodando no Docker dos agentes, com autonomia para instalar e preparar o que precisar.
     if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
-  else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Card sem código num projeto: a cópia de referência (o projeto como está hoje) para subir o app no ambiente,
   // criar dados de teste e tirar prints das telas reais. Um ambiente por projeto, compartilhado entre os cards.
   let referencia: Worktree | null = null;
   if (!wt && !wtDoPai && projeto && projetoId !== null && ambienteAtivo()) {
     try {
       referencia = await garantirCopiaDeReferencia(card, projeto.caminho, projetoId);
-      ferramentas.push(...ferramentasDeAmbiente(referencia, `ref-${projetoId}`), ...ferramentasDeEscrita(referencia), ferramentaDeCaptura(card.id, `http://${HOST_DO_AMBIENTE}`));
+      // Ler e escrever na mesma raiz (a do repositório): com a pasta vinculada para ler e a cópia para escrever, os
+      // caminhos não batiam e o agente gravava numa subpasta errada.
+      ferramentas.push(
+        ...ferramentasDeProjeto(referencia.caminho),
+        ...ferramentasDeAmbiente(referencia, `ref-${projetoId}`),
+        ...ferramentasDeEscrita(referencia, { envDeTeste: true }),
+        ferramentaDeCaptura(card.id, `http://${HOST_DO_AMBIENTE}`),
+      );
     } catch (e) {
       if (!(e instanceof ErroCard)) throw e;
     }
   }
+  if (!wt && !wtDoPai && projeto && !referencia) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
   if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
