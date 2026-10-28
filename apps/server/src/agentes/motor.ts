@@ -35,7 +35,7 @@ import {
 import { NO_MAC, podeRodarComandos } from "../plataforma.ts";
 import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
 import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
-import { comandoDeTestes, testarCard, verificarPasta } from "../fabrica/testes.ts";
+import { comandoDeTestes, testarCard, verificarCopia } from "../fabrica/testes.ts";
 import { fecharSessao } from "../fabrica/navegador.ts";
 import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
@@ -193,7 +193,7 @@ async function melhorDeN(client: Anthropic | null, card: Card, agente: Agent, wt
       });
       await commitar(v, agente.id, `${card.chave}: tentativa ${i + 1}`);
       const mudados = (await gitEm(v.caminho, "diff", "--name-only", `${base}..HEAD`).catch(() => "")).split("\n").filter(Boolean);
-      const verif = await verificarPasta(v.caminho, mudados);
+      const { r: verif } = await verificarCopia({ repo: wt.repo, caminho: v.caminho, base }, mudados);
       const stat = await gitEm(v.caminho, "diff", "--shortstat", `${base}..HEAD`).catch(() => "");
       const linhas = [...stat.matchAll(/(\d+) (insert|delet)/g)].reduce((s, m) => s + Number(m[1]), 0);
       return { i, v, entrega: entrega as { resumo: string; conteudo: string } | null, passou: !!verif?.passou, falha: verif && !verif.passou ? verif.comando : null, linhas };

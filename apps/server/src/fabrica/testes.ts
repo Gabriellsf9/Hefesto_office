@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { comentar, ErroCard, lerCard } from "../tarefas.ts";
 import { podeRodarComandos } from "../plataforma.ts";
@@ -77,7 +77,7 @@ const semFerramenta = (r: ResultadoComando) => r.codigo === 127 || (r.codigo !==
  * Roda as verificações numa pasta: instala se preciso, depois tipos → lint → testes, parando na primeira falha.
  * Num monorepo, só nos subprojetos que a mudança tocou (mudados = arquivos alterados, relativos à raiz).
  */
-export async function verificarPasta(pasta: string, mudados?: string[]): Promise<ResultadoTestes | null> {
+export async function verificarPasta(pasta: string, mudados?: string[], ignorar: Set<string> = new Set()): Promise<ResultadoTestes | null> {
   let subs = comandoDeTestes(pasta);
   if (!subs) return null;
   if (mudados && !(subs.length === 1 && subs[0]!.dir === ".")) {
@@ -90,10 +90,15 @@ export async function verificarPasta(pasta: string, mudados?: string[]): Promise
   for (const sub of subs) {
     const cwd = sub.dir === "." ? pasta : join(pasta, sub.dir);
     for (const c of [...(sub.instalar ? [sub.instalar] : []), ...sub.etapas]) {
-      const r = await rodarComando(cwd, c);
+      let r = await rodarComando(cwd, c);
       ms += r.ms;
+      // Conflito de peer dependencies no npm: faz como os CIs costumam fazer (npm ci --legacy-peer-deps).
+      if (r.codigo !== 0 && /^npm (ci|install)$/.test(c) && /ERESOLVE|Could not resolve dependency/.test(r.saida)) {
+        r = await rodarComando(cwd, `${c} --legacy-peer-deps`);
+        ms += r.ms;
+      }
       const rotulo = sub.dir === "." ? c : `${sub.dir}: ${c}`;
-      if (r.codigo === 0) continue;
+      if (r.codigo === 0 || ignorar.has(rotulo)) continue;
       if (semFerramenta(r)) {
         pulados.push(`${rotulo} (ferramenta não instalada aqui)`);
         break;
@@ -105,6 +110,20 @@ export async function verificarPasta(pasta: string, mudados?: string[]): Promise
   return { comando: feitos.join(" → ") || "(nada verificado)", passou: true, saida: "", ms, pulados };
 }
 
+/**
+ * Verifica uma cópia (a do card ou a de uma tentativa do melhor de N). Falha que já existia na versão base
+ * (o projeto já estava assim) não é culpa do card: anota como pré-existente e segue para as próximas etapas.
+ */
+export async function verificarCopia(wt: { repo: string; caminho: string; base: string }, mudados: string[]) {
+  const preExistentes = new Set<string>();
+  let r = await verificarPasta(wt.caminho, mudados);
+  for (let i = 0; r && !r.passou && i < 4 && (await falhaPreExistente(wt, r.comando)); i++) {
+    preExistentes.add(r.comando);
+    r = await verificarPasta(wt.caminho, mudados, preExistentes);
+  }
+  return { r, preExistentes };
+}
+
 /** Roda os testes do projeto na cópia isolada do card e registra o resultado no card. */
 export async function testarCard(cardId: number, autor = "devops"): Promise<ResultadoTestes> {
   if (!podeRodarComandos()) throw new ErroCard("Os testes precisam da sandbox (no Mac, ou no Docker com a sandbox ligada).");
@@ -113,9 +132,11 @@ export async function testarCard(cardId: number, autor = "devops"): Promise<Resu
   if (!wt) throw new ErroCard("Este card não tem cópia isolada do projeto.");
   // Num monorepo, verifica só os subprojetos que a branch mudou.
   const mudados = (await g(wt.caminho, "diff", "--name-only", `${wt.base}..HEAD`).catch(() => "")).split("\n").filter(Boolean);
-  const r = await verificarPasta(wt.caminho, mudados);
+  const { r, preExistentes } = await verificarCopia(wt, mudados);
   if (!r) throw new ErroCard("Não achei verificações no projeto (typecheck, lint ou test no package.json, pytest, go ou cargo), nem na raiz nem nas pastas de primeiro nível.");
-  const pulados = r.pulados?.length ? `\n\nNão deu para verificar aqui: ${r.pulados.join("; ")}.` : "";
+  const pulados =
+    (r.pulados?.length ? `\n\nNão deu para verificar aqui: ${r.pulados.join("; ")}.` : "") +
+    (preExistentes.size ? `\n\n⚠️ Já falhava antes desta mudança (problema do projeto, não deste card): ${[...preExistentes].map((c) => `\`${c}\``).join(", ")}.` : "");
   comentar(
     card.id,
     autor,
@@ -123,4 +144,27 @@ export async function testarCard(cardId: number, autor = "devops"): Promise<Resu
     `${r.passou ? "✅ Verificações passaram" : "❌ Verificação falhou"} na branch \`${wt.branch}\` (\`${r.comando}\`, ${(r.ms / 1000).toFixed(0)} s).${pulados}${r.passou ? "" : `\n\n\`\`\`\n${r.saida.slice(-3000)}\n\`\`\``}`,
   );
   return r;
+}
+
+/**
+ * A mesma etapa também falha na versão base (antes da mudança do card)? Roda numa cópia temporária da base,
+ * reaproveitando o node_modules da cópia do card (sem reinstalar), e apaga a cópia no fim.
+ */
+async function falhaPreExistente(wt: { repo: string; caminho: string; base: string }, rotulo: string): Promise<boolean> {
+  const m = /^(?:(.+?): )?(.+)$/.exec(rotulo);
+  const dir = m?.[1] ?? ".";
+  const comando = m?.[2] ?? rotulo;
+  if (/^(npm|pnpm|yarn|bun) (ci|install)/.test(comando)) return false; // instalação: não compara
+  const base = `${wt.caminho}-base`;
+  try {
+    await g(wt.repo, "worktree", "add", "--detach", base, wt.base);
+    const nm = join(wt.caminho, dir, "node_modules");
+    if (existsSync(nm)) symlinkSync(nm, join(base, dir, "node_modules"), "dir");
+    const r = await rodarComando(dir === "." ? base : join(base, dir), comando);
+    return r.codigo !== 0;
+  } catch {
+    return false;
+  } finally {
+    await g(wt.repo, "worktree", "remove", "--force", base).catch(() => {});
+  }
 }

@@ -207,7 +207,10 @@ export async function migrarCopiasParaWorkspace(): Promise<number> {
       await g(wt.repo, "worktree", "repair", novo);
       await git("rm", ["-rf", wt.caminho]);
       await g(wt.repo, "worktree", "prune").catch(() => {});
+      // A cópia mantém o grupo antigo: passa para o grupo dos agentes (trabalho), com escrita e setgid nas pastas.
+      await git("chgrp", ["-R", "trabalho", novo]).catch(() => {});
       await git("chmod", ["-R", "g+rwX", novo]);
+      await git("find", [novo, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"]).catch(() => {});
       db.prepare("UPDATE worktrees SET caminho = ? WHERE card_id = ?").run(novo, wt.cardId);
       movidas++;
     } catch (e) {
