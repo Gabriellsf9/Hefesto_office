@@ -4,6 +4,7 @@ import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
 import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, precoDe, provedorDe } from "../provedores.ts";
+import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
 import { ErroInterrompido, ErroLimiteCard, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente } from "./loop.ts";
 
 // O laço do agente para modelos fora do Claude: Ollama (API nativa, para controlar o
@@ -283,6 +284,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   let custoUsd = 0;
   let lembretes = 0;
   let ultimoTexto = "";
+  const replay = novaExecucao(o.cardId, o.agenteId, o.modelo);
   const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
 
   for (let rodada = 0; rodada < (o.maxRodadas ?? 16); rodada++) {
@@ -305,6 +307,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
 
     // Modelos com raciocínio às vezes deixam o pensamento no texto; não vai para o CEO.
     const texto = r.texto.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+    if (texto) registrarPasso(replay, { rodada, tipo: "texto", saida: texto });
     ultimoTexto = texto || ultimoTexto;
     msgs.push({ role: "assistant", content: r.texto, ...(r.chamadas.length ? { tool_calls: r.chamadas } : {}) });
 
@@ -323,9 +326,11 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     const imagens: Parte[] = [];
     for (const c of r.chamadas) {
       const entrada = argumentos(c.function.arguments);
+      const t1 = Date.now();
       const res = entrada
         ? await executarFerramenta(porNome, c.function.name, entrada)
         : { texto: `Os argumentos de ${c.function.name} não são um JSON válido. Chame de novo com um objeto JSON.`, erro: true };
+      registrarPasso(replay, { rodada, tipo: "ferramenta", nome: c.function.name, entrada: entrada ?? c.function.arguments, saida: res.texto, erro: res.erro, ms: Date.now() - t1 });
       if (res.fim && !res.erro) fim = true;
       msgs.push({ role: "tool", tool_call_id: c.id, name: c.function.name, content: res.erro ? `ERRO: ${res.texto}` : res.texto });
       // Resultado de ferramenta só aceita texto: a imagem (print do navegador) vai numa mensagem logo depois.

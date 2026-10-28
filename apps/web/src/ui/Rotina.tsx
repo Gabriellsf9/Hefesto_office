@@ -384,7 +384,7 @@ function Gatilhos() {
   );
 }
 
-/** Liga e desliga a autocrítica, o advogado do diabo e as lições aprendidas (cada um custa chamadas extras). */
+/** Liga e desliga a autocrítica, o advogado do diabo, as lições aprendidas e o atacante (cada um custa chamadas extras). */
 function OlharCritico() {
   const critica = useStore((s) => s.critica);
   const { erro, acao } = useAcao();
@@ -392,11 +392,12 @@ function OlharCritico() {
     { id: "autocritica", nome: "Autocrítica", descricao: "Antes de entregar, o autor confere a própria entrega contra o checklist e corrige." },
     { id: "advogado", nome: "Advogado do diabo", descricao: "Em entregas importantes (N2/N3, épicos, P0), um sênior de outra área questiona as premissas antes do validador." },
     { id: "licoes", nome: "Lições aprendidas", descricao: "Card concluído depois de devoluções ou dos seus comentários vira uma lição para você aprovar." },
+    { id: "atacante", nome: "Atacante (red team)", descricao: "Em código importante ou que mexe em login, permissões, SQL ou uploads, a segurança tenta explorar o diff antes da revisão." },
   ];
   return (
     <div className="rounded-xl bg-sunken p-3">
       <div className="mb-2 text-legenda font-bold uppercase tracking-wide text-fg-3">Olhar crítico</div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {opcoes.map((o) => (
           <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded-lg bg-surface p-2.5 text-pequeno ring-1 ring-line">
             <input

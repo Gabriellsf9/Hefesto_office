@@ -475,6 +475,8 @@ export interface ConfigCritica {
   advogado: boolean;
   /** Ao concluir um card com devoluções ou comentários do CEO, propor a lição aprendida. */
   licoes: boolean;
+  /** Um agente de segurança tenta atacar o código do card (red team) antes da revisão. */
+  atacante: boolean;
 }
 
 /* ---------- Prospecção de clientes (Fase 3, PLANO.md seção 4.5) ---------- */

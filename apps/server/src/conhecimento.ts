@@ -112,11 +112,11 @@ export function conhecimentoDaSala(sala: RoomId): string {
 
 export function configCritica(): ConfigCritica {
   const ligado = (k: string) => (getSetting(`critica_${k}`) ?? "1") === "1";
-  return { autocritica: ligado("autocritica"), advogado: ligado("advogado"), licoes: ligado("licoes") };
+  return { autocritica: ligado("autocritica"), advogado: ligado("advogado"), licoes: ligado("licoes"), atacante: ligado("atacante") };
 }
 
 export function configurarCritica(c: Partial<ConfigCritica>): ConfigCritica {
-  for (const k of ["autocritica", "advogado", "licoes"] as const) {
+  for (const k of ["autocritica", "advogado", "licoes", "atacante"] as const) {
     if (typeof c[k] === "boolean") setSetting(`critica_${k}`, c[k] ? "1" : "0");
   }
   const config = configCritica();

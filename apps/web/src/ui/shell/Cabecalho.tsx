@@ -28,7 +28,7 @@ const NOMES_SUB: Record<string, string> = {
   livro: "Livro da Empresa", conhecimento: "Conhecimento", metas: "Metas", indicadores: "Indicadores", rituais: "Rituais e atas", atas: "Rituais e atas", conquistas: "Conquistas",
   whatsapp: "WhatsApp", leads: "Leads", atendimentos: "Atendimentos", "nao-contatar": "Não contatar",
   agentes: "Agentes", "ao-vivo": "Ao vivo",
-  hoje: "Hoje", chamadas: "Chamadas de IA", qualidade: "Qualidade", projetos: "Projetos", monitoramento: "Monitoramento", financas: "Finanças", backup: "Backup",
+  hoje: "Hoje", chamadas: "Chamadas de IA", qualidade: "Qualidade", auditoria: "Auditoria", projetos: "Projetos", monitoramento: "Monitoramento", financas: "Finanças", backup: "Backup",
   geral: "Geral", voz: "Voz e sons", escritorio: "Escritório", permissoes: "Permissões dos agentes", conectores: "Conectores", sobre: "Sobre",
 };
 

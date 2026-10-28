@@ -13,6 +13,7 @@ import { SecaoCodigo } from "../board/Codigo.tsx";
 import { FichaPeca } from "../board/Marketing.tsx";
 import { arquivosCitados } from "../anexos.ts";
 import { ListaArquivos } from "../shell/Dock.tsx";
+import { Replay } from "./Replay.tsx";
 
 // Detalhe do card (DESIGN-INTERFACE.md §6.3): gaveta larga; à esquerda o conteúdo (pendência, descrição,
 // entrega, debate), à direita as propriedades num painel compacto. Abre por cima de qualquer página.
@@ -125,6 +126,7 @@ function Corpo({ card }: { card: Card }) {
         )}
 
         <Atividade card={card} comentarios={comentarios} />
+        <Replay key={card.id} card={card} />
       </div>
 
       <aside className="shrink-0 border-t border-line bg-surface-2 px-5 py-5 lg:w-[300px] lg:border-l lg:border-t-0">

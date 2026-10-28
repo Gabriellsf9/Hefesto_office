@@ -7,6 +7,7 @@ import { buscarNoCodigo, ErroArquivo, lerArquivo, listarArquivos, mapaDoCodigo }
 import { blocosDeImagem } from "../imagens.ts";
 import { registrarChamada } from "../chamadas.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
+import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
 
 // Laço de um agente: chama a API, executa as ferramentas pedidas e repete até o
 // agente chamar uma ferramenta final (entregar, aprovar, devolver…) ou parar.
@@ -180,6 +181,8 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
   let tentativasJson = 0;
   let ultimoTexto = "";
   const fallback = o.fallback ?? !/haiku/i.test(o.modelo);
+  // Replay: cada passo do trabalho num card fica guardado (texto e ferramentas).
+  const replay = novaExecucao(o.cardId, o.agenteId, o.modelo);
   const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
 
   for (let rodada = 0; rodada < (o.maxRodadas ?? 16); rodada++) {
@@ -257,7 +260,9 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     if (msg.stop_reason === "refusal") throw new Error("O modelo recusou esta tarefa (filtro de segurança).");
     if (msg.stop_reason === "max_tokens" && usos.length) throw new Error("A resposta ficou longa demais e foi cortada.");
 
-    ultimoTexto = msg.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("") || ultimoTexto;
+    const textoRodada = msg.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+    if (textoRodada.trim()) registrarPasso(replay, { rodada, tipo: "texto", saida: textoRodada });
+    ultimoTexto = textoRodada || ultimoTexto;
     mensagens.push({ role: "assistant", content: msg.content as Anthropic.Beta.BetaContentBlockParam[] });
 
     if (msg.stop_reason === "pause_turn") continue;
@@ -277,7 +282,9 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     const resultados: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     let fim = false;
     for (const u of usos) {
+      const t1 = Date.now();
       const r = await executarFerramenta(porNome, u.name, (u.input ?? {}) as Record<string, unknown>);
+      registrarPasso(replay, { rodada, tipo: "ferramenta", nome: u.name, entrada: u.input ?? {}, saida: r.texto, erro: r.erro, ms: Date.now() - t1 });
       if (r.fim && !r.erro) fim = true;
       const conteudo: Anthropic.Beta.BetaToolResultBlockParam["content"] = r.imagem
         ? [{ type: "text", text: r.texto }, { type: "image", source: { type: "base64", media_type: r.imagem.media, data: r.imagem.base64 } }]

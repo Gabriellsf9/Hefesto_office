@@ -68,6 +68,8 @@ import { testarCard } from "./fabrica/testes.ts";
 import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
 import { listarEvals, rodarEvals, tarefasDeEval } from "./evals.ts";
 import { testarModelo } from "./agentes/compat.ts";
+import { auditarRequisicao, listarAuditoria, verificarAuditoria } from "./confianca/auditoria.ts";
+import { execucoesDoCard, limparPassosAntigos } from "./confianca/execucoes.ts";
 import { aplicarSugestao, configurarAprendizado, definirABAutomatico, encerrarAB, estadoAprendizado, iniciarAB, iniciarAprendizado, proporCandidata } from "./aprendizado.ts";
 
 const PORT = Number(process.env.API_PORT ?? 4317);
@@ -92,6 +94,10 @@ app.addHook("onRequest", async (req, reply) => {
   const site = req.headers["sec-fetch-site"];
   const navegacao = req.method === "GET" && req.headers["sec-fetch-mode"] === "navigate";
   if (site === "cross-site" && !navegacao) return reply.code(403).send({ erro: "Pedido entre sites bloqueado." });
+});
+// Auditoria: toda ação que muda algo pela API entra na corrente de hashes (sem segredos).
+app.addHook("onResponse", async (req, reply) => {
+  if (req.url.startsWith("/api/")) auditarRequisicao(req.method, req.url, reply.statusCode, req.body);
 });
 await app.register(websocket);
 
@@ -196,6 +202,14 @@ app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => confi
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
 app.post("/api/evals", async () => rodarEvals());
+
+/* ---------- Confiança: replay das execuções e auditoria ---------- */
+
+app.get<{ Params: { id: string } }>("/api/cards/:id/execucoes", async (req) => execucoesDoCard(idDe(req.params.id)));
+app.get<{ Querystring: { limite?: string; ator?: string; antesDe?: string } }>("/api/auditoria", async (req) => ({
+  registros: listarAuditoria({ limite: Number(req.query.limite) || 100, ator: req.query.ator || undefined, antesDe: Number(req.query.antesDe) || undefined }),
+  verificacao: verificarAuditoria(),
+}));
 
 /* ---------- Aprendizado: A/B de instruções, escada de modelos e testes sombra ---------- */
 
@@ -655,6 +669,8 @@ await app.listen({ host: HOST, port: PORT });
 iniciarMotor();
 iniciarRelatorioDiario();
 iniciarAprendizado();
+limparPassosAntigos();
+setInterval(limparPassosAntigos, 24 * 3600_000).unref();
 void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));
 // Limpeza de cópias isoladas abandonadas (cards apagados ou perdidos), uma vez por hora; a branch fica.
 setInterval(() => void limparCopiasAntigas().catch((e) => console.error("Limpeza de cópias:", e)), 3600_000);

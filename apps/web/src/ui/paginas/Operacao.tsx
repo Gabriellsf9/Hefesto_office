@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, Database, DatabaseBackup, FolderGit2, Globe, LineChart, Plus, ScanSearch, Wallet, X, Sun, Cpu, FileText, FlaskConical } from "lucide-react";
+import { Activity, CheckCircle2, ShieldCheck, Database, DatabaseBackup, FolderGit2, Globe, LineChart, Plus, ScanSearch, Wallet, X, Sun, Cpu, FileText, FlaskConical } from "lucide-react";
 import type { Card, Projeto } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -9,17 +9,18 @@ import { Abas, Botao, BotaoIcone, CabecalhoPagina, Campo, Etiqueta, EstadoVazio,
 import { CalculadoraSimples, Monitoramento } from "../Operacao.tsx";
 import { ChamadasIA, PainelHoje } from "./Hoje.tsx";
 import { Qualidade } from "./Qualidade.tsx";
+import { Auditoria } from "./Auditoria.tsx";
 import { BotaoEscolherPasta } from "../SeletorDePastas.tsx";
 import { Backup } from "./Configuracoes.tsx";
 import { Avatarzinho, usd } from "../comum.tsx";
 
 // Operação (DESIGN-INTERFACE.md §6.7): projetos e banco, monitoramento, finanças e backup.
 
-type Sub = "hoje" | "projetos" | "chamadas" | "qualidade" | "monitoramento" | "financas" | "backup";
+type Sub = "hoje" | "projetos" | "chamadas" | "qualidade" | "auditoria" | "monitoramento" | "financas" | "backup";
 
 export default function PaginaOperacao() {
   const rota = useNav((s) => s.rota);
-  const sub = (["hoje", "projetos", "chamadas", "qualidade", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
+  const sub = (["hoje", "projetos", "chamadas", "qualidade", "auditoria", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
   const monitores = useStore((s) => s.monitores);
   const fora = monitores.filter((m) => m.status === "fora").length;
   return (
@@ -37,6 +38,7 @@ export default function PaginaOperacao() {
               { id: "projetos", rotulo: "Projetos", icone: FolderGit2 },
               { id: "chamadas", rotulo: "Chamadas de IA", icone: Cpu },
               { id: "qualidade", rotulo: "Qualidade", icone: FlaskConical },
+              { id: "auditoria", rotulo: "Auditoria", icone: ShieldCheck },
               { id: "monitoramento", rotulo: "Monitoramento", icone: Activity, contador: fora, alerta: true },
               { id: "financas", rotulo: "Finanças", icone: Wallet },
               { id: "backup", rotulo: "Backup", icone: DatabaseBackup },
@@ -48,6 +50,7 @@ export default function PaginaOperacao() {
       {sub === "projetos" && <Projetos />}
       {sub === "chamadas" && <ChamadasIA />}
       {sub === "qualidade" && <Qualidade />}
+      {sub === "auditoria" && <Auditoria />}
       {sub === "monitoramento" && <div className="rounded-panel bg-surface p-5 shadow-1"><Monitoramento /></div>}
       {sub === "financas" && <Financas />}
       {sub === "backup" && <Backup />}

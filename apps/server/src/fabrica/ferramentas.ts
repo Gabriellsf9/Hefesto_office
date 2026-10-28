@@ -4,6 +4,7 @@ import { ehSegredo } from "../agentes/arquivos.ts";
 import { ErroEntrada, ferramenta, texto, type Ferramenta } from "../agentes/loop.ts";
 import { ErroComando, rodarComando } from "./comandos.ts";
 import { codigoDoCard, type Worktree } from "./workspace.ts";
+import { auditar } from "../confianca/auditoria.ts";
 import { lerCard } from "../tarefas.ts";
 
 // Ferramentas de escrita e de comandos dentro da cópia isolada (Fase 4).
@@ -97,7 +98,9 @@ export function ferramentaDeComando(wt: Worktree): Ferramenta {
     ["comando"],
     async (e) => {
       try {
-        const r = await rodarComando(wt.caminho, texto(e, "comando", 500));
+        const cmd = texto(e, "comando", 500);
+        const r = await rodarComando(wt.caminho, cmd);
+        auditar("agente", "rodou comando", wt.branch, `${cmd} → saída ${r.codigo ?? "interrompido"}${r.rede ? " (com rede)" : ""}`);
         return { texto: `código de saída: ${r.codigo ?? "interrompido"} · ${(r.ms / 1000).toFixed(1)} s${r.rede ? " · com rede (instalação)" : ""}\n${r.saida || "(sem saída)"}` };
       } catch (err) {
         if (err instanceof ErroComando) throw new ErroEntrada(err.message);

@@ -38,6 +38,9 @@ import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
 import { comandoDeTestes, testarCard, verificarCopia } from "../fabrica/testes.ts";
 import { fecharSessao } from "../fabrica/navegador.ts";
 import { modeloEscalonado, modeloMaisBarato, registrarResultadoAB, registrarSombra, sombraPct } from "../aprendizado.ts";
+import { arquivosDoDiff, relatorioVarredura, varrerSegredos, verificarLicencas } from "../confianca/varredura.ts";
+import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confianca/atacante.ts";
+import { auditar } from "../confianca/auditoria.ts";
 import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
 // Motor de agentes (Fase 2c). A cada poucos segundos olha a board e põe agentes
@@ -718,23 +721,24 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
       comentar(card.id, agente.id, "comentario", `Não consegui rodar a verificação: ${e instanceof Error ? e.message : String(e)}`);
       return null;
     });
-    if (v && !v.passou) {
-      const recentes = listarComentarios(card.id).reverse();
-      let seguidas = 0;
-      for (const c of recentes) {
-        if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || c.autor === "voce") break;
-        if (c.texto.startsWith("❌ Verificação falhou")) seguidas++;
-      }
-      if (seguidas >= 3) {
-        editarCard(card.id, { bloqueado: true });
-        comentar(card.id, agente.id, "comentario", "❓ Pergunta para o CEO: a verificação falhou 3 vezes seguidas e não consegui resolver sozinho (saídas acima). Como prefere seguir?");
-        postChat(agente.id, `Travei no ${card.chave}: a verificação falhou 3 vezes seguidas. Pode dar uma olhada?`);
-        return;
-      }
-      comentar(card.id, agente.id, "comentario", "Volto a corrigir antes da revisão: a verificação falhou (saída acima).");
-      return;
+    if (v && !v.passou) return voltarParaCorrigir(card, agente);
+  }
+  // Varredura do diff (segredos barram; licença copyleft vira aviso) e o atacante (red team) antes da revisão.
+  if (wt) {
+    const diff = await gitEm(wt.caminho, "diff", `${wt.base}..HEAD`).catch(() => "");
+    const segredos = varrerSegredos(diff);
+    const licencas = verificarLicencas([wt.caminho, wt.repo], diff);
+    if (segredos.length || licencas.length) {
+      comentar(card.id, agente.id, "comentario", `${segredos.length ? "❌ Verificação falhou (segredo)\n\n" : ""}${relatorioVarredura(segredos, licencas)}`);
+      auditar("hefesto", "varredura do diff", card.chave, `${segredos.length} segredo(s), ${licencas.length} licença(s) a conferir`);
+    }
+    if (segredos.length) return voltarParaCorrigir(card, agente);
+    const atacante = escolherAtacante(card);
+    if (configCritica().atacante && atacante && precisaDeAtaque(card, arquivosDoDiff(diff)) && !jaAtacado(card)) {
+      if (await atacar(client, card, atacante, diff, wt.caminho, sinal)) return voltarParaCorrigir(card, agente);
     }
   }
+  auditar(agente.id, "entregou", card.chave, ultimaEntrega(card.id)?.resumo ?? null);
   postFeed(card.sala, agente.id, `${agente.nome} entregou o ${card.chave}`);
   if (card.validador) {
     // Código do Squad 1: vai para a etapa de validação atual (review, performance, segurança ou QA).
@@ -756,6 +760,22 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   } else {
     finalizar(card, agente.id);
   }
+}
+
+/** A verificação (testes, segredo ou ataque) falhou: o autor corrige. Três falhas seguidas: para e pede ajuda ao CEO. */
+function voltarParaCorrigir(card: Card, agente: Agent) {
+  let seguidas = 0;
+  for (const c of listarComentarios(card.id).reverse()) {
+    if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || c.autor === "voce") break;
+    if (c.texto.startsWith("❌ Verificação falhou")) seguidas++;
+  }
+  if (seguidas >= 3) {
+    editarCard(card.id, { bloqueado: true });
+    comentar(card.id, agente.id, "comentario", "❓ Pergunta para o CEO: a verificação falhou 3 vezes seguidas e não consegui resolver sozinho (saídas acima). Como prefere seguir?");
+    postChat(agente.id, `Travei no ${card.chave}: a verificação falhou 3 vezes seguidas. Pode dar uma olhada?`);
+    return;
+  }
+  comentar(card.id, agente.id, "comentario", "Volto a corrigir antes da revisão: a verificação falhou (saída acima).");
 }
 
 /** Ferramentas reais das demais áreas (Fase 6), conforme quem é o agente e o card. */
@@ -961,6 +981,7 @@ ${c.patch.slice(0, 20_000)}
   if (sinal.aborted) throw new ErroInterrompido(String(sinal.reason));
   const d = decisao as { tipo: "aprovar" | "devolver"; texto: string } | null;
   if (!d) throw new Error("O validador terminou sem aprovar nem devolver.");
+  auditar(validador.id, d.tipo === "aprovar" ? "aprovou" : "devolveu", card.chave, d.texto.slice(0, 500));
 
   if (d.tipo === "devolver") {
     const devolvido = registrarDevolucao(card.id, validador.id, d.texto, colunaDeTrabalho(card.fluxo, card.sala));

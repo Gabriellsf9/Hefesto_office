@@ -177,7 +177,7 @@ export const useStore = create<Store>((set, get) => ({
   metas: [],
   rituais: [],
   conhecimento: [],
-  critica: { autocritica: true, advogado: true, licoes: true },
+  critica: { autocritica: true, advogado: true, licoes: true, atacante: true },
   leads: {},
   pecas: {},
   monitores: [],
