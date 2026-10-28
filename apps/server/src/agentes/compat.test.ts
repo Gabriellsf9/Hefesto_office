@@ -245,3 +245,33 @@ test("resultado de ferramenta maior que o contexto local (ex.: mapa do projeto i
     setSetting("provedores", "{}");
   }
 });
+
+test("modelo local que para sem ferramenta, volta a trabalhar e para de novo não perde a vez (lembretes contam só as paradas seguidas)", async () => {
+  let n = 0;
+  // texto solto, ferramenta, texto solto, ferramenta, texto solto, entregar
+  const roteiro = ["texto", "ler", "texto", "ler", "texto", "entregar"];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    req.resume();
+    req.on("end", () => {
+      const passo = roteiro[Math.min(n++, roteiro.length - 1)]!;
+      const msg = passo === "texto" ? { content: "Agora vou procurar os handlers." } : { content: "", tool_calls: [{ function: { name: passo, arguments: passo === "ler" ? {} : { conteudo: "ok" } } }] };
+      res.end(`${JSON.stringify({ message: msg })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.",
+      ferramentas: [
+        ferramenta("ler", "Lê.", {}, [], () => ({ texto: "conteúdo" })),
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true, "entregou depois de três paradas soltas");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});

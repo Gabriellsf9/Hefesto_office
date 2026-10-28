@@ -441,6 +441,9 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
       salvarRodada();
       continue;
     }
+    // Lembretes contam só as paradas seguidas: o modelo local às vezes "narra" um passo e depois volta a trabalhar,
+    // e duas paradas soltas em 20 passos encerravam a vez dele sem entrega.
+    lembretes = 0;
 
     let fim = false;
     const imagens: Parte[] = [];
