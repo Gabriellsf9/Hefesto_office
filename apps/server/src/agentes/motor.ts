@@ -6,7 +6,7 @@ import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude, custoHoje, limitePorCard, modoCusto, orcamentoDiario, limitePorCardDeCodigo } from "../custo.ts";
 import { foraDoArAte, marcarForaDoAr, modeloDisponivel, modeloDoAgente, provedorDe, provedorForaDoAr } from "../provedores.ts";
-import { ErroProvedor } from "./compat.ts";
+import { ErroNaoCabe, ErroProvedor } from "./compat.ts";
 import { db, getSetting, setSetting } from "../db.ts";
 import { fichaDoProjeto } from "../projetos.ts";
 import { configCritica, criarConhecimento, extrairLicao } from "../conhecimento.ts";
@@ -532,9 +532,16 @@ const passageiro = (err: unknown) =>
 export const semCreditoNaAnthropic = (err: unknown) =>
   err instanceof Anthropic.APIError && (err.status === 400 || err.status === 402) && /credit balance is too low|billing/i.test(err.message);
 const ESPERA_SEM_CREDITO_MS = 30 * 60_000;
+const ESPERA_NAO_CABE_MS = 5 * 60_000;
 
 function tratarFalha(card: Card, agenteId: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
+  // O trabalho do card não cabe em nenhum modelo no ar: só ele espera um pouco; os outros cards seguem.
+  if (err instanceof ErroNaoCabe) {
+    repassadosEm.set(card.id, Date.now() + ESPERA_NAO_CABE_MS);
+    postFeed(card.sala, agenteId, `${card.chave} espera um modelo com espaço: ${msg.slice(0, 160)}`);
+    return;
+  }
   // Sem crédito não é falha do card: o Claude sai do ar (os agentes seguem no Gemini ou no modelo local) e o CEO é avisado.
   if (semCreditoNaAnthropic(err)) {
     const avisar = !provedorForaDoAr("claude");

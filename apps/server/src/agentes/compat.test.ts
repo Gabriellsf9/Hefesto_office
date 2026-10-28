@@ -102,7 +102,7 @@ test("chamadas a modelos fora do Claude entram no rastreamento (Operação → C
 
 test("não cabe no local e o Claude está fora do ar: espera (passageiro), sem chamar o Claude em loop", async () => {
   const { marcarForaDoAr } = await import("../provedores.ts");
-  const { ErroProvedor } = await import("./compat.ts");
+  const { ErroNaoCabe } = await import("./compat.ts");
   saveApiKey("sk-ant-teste-falsa");
   marcarForaDoAr("claude", Date.now() + 60_000);
   const original = globalThis.fetch;
@@ -122,7 +122,7 @@ test("não cabe no local e o Claude está fora do ar: espera (passageiro), sem c
       ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
       lembrete: "Chame entregar.",
     }).catch((e: unknown) => e);
-    assert.ok(erro instanceof ErroProvedor && erro.passageiro, "erro passageiro: o card espera");
+    assert.ok(erro instanceof ErroNaoCabe, "só este card espera (não derruba o provedor local)");
     assert.ok(!chamados.some((u) => u.includes("anthropic")), "não bate no Claude fora do ar");
   } finally {
     globalThis.fetch = original;

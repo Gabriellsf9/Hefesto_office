@@ -14,6 +14,9 @@ import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcament
 // tamanho do contexto) e OpenAI e Gemini (API de chat no formato da OpenAI). Mesmas
 // regras do laço do Claude: ferramentas, ferramenta final, lembretes, orçamento e limite por card.
 
+/** O trabalho deste card não cabe em nenhum modelo no ar agora: só ele espera (não é o provedor que caiu). */
+export class ErroNaoCabe extends Error {}
+
 /** Erro de um provedor fora do Claude. `passageiro`: vale esperar e tentar de novo (limite, sobrecarga, Ollama fechado). */
 export class ErroProvedor extends Error {
   constructor(
@@ -323,7 +326,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
         return rodarAgente({ ...o, modelo: claude });
       }
       // Nem o local comporta nem o Claude está no ar: espera (o motor tenta de novo depois), sem bater no Claude em loop.
-      throw new ErroProvedor(`O trabalho não cabe no modelo local (~${Math.round(tokensDe(msgs))} tokens) e o Claude está fora do ar: espero um dos dois.`, 503, true);
+      throw new ErroNaoCabe(`O trabalho não cabe no modelo local (~${Math.round(tokensDe(msgs))} tokens) e o Claude está fora do ar: espero um dos dois.`);
     }
     const onTexto = (t: string) => o.onTexto?.(t);
     const t0 = Date.now();
