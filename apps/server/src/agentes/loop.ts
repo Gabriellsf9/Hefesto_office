@@ -187,6 +187,20 @@ export async function executarFerramenta(porNome: Map<string, Ferramenta>, nome:
   }
 }
 
+/**
+ * Conversa salva numa pausa logo depois de um pause_turn guarda a chamada de uma ferramenta do servidor (código,
+ * busca na web) sem o resultado, que ainda não tinha vindo; a API recusa a retomada (400). Tira essas chamadas
+ * pendentes (e a mensagem, se ficar vazia): o agente as refaz.
+ */
+export function semFerramentaDoServidorPendente(msgs: Anthropic.Beta.BetaMessageParam[]): Anthropic.Beta.BetaMessageParam[] {
+  return msgs.flatMap((m): Anthropic.Beta.BetaMessageParam[] => {
+    if (m.role !== "assistant" || typeof m.content === "string") return [m];
+    const comResultado = new Set(m.content.flatMap((b) => ("tool_use_id" in b && typeof b.tool_use_id === "string" ? [b.tool_use_id] : [])));
+    const content = m.content.filter((b) => b.type !== "server_tool_use" || comResultado.has(b.id));
+    return content.length ? [{ ...m, content }] : [];
+  });
+}
+
 export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
   // Modelo de outro provedor (Ollama, OpenAI, Gemini): mesmo laço, outro formato de API.
   if (provedorDe(o.modelo).provedor !== "claude") return rodarAgenteCompat(o);
@@ -195,7 +209,7 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
   const anexos: Anthropic.Beta.BetaContentBlockParam[] = [...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])];
   // Retomando de uma pausa por gasto: a mesma conversa (com as leituras e o raciocínio de antes) e um aviso para seguir.
   const mensagens: Anthropic.Beta.BetaMessageParam[] = o.retomar?.length
-    ? [...o.retomar, { role: "user", content: "Você foi pausado (limite de gasto, orçamento do dia ou reinício do sistema) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
+    ? [...semFerramentaDoServidorPendente(o.retomar), { role: "user", content: "Você foi pausado (limite de gasto, orçamento do dia ou reinício do sistema) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
     : [{ role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem }];
   const porNome = new Map(o.ferramentas.flatMap((f) => ("name" in f.def && f.executar ? [[f.def.name, f] as const] : [])));
   let custoUsd = 0;
