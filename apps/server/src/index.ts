@@ -86,7 +86,9 @@ carregarEscritorios();
 
 // Escuta só em localhost: a chave e os agentes nunca ficam expostos na rede (no Docker, 0.0.0.0 dentro
 // do contêiner, publicado só em 127.0.0.1 do Mac; o filtro de Host e Origin abaixo vale nos dois casos).
-const app = Fastify({ logger: { level: "warn" } });
+// Os plugins têm 2 minutos para subir (o padrão é 10 s): com a memória em swap, o @fastify/static passava disso
+// e o contêiner reiniciava na primeira tentativa.
+const app = Fastify({ logger: { level: "warn" }, pluginTimeout: 120_000 });
 
 // Só o próprio Mac fala com a API (achado do QA em 27/10/2026): sem isso, qualquer site aberto no navegador
 // poderia mandar pedidos para 127.0.0.1 (CSRF), apontar um domínio para o Mac (DNS rebinding) ou abrir o
