@@ -119,6 +119,8 @@ function limparEsquema(v: unknown): unknown {
  * (dividir_em_partes) ou espera a nuvem.
  */
 const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768];
+/** Máximo de tokens que o modelo local escreve numa resposta (cabe nos 25% do contexto deixados para a saída). */
+const SAIDA_MAX_LOCAL = 6144;
 /** Acima disso (escrita a ~6 tok/s ou menos), o modelo local trabalha sem o modo de raciocínio. */
 const CONTEXTO_COM_RACIOCINIO = 32_768;
 
@@ -347,7 +349,8 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
           messages: mensagens,
           stream: true,
           keep_alive: "15m",
-          options: { num_ctx: contexto },
+          // Teto de escrita por resposta (~5 min a 21 tok/s): sem ele, uma resposta desembestada ocupava o modelo 18 minutos.
+          options: { num_ctx: contexto, num_predict: SAIDA_MAX_LOCAL },
           // Raciocínio deixa o modelo local mais certeiro, mas bem mais lento: só fora das conversas rápidas e só no
           // contexto curto. Com contexto grande o modelo escreve a ~5 tok/s, e ele chegou a "pensar" 7 mil tokens
           // (25 minutos) antes de agir.
@@ -551,7 +554,18 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
       somarCusto(o.cardId, usd);
       conferirOrcamentoDoProjeto(o.cardId);
     }
-    if (r.cortada && r.chamadas.length) throw new Error("A resposta ficou longa demais e foi cortada.");
+    // Passou do tamanho máximo de resposta: nada dela é executado (chamada pela metade) e o agente refaz em pedaços.
+    // Antes virava erro e, na segunda vez, card bloqueado; no card 11 foram 18 minutos escrevendo um arquivo inteiro.
+    if (r.cortada) {
+      registrarPasso(replay, { rodada, tipo: "texto", saida: `(Resposta cortada no tamanho máximo, ~${r.saida} tokens: peço para refazer em pedaços.)` });
+      msgs.push({ role: "assistant", content: `${r.texto.slice(0, 1500)}\n[…resposta cortada no tamanho máximo]` });
+      msgs.push({
+        role: "user",
+        content: "Sua última resposta passou do tamanho máximo e foi cortada: nada dela foi executado. Faça em pedaços menores: para um arquivo grande, crie com o começo (escrever_arquivo) e complete com editar_arquivo em trechos; não repita o arquivo inteiro no texto.",
+      });
+      salvarRodada();
+      continue;
+    }
 
     // Modelos com raciocínio às vezes deixam o pensamento no texto; não vai para o CEO.
     const texto = r.texto.replace(/<think>[\s\S]*?<\/think>/g, "").trim();

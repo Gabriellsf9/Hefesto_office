@@ -367,3 +367,39 @@ test("falha de provedor leva o provedor que falhou (o motor não pode marcar a r
     globalThis.fetch = original;
   }
 });
+
+test("resposta cortada no tamanho máximo não vira erro: nada é executado e o agente refaz em pedaços", async () => {
+  const recebidos: { messages: { role: string; content: string }[]; options: { num_predict?: number } }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      const primeira = recebidos.length === 1;
+      const msg = primeira
+        ? { content: "", tool_calls: [{ function: { name: "escrever", arguments: { conteudo: "metade do arq" } } }] }
+        : { content: "", tool_calls: [{ function: { name: "entregar", arguments: { conteudo: "ok" } } }] };
+      res.end(`${JSON.stringify({ message: msg })}\n${JSON.stringify({ done: true, done_reason: primeira ? "length" : "stop", prompt_eval_count: 100, eval_count: 6144 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  let escritas = 0;
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-frontend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.",
+      ferramentas: [
+        ferramenta("escrever", "Escreve.", { conteudo: { type: "string" } }, ["conteudo"], () => ((escritas++), { texto: "ok" })),
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true);
+    assert.equal(escritas, 0, "a chamada cortada não foi executada");
+    assert.match(recebidos[1]!.messages.at(-1)!.content, /pedaços menores/);
+    assert.equal(recebidos[0]!.options.num_predict, 6144, "teto de escrita por resposta");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
