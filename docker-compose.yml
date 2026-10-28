@@ -43,10 +43,21 @@ services:
       HEFESTO_OLLAMA_URL: ${HEFESTO_OLLAMA_URL:-http://host.docker.internal:11434}
       # Docker só dos agentes (ambiente de cada card: banco, backend, frontend), separado do Docker da máquina.
       HEFESTO_DOCKER_AGENTES: tcp://docker-agentes:2375
+      # Busca na web para os modelos fora do Claude (Gemini, local).
+      HEFESTO_BUSCA_URL: http://busca:8080
     depends_on:
       - docker-agentes
+      - busca
     # O Chromium precisa de memória compartilhada maior que o padrão.
     shm_size: 1gb
+
+  # Busca na web dos agentes fora do Claude (SearXNG): sem porta publicada, só a rede interna a vê.
+  busca:
+    image: searxng/searxng:2026.10.13-22c64b8d3
+    restart: unless-stopped
+    volumes:
+      - ./scripts/docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    mem_limit: 512m
 
   # Docker dos agentes: onde o ambiente de cada card roda de verdade. Os agentes nunca falam com ele direto:
   # só o servidor, que confere cada compose (nada privilegiado, nada do host, só pastas da cópia do card).

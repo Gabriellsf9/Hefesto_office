@@ -75,7 +75,7 @@ export async function listarArquivos(raiz: string, rel = ".", profundidade = 2):
   return `${relative(base, alvo) || "."}/\n${linhas.join("\n")}`;
 }
 
-export async function lerArquivo(raiz: string, rel: string, inicio?: number, fim?: number): Promise<string> {
+export async function lerArquivo(raiz: string, rel: string, inicio?: number, fim?: number, maxCaracteres = MAX_LEITURA): Promise<string> {
   if (ehSegredo(rel)) throw new ErroArquivo("Arquivo de segredo: os agentes não podem ler. Peça ao CEO se for realmente necessário.");
   const { alvo } = await dentro(raiz, rel);
   const info = await stat(alvo);
@@ -88,7 +88,7 @@ export async function lerArquivo(raiz: string, rel: string, inicio?: number, fim
   let saida = "";
   for (let i = a; i <= b; i++) {
     const linha = `${i}\t${todas[i - 1]}\n`;
-    if (saida.length + linha.length > MAX_LEITURA) {
+    if (saida.length + linha.length > maxCaracteres) {
       saida += `… (cortado na linha ${i - 1} de ${todas.length}; peça um intervalo com inicio/fim)`;
       break;
     }
@@ -97,14 +97,14 @@ export async function lerArquivo(raiz: string, rel: string, inicio?: number, fim
   return saida || "(arquivo vazio)";
 }
 
-export async function buscarNoCodigo(raiz: string, texto: string): Promise<string> {
+export async function buscarNoCodigo(raiz: string, texto: string, limite = 100): Promise<string> {
   const base = await realpath(raiz);
   const q = texto.toLowerCase();
   const achados: string[] = [];
   let arquivos = 0;
   const andar = async (dir: string) => {
     for (const it of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-      if (achados.length >= 100 || arquivos >= 4000) return;
+      if (achados.length >= limite || arquivos >= 4000) return;
       if (IGNORAR.has(it.name)) continue;
       const caminho = join(dir, it.name);
       if (it.isDirectory()) await andar(caminho);

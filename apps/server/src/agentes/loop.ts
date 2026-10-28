@@ -118,7 +118,12 @@ export const ferramentasWeb: Ferramenta[] = [
 ];
 
 /** Ferramentas de leitura do projeto do CEO (somente leitura, sem segredos). */
-export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
+/** Leitura por vez no modo enxuto (~200 linhas de código). */
+const LEITURA_ENXUTA = 12_000;
+
+/** enxuto: no modelo local (contexto curto) a leitura vem em pedaços menores e a busca traz menos resultados. */
+export function ferramentasDeProjeto(raiz: string, opcoes: { enxuto?: boolean } = {}): Ferramenta[] {
+  const maxLeitura = opcoes.enxuto ? LEITURA_ENXUTA : undefined;
   const protegido = async (fn: () => Promise<string>): Promise<ResultadoFerramenta> => {
     try {
       return { texto: await fn() };
@@ -140,7 +145,7 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
       "Lê um arquivo de texto do projeto, com números de linha. Arquivos de segredo (.env, chaves) são bloqueados.",
       { caminho: { type: "string" }, inicio: { type: "integer", minimum: 1 }, fim: { type: "integer", minimum: 1 } },
       ["caminho"],
-      (e) => protegido(() => lerArquivo(raiz, texto(e, "caminho", 1000), e.inicio as number | undefined, e.fim as number | undefined)),
+      (e) => protegido(() => lerArquivo(raiz, texto(e, "caminho", 1000), e.inicio as number | undefined, e.fim as number | undefined, maxLeitura)),
     ),
     ferramenta(
       "ver_imagem",
@@ -176,7 +181,7 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
       "Procura um texto em todos os arquivos do projeto e devolve arquivo:linha: trecho (até 100 resultados).",
       { texto: { type: "string" } },
       ["texto"],
-      (e) => protegido(() => buscarNoCodigo(raiz, texto(e, "texto", 200))),
+      (e) => protegido(() => buscarNoCodigo(raiz, texto(e, "texto", 200), opcoes.enxuto ? 30 : 100)),
     ),
   ];
 }

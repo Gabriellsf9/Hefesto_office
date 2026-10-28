@@ -25,6 +25,7 @@ Este plano parte do inventário do que já existe (out/2026). Cada item diz o qu
 
 | Item | O que muda |
 |---|---|
+| **3.0 Qualquer projeto vinculado** | Verificação automática para Node, Python, Go, Rust, Java (Maven e Gradle), PHP, Ruby e .NET, inclusive em monorepos de stacks diferentes. Quando a imagem do Hefesto não tem a linguagem, roda a sequência na imagem oficial dela no Docker dos agentes. O índice do código cobre essas linguagens e mais SQL, Prisma, GraphQL, Vue, Svelte, CSS e Markdown |
 | **3.1 Ferramentas enxutas** | No local, `ler_arquivo` vem paginado (até 200 linhas), a busca traz até 30 resultados e a listagem é rasa por padrão |
 | **3.2 PDF para modelos fora do Claude** | Hoje vira só um aviso de que não lê PDF: passa a extrair o texto do PDF (`pdftotext` na imagem) |
 | **3.3 Pesquisa na web sem Claude** | SearXNG no Docker mais as ferramentas `buscar_na_web` e `ler_pagina`, com o conteúdo marcado como dado externo |

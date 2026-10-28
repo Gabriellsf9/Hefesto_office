@@ -27,7 +27,7 @@ FROM node:26-trixie-slim
 # Chromium (navegador dos agentes, prints e PDF), pandoc (Word), git (cópias isoladas dos projetos), unzip (PowerPoint),
 # iptables e sudo (sandbox dos comandos dos agentes), make e o cliente do Postgres (build e banco dos projetos).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji fonts-inter fonts-noto-core fontconfig tini iptables sudo tzdata make postgresql-client \
+  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji fonts-inter fonts-noto-core fontconfig tini iptables sudo tzdata make postgresql-client poppler-utils \
   && rm -rf /var/lib/apt/lists/* \
   && git config --system safe.directory '*'
 COPY --from=fontes /fontes /usr/share/fonts/truetype/geist
