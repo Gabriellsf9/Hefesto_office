@@ -57,22 +57,38 @@ export function ferramentasDeEscrita(wt: Worktree, opcoes: { envDeTeste?: boolea
     ),
     ferramenta(
       "editar_arquivo",
-      "Troca um trecho exato de um arquivo por outro. O trecho_antigo precisa aparecer exatamente uma vez (copie com espaços e quebras de linha).",
-      { caminho: { type: "string" }, trecho_antigo: { type: "string" }, trecho_novo: { type: "string" } },
-      ["caminho", "trecho_antigo", "trecho_novo"],
+      "Troca um trecho exato de um arquivo por outro. O trecho_antigo precisa aparecer exatamente uma vez (copie com espaços e quebras de linha). Para vários trechos do mesmo arquivo numa chamada só, use edicoes (todas valem ou nenhuma).",
+      {
+        caminho: { type: "string" },
+        trecho_antigo: { type: "string" },
+        trecho_novo: { type: "string" },
+        edicoes: {
+          type: "array",
+          description: "Várias trocas no mesmo arquivo, em ordem (no lugar de trecho_antigo/trecho_novo)",
+          items: { type: "object", properties: { trecho_antigo: { type: "string" }, trecho_novo: { type: "string" } }, required: ["trecho_antigo", "trecho_novo"] },
+        },
+      },
+      ["caminho"],
       async (e) => {
         const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500), opcoes.envDeTeste);
-        const atual = await readFile(alvo, "utf8").catch(() => {
+        const original = await readFile(alvo, "utf8").catch(() => {
           throw new ErroEntrada(`Não existe: ${e.caminho}. Use escrever_arquivo para criar.`);
         });
-        const antigo = typeof e.trecho_antigo === "string" ? e.trecho_antigo : "";
-        const novo = typeof e.trecho_novo === "string" ? e.trecho_novo : "";
-        if (!antigo) throw new ErroEntrada("trecho_antigo vazio.");
-        const n = atual.split(antigo).length - 1;
-        if (n === 0) throw new ErroEntrada("trecho_antigo não encontrado. Leia o arquivo de novo e copie o trecho exato.");
-        if (n > 1) throw new ErroEntrada(`trecho_antigo aparece ${n} vezes; inclua mais linhas para ficar único.`);
-        await writeFile(alvo, atual.replace(antigo, () => novo));
-        return { texto: `Editado: ${e.caminho}.` };
+        const lista = (Array.isArray(e.edicoes) && e.edicoes.length ? e.edicoes : [{ trecho_antigo: e.trecho_antigo, trecho_novo: e.trecho_novo }]) as { trecho_antigo?: unknown; trecho_novo?: unknown }[];
+        let atual = original;
+        // Em lote: aplica uma de cada vez sobre o resultado da anterior; se alguma falhar, nada é gravado.
+        for (const [i, ed] of lista.entries()) {
+          const antigo = typeof ed.trecho_antigo === "string" ? ed.trecho_antigo : "";
+          const novo = typeof ed.trecho_novo === "string" ? ed.trecho_novo : "";
+          const qual = lista.length > 1 ? ` (edição ${i + 1})` : "";
+          if (!antigo) throw new ErroEntrada(`trecho_antigo vazio${qual}.`);
+          const n = atual.split(antigo).length - 1;
+          if (n === 0) throw new ErroEntrada(`trecho_antigo não encontrado${qual}. Leia o arquivo de novo e copie o trecho exato.`);
+          if (n > 1) throw new ErroEntrada(`trecho_antigo aparece ${n} vezes${qual}; inclua mais linhas para ficar único.`);
+          atual = atual.replace(antigo, () => novo);
+        }
+        await writeFile(alvo, atual);
+        return { texto: `Editado: ${e.caminho}${lista.length > 1 ? ` (${lista.length} trechos)` : ""}.` };
       },
     ),
     ferramenta(

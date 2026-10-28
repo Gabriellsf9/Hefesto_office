@@ -24,12 +24,12 @@ const MAX_AMBIENTES = 2;
 
 const usados = new Map<string, number>();
 
-interface Saida {
+export interface Saida {
   codigo: number | null;
   saida: string;
 }
 
-function docker(args: string[], cwd: string, tempo: number): Promise<Saida> {
+export function docker(args: string[], cwd: string, tempo: number): Promise<Saida> {
   return new Promise((ok) => {
     execFile(
       "docker",
