@@ -4,6 +4,7 @@ import { provedorDe } from "../provedores.ts";
 import { rodarAgenteCompat } from "./compat.ts";
 import { cardPassouDoLimite, lerCard, somarCusto, tetoDoCard } from "../tarefas.ts";
 import { buscarNoCodigo, ErroArquivo, lerArquivo, lerImagem, listarArquivos, mapaDoCodigo } from "./arquivos.ts";
+import { buscarNoIndice, formatarAchados } from "./indice.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { registrarChamada } from "../chamadas.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
@@ -162,6 +163,13 @@ export function ferramentasDeProjeto(raiz: string): Ferramenta[] {
       { caminho: { type: "string", description: "Pasta ou arquivo relativo à raiz. Padrão: raiz" } },
       [],
       (e) => protegido(() => mapaDoCodigo(raiz, typeof e.caminho === "string" ? e.caminho : ".")),
+    ),
+    ferramenta(
+      "buscar_no_indice",
+      "Pergunte em palavras (ex.: \"onde o ticket é criado\", \"tabela de boards\", \"tela de integrações\") e receba os trechos de código mais relevantes, com arquivo:linha. Use antes de ler arquivos inteiros ou o mapa do projeto: gasta bem menos contexto.",
+      { pergunta: { type: "string" } },
+      ["pergunta"],
+      (e) => protegido(async () => formatarAchados(await buscarNoIndice(raiz, texto(e, "pergunta", 300)))),
     ),
     ferramenta(
       "buscar_no_codigo",

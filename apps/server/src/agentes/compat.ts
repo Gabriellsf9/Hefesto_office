@@ -124,6 +124,52 @@ function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
 }
 const CORTE_RECENTE = 3000;
 
+/* ---------- Compactação: a parte antiga da conversa vira um resumo ---------- */
+
+/** A partir desta fração do limite, resume a parte antiga da conversa. */
+const LIMIAR_COMPACTAR = 0.85;
+/** Trocas mais recentes que ficam inteiras (as que o modelo está usando agora). */
+const RODADAS_MANTIDAS = 3;
+
+/**
+ * Onde cortar: antes da resposta do assistente que abre as últimas rodadas, para não separar uma chamada de
+ * ferramenta do resultado dela. O começo (sistema e o pedido) fica sempre. Sem meio suficiente: null.
+ */
+export function pontoDeCorte(msgs: Msg[], manter = RODADAS_MANTIDAS): number | null {
+  const assistentes = msgs.flatMap((m, i) => (m.role === "assistant" && i >= 2 ? [i] : []));
+  if (assistentes.length <= manter) return null;
+  const corte = assistentes[assistentes.length - manter]!;
+  return corte - 2 >= 4 ? corte : null;
+}
+
+/** O pedido de resumo: o meio da conversa em texto (resultados longos encurtados), no máximo `maxCaracteres`. */
+function pedidoDeResumo(meio: Msg[], maxCaracteres: number): Msg[] {
+  const linhas = meio.map((m) => {
+    if (m.role === "tool") return `[resultado de ${m.name ?? "ferramenta"}] ${textoDe(m.content).slice(0, 1500)}`;
+    const chamadas = (m.tool_calls ?? []).map((c) => `${c.function.name}(${c.function.arguments.slice(0, 300)})`).join("; ");
+    return `[${m.role === "assistant" ? "você" : "mensagem"}] ${textoDe(m.content).slice(0, 2000)}${chamadas ? ` → chamou ${chamadas}` : ""}`;
+  });
+  let texto = linhas.join("\n");
+  // Grande demais até para resumir: fica o fim (o mais recente e mais útil).
+  if (texto.length > maxCaracteres) texto = `…\n${texto.slice(-maxCaracteres)}`;
+  return [
+    {
+      role: "system",
+      content:
+        "Você resume o trabalho de um agente para ele continuar sem reler tudo. Escreva em tópicos curtos: o que já leu e descobriu (arquivos, funções, caminhos e fatos exatos), o que já fez ou escreveu, decisões tomadas, o que deu erro e o que falta fazer. Guarde nomes de arquivos, valores e trechos que ele vai precisar. Não invente nada que não está no registro. No máximo 400 palavras.",
+    },
+    { role: "user", content: `Registro do trabalho até aqui:\n${texto}` },
+  ];
+}
+
+/** Troca o meio da conversa (do pedido inicial até `corte`) pelo resumo. */
+export function compactar(msgs: Msg[], corte: number, resumo: string) {
+  msgs.splice(2, corte - 2, {
+    role: "user",
+    content: `## Resumo do que você já fez nesta tarefa (a conversa antiga foi compactada)\n${resumo}\n\nContinue de onde parou: não refaça o que já está no resumo, a não ser que precise conferir um detalhe.`,
+  });
+}
+
 /* ---------- OpenAI e Gemini (chat completions) ---------- */
 
 async function lerLinhas(res: Response, cadaLinha: (linha: string) => void) {
@@ -365,6 +411,33 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
     if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
+    // Perto do limite: a parte antiga da conversa vira um resumo (antes de cortar resultados), como o Claude Code faz.
+    if (tokensDe(msgs, porToken) > limiteTokens * LIMIAR_COMPACTAR) {
+      const corte = pontoDeCorte(msgs);
+      if (corte) {
+        const t0 = Date.now();
+        const pedido = pedidoDeResumo(msgs.slice(2, corte), Math.floor(limiteTokens * 0.6 * porToken));
+        try {
+          const r = provedor === "ollama"
+            ? await chamarOllama(nome, pedido, [], "low", o.sinal, () => {}, contextoLocal)
+            : await chamarCompat(provedor as "openai" | "gemini", nome, pedido, [], o.sinal, () => {});
+          const usd = provedor === "ollama" ? 0 : registrarUsoTokens(r.entrada, r.saida, precoDe(provedor as "openai" | "gemini"));
+          registrarChamada({ cardId: o.cardId ?? null, agente: o.agenteId ?? null, modelo: o.modelo, rodada, entrada: r.entrada, saida: r.saida, cacheEscrita: 0, cacheLeitura: 0, usd, ms: Date.now() - t0, parada: "compactacao" });
+          custoUsd += usd;
+          if (o.cardId && usd) somarCusto(o.cardId, usd);
+          const resumo = r.texto.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+          if (resumo.length > 80) {
+            const antes = Math.round(tokensDe(msgs, porToken));
+            compactar(msgs, corte, resumo);
+            registrarPasso(replay, { rodada, tipo: "texto", saida: `(Conversa compactada: ~${antes} → ~${Math.round(tokensDe(msgs, porToken))} tokens.)` });
+            salvarRodada();
+          }
+        } catch (e) {
+          if (o.sinal?.aborted) throw interrompido();
+          // Resumo falhou: segue cortando resultados antigos, como antes.
+        }
+      }
+    }
     aparar(msgs, limiteTokens, porToken);
     // Não cabe no contexto do modelo local nem depois de aparar: o Ollama cortaria o começo (as instruções e o
     // card) em silêncio e o agente trabalharia às cegas. Segue no Claude do agente, que comporta o trabalho.
