@@ -192,7 +192,8 @@ async function melhorDeN(client: Anthropic | null, card: Card, agente: Agent, wt
         lembrete: "Chame entregar com a sua tentativa.",
       });
       await commitar(v, agente.id, `${card.chave}: tentativa ${i + 1}`);
-      const verif = await verificarPasta(v.caminho);
+      const mudados = (await gitEm(v.caminho, "diff", "--name-only", `${base}..HEAD`).catch(() => "")).split("\n").filter(Boolean);
+      const verif = await verificarPasta(v.caminho, mudados);
       const stat = await gitEm(v.caminho, "diff", "--shortstat", `${base}..HEAD`).catch(() => "");
       const linhas = [...stat.matchAll(/(\d+) (insert|delet)/g)].reduce((s, m) => s + Number(m[1]), 0);
       return { i, v, entrega: entrega as { resumo: string; conteudo: string } | null, passou: !!verif?.passou, falha: verif && !verif.passou ? verif.comando : null, linhas };
