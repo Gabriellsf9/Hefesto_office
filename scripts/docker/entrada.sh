@@ -26,5 +26,7 @@ chown node:trabalho /workspace && chmod 2775 /workspace
 mkdir -p /tmp/agente && chown agente:trabalho /tmp/agente && chmod 2770 /tmp/agente
 
 # O servidor cria as cópias com permissão de grupo, para os agentes poderem escrever nelas.
+# HOME do node (não o do root): é onde ficam os backups (~/Documents/Hefesto/backups).
+export HOME=/home/node USER=node LOGNAME=node
 umask 002
 exec setpriv --reuid=node --regid=node --init-groups -- /usr/bin/tini -- "$@"

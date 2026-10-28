@@ -202,7 +202,11 @@ export async function migrarCopiasParaWorkspace(): Promise<number> {
     const novo = join(destinoRaiz, wt.caminho.slice(antiga.length + 1));
     try {
       mkdirSync(join(novo, ".."), { recursive: true });
-      await g(wt.repo, "worktree", "move", wt.caminho, novo);
+      // Entre volumes diferentes o "worktree move" não funciona: copia, avisa o git do novo lugar e apaga a antiga.
+      await git("cp", ["-a", wt.caminho, novo]);
+      await g(wt.repo, "worktree", "repair", novo);
+      await git("rm", ["-rf", wt.caminho]);
+      await g(wt.repo, "worktree", "prune").catch(() => {});
       await git("chmod", ["-R", "g+rwX", novo]);
       db.prepare("UPDATE worktrees SET caminho = ? WHERE card_id = ?").run(novo, wt.cardId);
       movidas++;

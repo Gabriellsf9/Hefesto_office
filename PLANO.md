@@ -548,6 +548,20 @@ A **prospecção vem antes da fábrica de software** porque traz receita direto 
 
 ## 11. Próximo passo
 
+### Entregue em 27/10/2026 (orquestração, custo, Docker e verificação)
+- **Orquestração:** interrupção quando o CEO mexe no card; espera global em 429/529; rodadas por etapa e detector de ciclos; ninguém valida o próprio trabalho; pedidos a outras áreas que esperam o resultado e enxergam a branch do pai; dependências múltiplas (DAG); `ler_card`; mapa do código (AST); "não deu" não fecha como feito; execução durável (retoma de onde parou).
+- **Verificação determinística:** tipos → lint → testes na branch depois de cada entrega de código, com o erro real voltando ao autor; melhor de 3 opcional com os testes como juiz; botões Rodar testes e Abrir pull request; vídeo do QA.
+- **Custo:** modo de custo por papel, orçamento por rodada, limite por card (geral e de código), aviso em 80%, liberar com um clique, limpeza de contexto, metas fora do system (cache entre cards); Chamadas de IA, painel Hoje, resumo diário, avaliações e estimativa de custo.
+- **Docker:** imagem única, sandbox Linux (usuários sem rede e sem `/data`), prévias publicadas no localhost, seletor de pastas no navegador, fuso do Mac, backups na sua pasta.
+- **Interface:** 3D carregado sob demanda (pacote principal de ~1 MB para ~86 KB), animações de entrega e trabalho, modelos de projeto, relatório para cliente.
+
+### Ficou para depois (e por quê)
+- **Busca por significado (embeddings):** a API da Anthropic não tem embeddings; depende de um provedor de embeddings (Voyage) ou de um modelo local (Ollama). O mapa do código e a busca por palavras cobrem o essencial por enquanto.
+- **Trocar de escritório sem recarregar a página:** o registro de salas e agentes é montado antes do app; trocar sem recarregar exige reconstruir o 3D e os painéis ao vivo. Hoje a troca recarrega em menos de um segundo.
+- **App nativo (Tauri):** precisa do Rust instalado no Mac; o `pnpm app` (janela própria do Chrome) cobre o uso diário.
+- **Batch API:** as tarefas que aceitam espera (lições, resumos) já rodam em Haiku; a economia seria quase nula.
+- **Validações manuais pendentes:** OAuth de ponta a ponta, toques no Simulador do iOS e acentos na digitação do Android (precisam de contas e aparelhos reais); pull request no GitHub (precisa do seu token).
+
 Próximos passos possíveis: ver a análise "o que falta para superar o app do Claude" na conversa de 27/10/2026.
 
 Polimento (7):

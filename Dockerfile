@@ -21,7 +21,7 @@ FROM node:26-trixie-slim
 # Chromium (navegador dos agentes, prints e PDF), pandoc (Word), git (cópias isoladas dos projetos), unzip (PowerPoint),
 # iptables e sudo (sandbox dos comandos dos agentes).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji tini iptables sudo \
+  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji tini iptables sudo tzdata \
   && rm -rf /var/lib/apt/lists/* \
   && git config --system safe.directory '*'
 # Sandbox: "agente" (sem rede) e "agente-rede" (só para instalar dependências) escrevem só nas cópias dos cards.

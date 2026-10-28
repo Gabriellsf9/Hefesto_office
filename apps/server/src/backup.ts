@@ -93,7 +93,10 @@ export function fazerBackup(): EstadoBackup {
     for (const velho of listar(c.pasta).slice(0, -c.manter)) rmSync(join(c.pasta, velho), { recursive: true, force: true });
     erro = null;
   } catch (e) {
-    rmSync(destino, { recursive: true, force: true });
+    // A limpeza do backup pela metade também pode falhar (ex.: sem permissão na pasta): nunca derruba o servidor.
+    try {
+      rmSync(destino, { recursive: true, force: true });
+    } catch {}
     erro = e instanceof Error ? e.message : String(e);
     console.error("Backup falhou:", erro);
   }
@@ -105,8 +108,12 @@ export function iniciarBackup() {
   // Instâncias isoladas (testes, EMPRESA_DATA_DIR) não fazem backup automático na sua pasta de documentos.
   if (process.env.EMPRESA_SEM_BACKUP === "1" || (process.env.EMPRESA_DATA_DIR && process.env.EMPRESA_BACKUP !== "1")) return;
   const verificar = () => {
-    const e = estadoBackup();
-    if (e.ativo && (!e.ultimo || Date.now() - e.ultimo.quando > 24 * 3600_000)) fazerBackup();
+    try {
+      const e = estadoBackup();
+      if (e.ativo && (!e.ultimo || Date.now() - e.ultimo.quando > 24 * 3600_000)) fazerBackup();
+    } catch (e) {
+      console.error("Backup automático:", e);
+    }
   };
   setTimeout(verificar, 60_000).unref();
   setInterval(verificar, 3600_000).unref();
