@@ -53,7 +53,8 @@ import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, s
 //   validar:  o validador aprova (segue o fluxo) ou devolve (volta para o dono).
 // Sem consenso depois de MAX_RODADAS devoluções, o card sobe para o CEO.
 
-const MAX_RODADAS = 4;
+// 3, não 4: com advogado e validador convergindo (tudo de uma vez), a 4ª rodada quase só repetia custo.
+const MAX_RODADAS = 3;
 const INTERVALO_MS = 3000;
 /** Pedidos a outras áreas: por vez de trabalho e profundidade (pedido de pedido de pedido…). */
 const MAX_PEDIDOS_POR_VEZ = 3;
@@ -474,6 +475,9 @@ async function ciclo() {
     if (ocupados.has(t.agente) || !agentById[t.agente]) continue; // um card por agente de cada vez
     // O provedor deste agente está fora do ar e não há reserva disponível: espera.
     if (provedorForaDoAr(provedorDoAgente(t.agente))) continue;
+    // Modelo local: um trabalho por vez. Dois cards se revezando descartam o cache do Ollama (e trocam o tamanho do
+    // contexto, recarregando o modelo), e cada passo relê a conversa inteira do zero: ~2 min por passo em vez de segundos.
+    if (provedorDoAgente(t.agente) === "ollama" && [...emAndamento.values()].some((e) => provedorDoAgente(e.agenteId) === "ollama")) continue;
     // De novo aqui: o pai pode ter começado neste mesmo ciclo, depois que a lista foi montada.
     if (t.tipo === "executar" && esperaParente(t.card, porId, emAndamento.values())) continue;
     // Sem chave do provedor do agente (Claude sem chave, OpenAI sem chave…): o card espera.

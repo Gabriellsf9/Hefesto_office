@@ -143,3 +143,40 @@ test("calibração de caracteres por token: usa a contagem real, mas nunca passa
   assert.equal(calibrarCaracteresPorToken(30_000, 15_000, 3.5), 3, "nunca abaixo de 3");
   assert.equal(calibrarCaracteresPorToken(9_000, 1_500, 3.2), 3.2, "resposta pequena demais: mantém o fator anterior");
 });
+
+test("modelo local: a conversa é salva a cada passo e a retomada continua dela (não recomeça do zero)", async () => {
+  const recebidos: { messages: { role: string; content: string }[] }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      // 1ª chamada: lê um arquivo (não termina); depois: entrega.
+      const chamada = recebidos.length === 1 ? { name: "ler", arguments: { caminho: "a.go" } } : { name: "entregar", arguments: { conteudo: "ok" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  let salva: unknown[] = [];
+  const ferramentas = [
+    ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], () => ({ texto: "conteúdo de a.go" })),
+    ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+  ];
+  try {
+    // 1ª execução: interrompida depois do primeiro passo (como num reinício).
+    const sinal = new AbortController();
+    await rodarAgente({ modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", ferramentas, lembrete: "Entregue.", sinal: sinal.signal, aoRodada: (m) => { salva = m; sinal.abort("reinício"); } }).catch(() => {});
+    assert.ok(salva.length >= 3, "a conversa do primeiro passo foi salva");
+    // 2ª execução: retoma a conversa salva.
+    const r = await rodarAgente({ modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", ferramentas, lembrete: "Entregue.", retomar: salva as never });
+    assert.equal(r.terminou, true);
+    const ultima = recebidos.at(-1)!.messages;
+    assert.ok(ultima.some((m) => m.role === "tool" && String(m.content).includes("conteúdo de a.go")), "continuou com o que já tinha lido");
+    assert.equal(ultima.filter((m) => m.role === "system").length, 1, "não duplicou o início da conversa");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});

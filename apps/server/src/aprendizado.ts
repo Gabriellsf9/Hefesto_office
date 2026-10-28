@@ -2,7 +2,7 @@ import type { Agent, Card } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { db, getSetting, setSetting } from "./db.ts";
 import { postFeed } from "./bus.ts";
-import { modeloPara, type Papel } from "./custo.ts";
+import { modeloPara, modoCusto, type Papel } from "./custo.ts";
 import { escolhas, modeloDoAgente, provedorDe, provedorForaDoAr } from "./provedores.ts";
 import { decisaoDoCeo, listarComentarios, listarDevolucoesDoAgente } from "./tarefas.ts";
 
@@ -28,9 +28,12 @@ export function falhasDoCard(cardId: number): number {
   return n;
 }
 
+// A escada para no Sonnet: o Opus custa o dobro e só sobe automático no modo "Qualidade máxima" (falhas repetidas
+// no Opus eram a maior parte do custo dos cards caros). O agente que já é Opus continua no Opus.
 const subir = (modelo: string, niveis: number) => {
   const i = ESCADA.indexOf(modelo);
-  return i < 0 ? modelo : ESCADA[Math.min(ESCADA.length - 1, i + niveis)]!;
+  const topo = modoCusto() === "maximo" ? ESCADA.length - 1 : Math.max(i, ESCADA.indexOf("claude-sonnet-5-5"));
+  return i < 0 ? modelo : ESCADA[Math.min(topo, i + niveis)]!;
 };
 
 /** Modelo local para a 1ª tentativa de código (ex.: ollama:qwen2.5-coder), ou null se desligado. */

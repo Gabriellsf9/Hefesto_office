@@ -17,6 +17,9 @@ import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcament
 // tamanho do contexto) e OpenAI e Gemini (API de chat no formato da OpenAI). Mesmas
 // regras do laço do Claude: ferramentas, ferramenta final, lembretes, orçamento e limite por card.
 
+/** Conversa salva pelo laço local (formato próprio, começa pelo system); a do Claude tem outro formato e não serve aqui. */
+const ehConversaLocal = (m: readonly unknown[]) => (m[0] as { role?: string } | undefined)?.role === "system";
+
 /** O trabalho deste card não cabe em nenhum modelo no ar agora: só ele espera (não é o provedor que caiu). */
 export class ErroNaoCabe extends Error {}
 
@@ -317,10 +320,15 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   }));
 
   const anexos = partesDosAnexos([...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])]);
-  const msgs: Msg[] = [
+  // Retomada (queda, reinício, pausa): a conversa salva pelo laço local continua de onde parou, sem reler tudo.
+  const salva = o.retomar?.length && ehConversaLocal(o.retomar) ? (o.retomar as unknown as Msg[]) : null;
+  const msgs: Msg[] = salva
+    ? [...salva, { role: "user", content: "Você foi pausado (reinício do sistema, limite ou espera de um modelo) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
+    : [
     { role: "system", content: `${o.sistema}${semWeb ? "\n\n(Neste modelo não há pesquisa na web: trabalhe com as ferramentas disponíveis e com o que você sabe, e diga quando faltar informação atual.)" : ""}` },
     { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
   ];
+  const salvarRodada = () => o.aoRodada?.(msgs as unknown as Anthropic.Beta.BetaMessageParam[]);
   let contextoLocal = o.contexto ?? configOllama().contexto;
   let limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
   let custoUsd = 0;
@@ -403,6 +411,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
         role: "user",
         content: lembretes === 1 ? o.lembrete : `Você parou de novo sem usar ferramentas. Não descreva o que vai fazer: faça agora, com as ferramentas, e termine com a ferramenta final. ${o.lembrete}`,
       });
+      salvarRodada();
       continue;
     }
 
@@ -422,6 +431,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     }
     if (fim) return { terminou: true, texto: ultimoTexto, custoUsd };
     if (imagens.length) msgs.push({ role: "user", content: [{ type: "text", text: "Imagens devolvidas pelas ferramentas acima:" }, ...imagens] });
+    salvarRodada();
   }
   return { terminou: false, texto: ultimoTexto, custoUsd };
 }

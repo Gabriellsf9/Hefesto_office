@@ -51,3 +51,22 @@ test("escada de modelos com o Claude fora do ar: card que já falhou vai para a 
   const { modelo } = modeloEscalonado(agentById["dev-backend"]!, "autor", card);
   assert.equal(modelo, "gemini:gemini-3.8-flash");
 });
+
+test("escada de modelos: para no Sonnet; o Opus só sobe automático no modo Qualidade máxima", async () => {
+  // Outro teste deixou o Claude "fora do ar" por 60 s neste processo: o relógio anda 1 h para o estado não vazar.
+  const { mock } = await import("node:test");
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 3_600_000 });
+  const { modeloEscalonado } = await import("./aprendizado.ts");
+  const { configurarMotor } = await import("./agentes/motor.ts");
+  const { agentById } = await import("@empresa/org");
+  const { setSetting } = await import("./db.ts");
+  setSetting("modelos_agentes", "{}");
+  const card = criarCard({ titulo: "Backend", sala: "desenvolvimento", dono: "dev-backend", validador: "reviewer-1" });
+  for (let i = 0; i < 5; i++) comentar(card.id, "reviewer-1", "devolucao", `Falta ${i}.`);
+  configurarMotor({ modoCusto: "equilibrado" });
+  assert.equal(modeloEscalonado(agentById["dev-backend"]!, "autor", card).modelo, "claude-sonnet-5-5", "5 falhas: para no Sonnet");
+  configurarMotor({ modoCusto: "maximo" });
+  assert.equal(modeloEscalonado(agentById["dev-backend"]!, "autor", card).modelo, "claude-opus-5-5", "no máximo, sobe para o Opus");
+  configurarMotor({ modoCusto: "equilibrado" });
+  mock.timers.reset();
+});
