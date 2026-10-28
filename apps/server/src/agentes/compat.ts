@@ -1,11 +1,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { orcamentoEsgotado, registrarUsoTokens } from "../custo.ts";
+import { agentById } from "@empresa/org";
+import { modeloPara, orcamentoEsgotado, registrarUsoTokens } from "../custo.ts";
 import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
-import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, precoDe, provedorDe } from "../provedores.ts";
+import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel, precoDe, provedorDe } from "../provedores.ts";
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
-import { projetoSemOrcamento } from "../planejamento.ts";
+import { conferirOrcamentoDoProjeto, projetoSemOrcamento } from "../planejamento.ts";
+import { registrarChamada } from "../chamadas.ts";
 import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente } from "./loop.ts";
 
 // O laço do agente para modelos fora do Claude: Ollama (API nativa, para controlar o
@@ -70,11 +72,13 @@ function limparEsquema(v: unknown): unknown {
  * Para caber no contexto: resultados antigos de ferramentas viram uma nota (os 6 mais recentes ficam),
  * como o context_management faz no Claude. Estimativa grosseira: 3,5 caracteres por token.
  */
+/** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
+const tokensDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3;
+
 function aparar(msgs: Msg[], limiteTokens: number) {
-  const tamanho = () => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3.5;
   const ferramentas = msgs.flatMap((m, i) => (m.role === "tool" ? [i] : []));
   for (const i of ferramentas.slice(0, -6)) {
-    if (tamanho() <= limiteTokens) return;
+    if (tokensDe(msgs) <= limiteTokens) return;
     if (textoDe(msgs[i]!.content).length > 200) msgs[i]!.content = "[Resultado antigo removido para caber no contexto. Rode a ferramenta de novo se precisar.]";
   }
 }
@@ -180,8 +184,8 @@ function naFilaDoOllama<T>(fn: () => Promise<T>): Promise<T> {
   return vez;
 }
 
-async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esforco: OpcoesAgente["esforco"], sinal: AbortSignal | undefined, onTexto: (t: string) => void): Promise<Resposta> {
-  const { url, contexto } = configOllama();
+async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esforco: OpcoesAgente["esforco"], sinal: AbortSignal | undefined, onTexto: (t: string) => void, contexto = configOllama().contexto): Promise<Resposta> {
+  const { url } = configOllama();
   const caps = await capacidadesOllama(modelo);
   const visao = caps?.includes("vision") ?? false;
   if (tools.length && caps && !caps.includes("tools")) {
@@ -281,7 +285,8 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     { role: "system", content: `${o.sistema}${semWeb ? "\n\n(Neste modelo não há pesquisa na web: trabalhe com as ferramentas disponíveis e com o que você sabe, e diga quando faltar informação atual.)" : ""}` },
     { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
   ];
-  const limiteTokens = provedor === "ollama" ? configOllama().contexto * 0.75 : 150_000;
+  const contextoLocal = o.contexto ?? configOllama().contexto;
+  const limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
   let custoUsd = 0;
   let lembretes = 0;
   let ultimoTexto = "";
@@ -294,17 +299,45 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
     if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
     aparar(msgs, limiteTokens);
+    // Não cabe no contexto do modelo local nem depois de aparar: o Ollama cortaria o começo (as instruções e o
+    // card) em silêncio e o agente trabalharia às cegas. Segue no Claude do agente, que comporta o trabalho.
+    if (provedor === "ollama" && tokensDe(msgs) > limiteTokens) {
+      if (o.semReserva) throw new ErroProvedor(`Não cabe no contexto do modelo local (~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}).`, 413, false);
+      const claude = modeloPara(agentById[o.agenteId ?? ""]?.modelo ?? "claude-sonnet-5-5", "autor");
+      if (modeloDisponivel(claude)) {
+        registrarPasso(replay, { rodada, tipo: "texto", saida: `(O trabalho não cabe no contexto do modelo local: ~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}. Continua no ${claude}.)` });
+        return rodarAgente({ ...o, modelo: claude });
+      }
+    }
     const onTexto = (t: string) => o.onTexto?.(t);
+    const t0 = Date.now();
     let r: Resposta;
     try {
-      r = provedor === "ollama" ? await chamarOllama(nome, msgs, tools, o.esforco, o.sinal, onTexto) : await chamarCompat(provedor as "openai" | "gemini", nome, msgs, tools, o.sinal, onTexto);
+      r = provedor === "ollama" ? await chamarOllama(nome, msgs, tools, o.esforco, o.sinal, onTexto, contextoLocal) : await chamarCompat(provedor as "openai" | "gemini", nome, msgs, tools, o.sinal, onTexto);
     } catch (e) {
       if (o.sinal?.aborted) throw interrompido();
       throw e;
     }
     const usd = provedor === "ollama" ? 0 : registrarUsoTokens(r.entrada, r.saida, precoDe(provedor as "openai" | "gemini"));
+    // Mesmo rastreamento do Claude (Operação → Chamadas), com os nomes de parada dele.
+    registrarChamada({
+      cardId: o.cardId ?? null,
+      agente: o.agenteId ?? null,
+      modelo: o.modelo,
+      rodada,
+      entrada: r.entrada,
+      saida: r.saida,
+      cacheEscrita: 0,
+      cacheLeitura: 0,
+      usd,
+      ms: Date.now() - t0,
+      parada: r.cortada ? "max_tokens" : r.chamadas.length ? "tool_use" : "end_turn",
+    });
     custoUsd += usd;
-    if (o.cardId && usd) somarCusto(o.cardId, usd);
+    if (o.cardId && usd) {
+      somarCusto(o.cardId, usd);
+      conferirOrcamentoDoProjeto(o.cardId);
+    }
     if (r.cortada && r.chamadas.length) throw new Error("A resposta ficou longa demais e foi cortada.");
 
     // Modelos com raciocínio às vezes deixam o pensamento no texto; não vai para o CEO.

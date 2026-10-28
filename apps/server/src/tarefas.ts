@@ -410,6 +410,12 @@ export const limiteDoCard = (card: Card) => (ehCardDeCodigo(card) || temCopiaPro
 /** Teto atual do card: o limite do tipo dele mais o que você já liberou. */
 export const tetoDoCard = (card: Card) => limiteDoCard(card) + Number(getSetting(`card_${card.id}_liberado_usd`) ?? 0);
 
+/**
+ * Comentário do CEO que é decisão sobre o trabalho (recomeça contagens de rodadas e falhas). Liberar gasto
+ * fica registrado em nome do CEO, mas não é decisão: senão um clique em "Liberar mais" zera o consenso.
+ */
+export const decisaoDoCeo = (c: Comentario) => c.autor === "voce" && !/^(Liberou mais US\$|O teto deste card agora é US\$)/.test(c.texto);
+
 /** Libera mais um limite para o card parado (botão Liberar, comentário ou Telegram) e ele continua de onde parou. */
 export function liberarGasto(id: number, autor = "voce"): Card {
   const card = lerCard(id);

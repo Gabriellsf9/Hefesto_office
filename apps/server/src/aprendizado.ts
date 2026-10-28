@@ -4,7 +4,7 @@ import { db, getSetting, setSetting } from "./db.ts";
 import { postFeed } from "./bus.ts";
 import { modeloPara, type Papel } from "./custo.ts";
 import { escolhas, modeloDoAgente, provedorDe } from "./provedores.ts";
-import { listarComentarios, listarDevolucoesDoAgente } from "./tarefas.ts";
+import { decisaoDoCeo, listarComentarios, listarDevolucoesDoAgente } from "./tarefas.ts";
 
 // A equipe que aprende sozinha:
 // 1. Escalonamento: o modelo sobe conforme o card falha (devoluções, verificações, entregas vazias);
@@ -22,7 +22,7 @@ const ESCADA = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"];
 export function falhasDoCard(cardId: number): number {
   let n = 0;
   for (const c of listarComentarios(cardId).reverse()) {
-    if (c.autor === "voce" || c.tipo === "aprovacao" || c.texto.startsWith("✅ Verificações passaram")) break;
+    if (decisaoDoCeo(c) || c.tipo === "aprovacao" || c.texto.startsWith("✅ Verificações passaram")) break;
     if (c.tipo === "devolucao" || c.texto.startsWith("❌ Verificação falhou") || c.texto.startsWith("Não consegui concluir agora")) n++;
   }
   return n;
@@ -183,8 +183,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS sombras (
 /** Porcentagem de cards aprovados que ganham um teste sombra (0 desliga). */
 export const sombraPct = () => Number(getSetting("aprendizado_sombra_pct") ?? 0);
 
-/** Um nível abaixo (ou o local, se configurado): o modelo que a sombra testa. */
+/** Modelo local que a sombra testa no lugar do degrau abaixo (ex.: ollama:gpt-oss-hefesto:20b), ou null. */
+export const modeloSombraLocal = () => getSetting("aprendizado_sombra_local") || null;
+
+/** O modelo que a sombra testa: o local configurado para a sombra; senão um nível abaixo (ou o local primeiro). */
 export function modeloMaisBarato(modelo: string): string | null {
+  const sombraLocal = modeloSombraLocal();
+  if (sombraLocal && sombraLocal !== modelo) return sombraLocal;
   const local = modeloLocalPrimeiro();
   const i = ESCADA.indexOf(modelo);
   if (i > 0) return ESCADA[i - 1]!;
@@ -225,10 +230,11 @@ export function aplicarSugestao(agente: string, modelo: string) {
   setSetting("modelos_agentes", JSON.stringify({ ...atual, [agente]: modelo }));
 }
 
-export function configurarAprendizado(c: { localPrimeiro?: string | null; sombraPct?: number }) {
+export function configurarAprendizado(c: { localPrimeiro?: string | null; sombraPct?: number; sombraLocal?: string | null }) {
   if (c.localPrimeiro !== undefined) setSetting("aprendizado_local_primeiro", c.localPrimeiro ? String(c.localPrimeiro).slice(0, 120) : "");
+  if (c.sombraLocal !== undefined) setSetting("aprendizado_sombra_local", c.sombraLocal && /^ollama:[\w.:/-]{1,120}$/.test(c.sombraLocal) ? c.sombraLocal : "");
   if (typeof c.sombraPct === "number" && c.sombraPct >= 0 && c.sombraPct <= 100) setSetting("aprendizado_sombra_pct", String(Math.round(c.sombraPct)));
-  return { localPrimeiro: modeloLocalPrimeiro(), sombraPct: sombraPct() };
+  return { localPrimeiro: modeloLocalPrimeiro(), sombraPct: sombraPct(), sombraLocal: modeloSombraLocal() };
 }
 
 /* ---------- Escrever a candidata (modelo) ---------- */
@@ -286,6 +292,7 @@ export function estadoAprendizado() {
   return {
     localPrimeiro: modeloLocalPrimeiro(),
     sombraPct: sombraPct(),
+    sombraLocal: modeloSombraLocal(),
     abAutomatico: getSetting("aprendizado_ab_auto") !== "0",
     amostraAB: AMOSTRA_AB,
     variantes,

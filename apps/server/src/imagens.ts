@@ -22,7 +22,17 @@ const POR_EXT = Object.fromEntries(Object.values(TIPOS).map((t) => [t.ext, t]));
 
 /** Endereço de uma imagem do chat (o mesmo usado no Markdown dos cards). */
 export const RE_IMAGEM = /\/api\/midia\/chat\/([a-f0-9-]{36}\.(?:png|jpg|webp|gif))/g;
+/** Prints e imagens que os agentes salvaram num card (telas desenhadas, capturas do app). */
+const RE_IMAGEM_DE_CARD = /\/api\/midia\/(\d+)\/([a-z0-9-]+\.(?:png|jpg))/g;
 export const nomeValido = (n: string) => /^[a-f0-9-]{36}\.(png|jpg|webp|gif)$/.test(n);
+
+/** Arquivo no disco de um endereço de imagem (do chat ou de um card), ou null se não for um dos dois. */
+function caminhoDaImagem(url: string): string | null {
+  const chat = /^\/api\/midia\/chat\/([a-f0-9-]{36}\.(?:png|jpg|webp|gif))$/.exec(url);
+  if (chat) return join(PASTA_IMAGENS, chat[1]!);
+  const card = /^\/api\/midia\/(\d+)\/([a-z0-9-]+\.(?:png|jpg))$/.exec(url);
+  return card ? join(DATA_DIR, "midia", card[1]!, card[2]!) : null;
+}
 
 /** Recebe a imagem como data URL (base64), confere tipo e tamanho de verdade e grava. */
 export function salvarImagem(dataUrl: unknown): { url: string } {
@@ -42,25 +52,27 @@ export function salvarImagem(dataUrl: unknown): { url: string } {
 /** Só endereços de imagens que existem de verdade (o que vier do navegador é conferido). */
 export function filtrarImagens(urls: unknown): string[] {
   if (!Array.isArray(urls)) return [];
-  return urls
-    .filter((u): u is string => typeof u === "string")
-    .map((u) => /^\/api\/midia\/chat\/([a-f0-9-]{36}\.(?:png|jpg|webp|gif))$/.exec(u)?.[1])
-    .filter((n): n is string => !!n && existsSync(join(PASTA_IMAGENS, n)))
-    .slice(0, MAX_POR_MENSAGEM)
-    .map((n) => `/api/midia/chat/${n}`);
+  return [...new Set(urls.filter((u): u is string => typeof u === "string"))]
+    .filter((u) => {
+      const caminho = caminhoDaImagem(u);
+      return !!caminho && existsSync(caminho);
+    })
+    .slice(0, MAX_POR_MENSAGEM);
 }
 
-/** Imagens citadas num texto (descrição de card, por exemplo). */
+/** Imagens citadas num texto (descrição de card, entrega): do chat e as que os agentes salvaram nos cards. */
 export function imagensDoTexto(texto: string): string[] {
-  return filtrarImagens([...texto.matchAll(RE_IMAGEM)].map((m) => `/api/midia/chat/${m[1]}`));
+  return filtrarImagens([
+    ...[...texto.matchAll(RE_IMAGEM)].map((m) => `/api/midia/chat/${m[1]}`),
+    ...[...texto.matchAll(RE_IMAGEM_DE_CARD)].map((m) => `/api/midia/${m[1]}/${m[2]}`),
+  ]);
 }
 
 /** Blocos de imagem para a API (visão), lidos do disco. */
 export function blocosDeImagem(urls: string[]): Anthropic.Beta.BetaImageBlockParam[] {
   return filtrarImagens(urls).map((u) => {
-    const nome = u.split("/").pop()!;
-    const tipo = POR_EXT[nome.split(".").pop()!]!;
-    return { type: "image", source: { type: "base64", media_type: tipo.media, data: readFileSync(join(PASTA_IMAGENS, nome)).toString("base64") } };
+    const tipo = POR_EXT[u.split(".").pop()!]!;
+    return { type: "image", source: { type: "base64", media_type: tipo.media, data: readFileSync(caminhoDaImagem(u)!).toString("base64") } };
   });
 }
 

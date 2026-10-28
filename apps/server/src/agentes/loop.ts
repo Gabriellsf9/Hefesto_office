@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { clienteClaude, orcamentoEsgotado, registrarUso } from "../custo.ts";
+import { clienteClaude, maxTokensQueCabe, orcamentoEsgotado, registrarUso } from "../custo.ts";
 import { provedorDe } from "../provedores.ts";
 import { rodarAgenteCompat } from "./compat.ts";
-import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
+import { cardPassouDoLimite, lerCard, somarCusto, tetoDoCard } from "../tarefas.ts";
 import { buscarNoCodigo, ErroArquivo, lerArquivo, listarArquivos, mapaDoCodigo } from "./arquivos.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { registrarChamada } from "../chamadas.ts";
@@ -68,6 +68,10 @@ export interface OpcoesAgente {
   aoPausar?: (mensagens: Anthropic.Beta.BetaMessageParam[]) => void;
   onTexto?: (parcial: string) => void;
   maxRodadas?: number;
+  /** Modelo local: contexto deste trabalho (padrão: o de Configurações → Modelos de IA). */
+  contexto?: number;
+  /** Modelo local: se não couber no contexto, falha em vez de seguir no Claude (testes sombra, que não podem gastar). */
+  semReserva?: boolean;
   /** Imagens que acompanham a mensagem (o modelo enxerga). Endereços /api/midia/chat/…. */
   imagens?: string[];
   /** Arquivos (PDF, Word, Excel…) que acompanham a mensagem: o modelo lê o conteúdo. */
@@ -207,9 +211,11 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     }
     let parcial = "";
     const t0 = Date.now();
+    // O limite do card só é conferido entre chamadas: a saída de cada uma fica dentro do que ainda resta.
+    const restante = o.cardId ? (() => { const c = lerCard(o.cardId!); return tetoDoCard(c) - c.custoUsd; })() : Infinity;
     const stream = client.beta.messages.stream({
       model: o.modelo,
-      max_tokens: 64000,
+      max_tokens: maxTokensQueCabe(o.modelo, restante),
       betas: [...(fallback ? ["server-side-fallback-2026-07-01"] : []), "context-management-2025-06-27", ...(vinculo ? ["thinking-binding-controls-2026-08-01"] : [])],
       ...(fallback ? { fallbacks: "default" as const } : {}),
       // Retomada: o sistema do agente muda entre uma vez e outra (livro, lições, comentários). O raciocínio salvo

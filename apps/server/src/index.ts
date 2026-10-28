@@ -280,10 +280,10 @@ app.get<{ Querystring: { limite?: string; ator?: string; antesDe?: string } }>("
 /* ---------- Aprendizado: A/B de instruções, escada de modelos e testes sombra ---------- */
 
 app.get("/api/aprendizado", async () => estadoAprendizado());
-app.put<{ Body: { localPrimeiro?: string | null; sombraPct?: number; abAutomatico?: boolean } }>("/api/aprendizado", async (req) => {
+app.put<{ Body: { localPrimeiro?: string | null; sombraPct?: number; sombraLocal?: string | null; abAutomatico?: boolean } }>("/api/aprendizado", async (req) => {
   const b = req.body ?? {};
   if (typeof b.abAutomatico === "boolean") definirABAutomatico(b.abAutomatico);
-  configurarAprendizado({ localPrimeiro: b.localPrimeiro, sombraPct: b.sombraPct });
+  configurarAprendizado({ localPrimeiro: b.localPrimeiro, sombraPct: b.sombraPct, sombraLocal: b.sombraLocal });
   return estadoAprendizado();
 });
 app.post<{ Params: { agente: string }; Body: { texto?: string } }>("/api/aprendizado/ab/:agente", async (req, reply) => {
