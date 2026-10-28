@@ -72,8 +72,12 @@ function limparEsquema(v: unknown): unknown {
  * Para caber no contexto: resultados antigos de ferramentas viram uma nota (os 6 mais recentes ficam),
  * como o context_management faz no Claude. Estimativa grosseira: 3,5 caracteres por token.
  */
-/** Contexto do modelo local quando o trabalho não cabe no padrão (medido: o 9b fica 81% na GPU e sobra RAM). */
-const CONTEXTO_LOCAL_AMPLIADO = 32_768;
+/**
+ * Degraus de contexto do modelo local quando o trabalho não cabe no padrão. Medido no 9b com 8 GB de VRAM: 32 mil
+ * escreve a ~19 tok/s e 64 mil a ~6 tok/s, com a RAM livre quase igual (o Qwen 3.5 guarda pouco por token).
+ * Usa o menor que couber: o mais lento só quando precisa.
+ */
+const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536];
 
 /** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
 const tokensDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3;
@@ -305,8 +309,9 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     // Não cabe no contexto do modelo local nem depois de aparar: o Ollama cortaria o começo (as instruções e o
     // card) em silêncio e o agente trabalharia às cegas. Segue no Claude do agente, que comporta o trabalho.
     // Não cabe no contexto padrão do modelo local: tenta o contexto ampliado (mais memória, só neste trabalho).
-    if (provedor === "ollama" && !o.contexto && tokensDe(msgs) > limiteTokens && contextoLocal < CONTEXTO_LOCAL_AMPLIADO) {
-      contextoLocal = CONTEXTO_LOCAL_AMPLIADO;
+    for (const degrau of CONTEXTOS_LOCAIS_AMPLIADOS) {
+      if (provedor !== "ollama" || o.contexto || tokensDe(msgs) <= limiteTokens || contextoLocal >= degrau) continue;
+      contextoLocal = degrau;
       limiteTokens = contextoLocal * 0.75;
       aparar(msgs, limiteTokens);
     }
