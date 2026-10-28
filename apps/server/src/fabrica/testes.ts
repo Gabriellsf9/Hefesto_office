@@ -31,7 +31,8 @@ function verificacoesDaPasta(pasta: string): { instalar: string | null; etapas: 
     return { instalar, etapas };
   }
   if (tem("pyproject.toml") || tem("pytest.ini") || tem("setup.cfg")) return { instalar: null, etapas: ["pytest -q"] };
-  if (tem("go.mod")) return { instalar: null, etapas: ["go vet ./...", "go test ./..."] };
+  // Os módulos do Go baixam antes (com rede), como o npm ci: a verificação roda sem rede.
+  if (tem("go.mod")) return { instalar: "go mod download", etapas: ["go vet ./...", "go test ./..."] };
   if (tem("Cargo.toml")) return { instalar: null, etapas: ["cargo check", "cargo test"] };
   return null;
 }
