@@ -87,6 +87,8 @@ function limparEsquema(v: unknown): unknown {
  * Usa o menor que couber: o mais lento só quando precisa.
  */
 const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536, 98_304];
+/** Acima disso (escrita a ~6 tok/s ou menos), o modelo local trabalha sem o modo de raciocínio. */
+const CONTEXTO_COM_RACIOCINIO = 32_768;
 
 /** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
 const caracteresDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
@@ -253,8 +255,10 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
           stream: true,
           keep_alive: "15m",
           options: { num_ctx: contexto },
-          // Raciocínio deixa o modelo local mais certeiro, mas bem mais lento: só fora das conversas rápidas.
-          ...(caps?.includes("thinking") ? { think: esforco !== "low" } : {}),
+          // Raciocínio deixa o modelo local mais certeiro, mas bem mais lento: só fora das conversas rápidas e só no
+          // contexto curto. Com contexto grande o modelo escreve a ~5 tok/s, e ele chegou a "pensar" 7 mil tokens
+          // (25 minutos) antes de agir.
+          ...(caps?.includes("thinking") ? { think: esforco !== "low" && contexto <= CONTEXTO_COM_RACIOCINIO } : {}),
           ...(tools.length ? { tools } : {}),
         }),
         sinal,

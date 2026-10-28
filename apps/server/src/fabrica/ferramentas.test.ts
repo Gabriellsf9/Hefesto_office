@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ferramentasDeEscrita } from "./ferramentas.ts";
 
-const escrever = (raiz: string, caminho: string, envDeTeste: boolean) => {
-  const f = ferramentasDeEscrita({ cardId: 1, repo: raiz, caminho: raiz, branch: "x", base: "x", status: "ativo" }, { envDeTeste }).find((t) => t.def.name === "escrever_arquivo")!;
-  return f.executar!({ caminho, conteudo: "CHAVE=teste\n" });
+const escrever = async (raiz: string, caminho: string, envDeTeste: boolean) => {
+  const f = ferramentasDeEscrita({ cardId: 1, repo: raiz, caminho: raiz, branch: "x", base: "x", status: "ativo" }, { envDeTeste }).find(
+    (t) => "name" in t.def && t.def.name === "escrever_arquivo",
+  )!;
+  return await f.executar!({ caminho, conteudo: "CHAVE=teste\n" });
 };
 
 test("escrita: .env de teste só na cópia de referência; chaves continuam barradas", async () => {
