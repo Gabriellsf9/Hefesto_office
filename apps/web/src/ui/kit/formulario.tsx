@@ -94,9 +94,11 @@ export function Interruptor({ ativo, onChange, rotulo, descricao, desabilitado }
       aria-checked={ativo}
       disabled={desabilitado}
       onClick={() => onChange(!ativo)}
-      className={cx("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50", ativo ? "bg-accent" : "bg-line-strong")}
+      className="group inline-flex h-alvo w-9 shrink-0 items-center disabled:opacity-50"
     >
-      <span className={cx("inline-block size-4 rounded-full bg-white shadow transition-transform", ativo ? "translate-x-[18px]" : "translate-x-0.5")} />
+      <span className={cx("inline-flex h-5 w-9 items-center rounded-full transition-colors", ativo ? "bg-accent" : "bg-line-strong")}>
+        <span className={cx("inline-block size-4 rounded-full bg-white shadow transition-transform", ativo ? "translate-x-[15.75px]" : "translate-x-0.5")} />
+      </span>
     </button>
   );
   if (!rotulo) return botao;

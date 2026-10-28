@@ -205,7 +205,7 @@ function Editor({ id }: { id: string }) {
   const props: PropsAba = { d, setD: (f) => setD((x) => (x ? f(x) : x)), usados };
   return (
     <Pagina largura="media">
-      <button type="button" onClick={() => navegar("escritorios")} className="mb-4 flex min-h-6 items-center gap-1 text-pequeno text-fg-3 hover:text-fg"><ArrowLeft className="size-4" /> Escritórios</button>
+      <button type="button" onClick={() => navegar("escritorios")} className="mb-4 flex min-h-alvo items-center gap-1 text-pequeno text-fg-3 hover:text-fg"><ArrowLeft className="size-4" /> Escritórios</button>
       <CabecalhoPagina
         icone={Building2}
         titulo={d.nome || "Sem nome"}
@@ -326,7 +326,7 @@ function AbaSalas({ d, setD, usados }: PropsAba) {
               />
             </div>
             <Campo rotulo="Descrição" value={s.descricao} onChange={(e) => atualizar(s.id, { descricao: e.target.value })} placeholder="O que esta sala faz" />
-            <button type="button" onClick={() => setAberta(aberta === s.id ? null : s.id)} className="text-pequeno font-medium text-accent-fg hover:underline">
+            <button type="button" onClick={() => setAberta(aberta === s.id ? null : s.id)} className="min-h-alvo self-start text-pequeno font-medium text-accent-fg hover:underline">
               {aberta === s.id ? "Esconder o padrão de trabalho" : s.playbook ? "Editar o padrão de trabalho" : "Escrever um padrão de trabalho (opcional)"}
             </button>
             {aberta === s.id && (

@@ -183,6 +183,8 @@
   --radius-ctl: 8px;
   --radius-card: 12px;
   --radius-panel: 16px;
+  /* Área mínima de clique (WCAG 2.2): 24 px de verdade, já que 1rem aqui vale 14 px. */
+  --spacing-alvo: 24px;
   --text-legenda: 12px;
   --text-legenda--line-height: 16px;
   --text-pequeno: 13px;

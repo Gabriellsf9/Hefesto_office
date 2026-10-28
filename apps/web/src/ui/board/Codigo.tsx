@@ -51,7 +51,7 @@ export function SecaoCodigo({ card }: { card: Card }) {
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h3 className="flex-1 text-legenda font-bold uppercase tracking-wide text-fg-3">Código</h3>
         <code className="rounded bg-surface px-1.5 py-0.5 text-legenda ring-1 ring-line">{codigo.branch}</code>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ativo ? "bg-info-soft text-info-fg" : codigo.status === "mesclado" ? "bg-success-soft text-success-fg" : "bg-sunken text-fg-3"}`}>
+        <span className={`rounded-full px-2 py-0.5 text-legenda font-semibold ${ativo ? "bg-info-soft text-info-fg" : codigo.status === "mesclado" ? "bg-success-soft text-success-fg" : "bg-sunken text-fg-3"}`}>
           {ativo ? "cópia isolada" : codigo.status === "mesclado" ? "mesclado no projeto" : "descartado"}
         </span>
       </div>

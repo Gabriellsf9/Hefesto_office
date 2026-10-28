@@ -205,7 +205,7 @@ export function Avisos() {
                   {a.acao.rotulo}
                 </button>
               )}
-              <button type="button" aria-label="Dispensar" onClick={() => useAvisos.setState((s) => ({ lista: s.lista.filter((x) => x.id !== a.id) }))} className="grid size-6 place-items-center rounded-md opacity-60 hover:opacity-100">
+              <button type="button" aria-label="Dispensar" onClick={() => useAvisos.setState((s) => ({ lista: s.lista.filter((x) => x.id !== a.id) }))} className="grid size-alvo place-items-center rounded-md opacity-60 hover:opacity-100">
                 <X className="size-3.5" />
               </button>
             </div>

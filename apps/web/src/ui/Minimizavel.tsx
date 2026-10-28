@@ -7,7 +7,7 @@ export function BotaoMinimizar({ id, className = "" }: { id: PainelId; className
   return (
     <button
       onClick={() => alternar(id)}
-      className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-corpo leading-none text-fg-3 hover:bg-hover hover:text-fg ${className}`}
+      className={`grid size-alvo shrink-0 place-items-center rounded-md text-corpo leading-none text-fg-3 hover:bg-hover hover:text-fg ${className}`}
       title="Minimizar"
       aria-label="Minimizar"
     >

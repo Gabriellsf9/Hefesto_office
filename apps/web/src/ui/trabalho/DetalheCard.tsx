@@ -385,7 +385,7 @@ function Atividade({ card, comentarios }: { card: Card; comentarios: Comentario[
             );
           return (
             <li key={c.id} className={cx("flex gap-2.5 rounded-card px-3 py-2.5", e.caixa)}>
-              {a ? <Avatarzinho agent={a} tamanho={28} /> : <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-[10px] font-bold text-on-ink">CEO</span>}
+              {a ? <Avatarzinho agent={a} tamanho={28} /> : <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-[11.5px] font-bold tracking-tight text-on-ink">CEO</span>}
               <div className="min-w-0 flex-1">
                 <div className="text-pequeno">
                   <span className="font-semibold text-fg">{a ? a.nome : "Você"}</span>

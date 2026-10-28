@@ -20,7 +20,7 @@ import { calcularSimples } from "./areas/financas.ts";
 import { iniciarConquistas, listarConquistas } from "./conquistas.ts";
 import { definirConfigBackup, estadoBackup, fazerBackup, iniciarBackup } from "./backup.ts";
 import { buscarNaMemoria } from "./memoria.ts";
-import { configurarNuvem, estadoNuvem } from "./fabrica/nuvem.ts";
+import { configurarNuvem, estadoNuvem, testarNuvem } from "./fabrica/nuvem.ts";
 import { listarPessoas, removerPessoa, salvarPessoa } from "./pessoas.ts";
 import { exportarAgente, exportarEscritorio, exportarFluxo, importarPacote } from "./escritoriosPacote.ts";
 import { carregarEscritorios, excluirEscritorio, listarEscritorios, restaurarSede, salvarEscritorio } from "./escritorios.ts";
@@ -63,6 +63,7 @@ import {
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
 import { HOST } from "./plataforma.ts";
 import { configurarProvedores, estadoProvedores } from "./provedores.ts";
+import { listarIntegracoes } from "./integracoes.ts";
 import { montarPainel, configRelatorio, definirRelatorio, mandarRelatorio, iniciarRelatorioDiario } from "./painel.ts";
 import { resumoChamadas, estimativaDeCusto } from "./chamadas.ts";
 import { MODELOS_DE_PROJETO, criarProjetoDoModelo } from "./modelosDeProjeto.ts";
@@ -203,6 +204,7 @@ app.post<{ Params: { id: string }; Body: { titulo: string; descricao?: string; s
 app.post<{ Params: { id: string } }>("/api/cards/:id/liberar", async (req) => liberarGasto(idDe(req.params.id)));
 app.post<{ Params: { id: string } }>("/api/cards/:id/codigo/testar", async (req) => testarCard(idDe(req.params.id), "voce"));
 app.post<{ Params: { id: string } }>("/api/cards/:id/pull-request", async (req) => abrirPullRequest(idDe(req.params.id)));
+app.get("/api/integracoes", async () => listarIntegracoes());
 app.get("/api/github", async () => estadoGithub());
 app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => configurarGithub(typeof req.body?.token === "string" ? req.body.token : null));
 app.get("/api/evals", async () => listarEvals());
@@ -473,6 +475,7 @@ app.get<{ Params: { id: string; fluxo: string } }>("/api/escritorios/:id/fluxos/
 app.post<{ Body: { pacote?: unknown; escritorioId?: string; sala?: string } }>("/api/escritorios/importar", { bodyLimit: 4 * 1024 * 1024 }, async (req) =>
   importarPacote(req.body?.pacote, { escritorioId: req.body?.escritorioId, sala: req.body?.sala }),
 );
+app.post("/api/nuvem/testar", async () => testarNuvem());
 app.get("/api/nuvem", async () => estadoNuvem());
 app.put<{ Body: { ativo?: boolean; url?: string | null; token?: string | null } }>("/api/nuvem", async (req, reply) => {
   try {

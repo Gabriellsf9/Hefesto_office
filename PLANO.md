@@ -1,6 +1,6 @@
 # Plano — "Hefesto": escritório 3D de agentes de IA
 
-> Status: **Fases 0 a 7 concluídas**, e o redesenho do escritório (etapas A–F) também. Testadas contra uma API simulada; falta a primeira rodada real com a sua chave. Todas as fases (0 a 7) concluídas, mais imagens no chat e o navegador dos agentes.
+> Status: **Fases 0 a 7 concluídas**, mais o redesenho do escritório (etapas A–F), imagens no chat e o navegador dos agentes. Desde 28/10/2026 também estão prontos: aprendizado (A/B de instruções, escada de modelos, testes sombra), confiança (replay, auditoria encadeada, atacante, varredura do diff), planejamento (caminho crítico, orçamento por projeto, replanejamento), produção (prévia na Vercel, Sentry depois do merge, métrica por card) e ecossistema (exportar/importar, pessoas do time, Telegram, sandbox na nuvem com executor pronto, painel de integrações). Roda de verdade no Docker com a sua chave; Vercel, Sentry, GitHub e a nuvem esperam os seus tokens.
 
 ## 1. A ideia em uma frase
 

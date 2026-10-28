@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bot, Building2, Copy, Cpu, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import { Bot, Building2, Cable, Copy, Cpu, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
 import type { EstadoTelegram, EstadoWhatsapp, RoomId, StatusResponse } from "@empresa/shared";
 import { rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -17,12 +17,14 @@ import { CampoOrcamento } from "../CampoOrcamento.tsx";
 import { definirTema, useTema, type Tema } from "../shell/tema.ts";
 import { SandboxNuvem } from "./SandboxNuvem.tsx";
 import ModelosIa from "./ModelosIa.tsx";
+import { Integracoes } from "./Integracoes.tsx";
 
 // Configurações (DESIGN-INTERFACE.md §6.9): tudo o que estava no menu ⋯, organizado por seção.
 
-type Secao = "geral" | "modelos" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
+type Secao = "geral" | "integracoes" | "modelos" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
 const SECOES: { id: Secao; rotulo: string; icone: typeof Info }[] = [
   { id: "geral", rotulo: "Geral", icone: KeyRound },
+  { id: "integracoes", rotulo: "Integrações", icone: Cable },
   { id: "modelos", rotulo: "Modelos de IA", icone: Cpu },
   { id: "voz", rotulo: "Voz e sons", icone: Volume2 },
   { id: "escritorio", rotulo: "Escritório e aparência", icone: Building2 },
@@ -48,6 +50,7 @@ export default function PaginaConfiguracoes() {
         <div className="min-w-0 flex-1 space-y-6">
           <h2 className="text-secao font-semibold text-fg">{atual.rotulo}</h2>
           {secao === "geral" && <Geral />}
+          {secao === "integracoes" && <Integracoes />}
           {secao === "modelos" && <ModelosIa />}
           {secao === "voz" && <VozESons />}
           {secao === "escritorio" && <Escritorio />}

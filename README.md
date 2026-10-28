@@ -98,7 +98,12 @@ A barra lateral leva às áreas; **⌘K** busca e executa qualquer coisa (inclus
 - **Exportar e importar** um escritório inteiro, um agente ou um fluxo em JSON (Escritórios); ids repetidos ganham sufixo e as referências acompanham. Nada de segredo vai no arquivo.
 - **Pessoas do time** como donas de cards: o motor não roda os cards delas e elas são avisadas no chat do Telegram pareado (pareie um grupo do time, com a menção de cada um). O painel continua só no seu Mac.
 - **Aprovar pelo celular** com o resumo da entrega, os arquivos que mudaram, a prévia publicada, os avisos de licença e o custo.
-- **Sandbox na nuvem** (opcional, desligada): os comandos dos agentes rodam num executor seu. Protocolo: `POST {url}/v1/executar` com `Authorization: Bearer {token}` e `{ "comando": ["npm","test"], "rede": false, "tempoMaxS": 300, "arquivos": "<tar.gz em base64>" }`; resposta `{ "codigo": 0, "saida": "…", "ms": 1234 }`. O executor deve abrir os arquivos num diretório novo, rodar sem shell e sem rede (exceto `rede: true`, na instalação de dependências), respeitar o tempo e apagar tudo no fim.
+- **Sandbox na nuvem** (opcional, desligada): os comandos dos agentes rodam num executor seu. Há um pronto em [`scripts/executor-nuvem`](scripts/executor-nuvem/LEIAME.md): Node e Docker numa VM sua, atrás de HTTPS, com cada comando num contêiner sem rede e sem privilégios. O protocolo, para quem quiser escrever o seu:
+  - `POST {url}/v1/executar` com `Authorization: Bearer {token}` e o corpo `{ "comando": ["npm","test"], "rede": false, "tempoMaxS": 300, "arquivos": "<tar.gz em base64>", "sessao": "<id da cópia>" }`, que responde `{ "codigo": 0, "saida": "…", "ms": 1234 }`;
+  - `GET {url}/v1/saude`, que responde `{ "ok": true }` e é usado pelo botão Testar conexão.
+
+  O executor roda sem shell e sem rede (exceto com `rede: true`, na instalação de dependências) e respeita o tempo. Na mesma `sessao`, guarda só as pastas de dependências entre as chamadas e troca o resto pelos arquivos enviados.
+- **Integrações** (Configurações → Integrações): o estado de cada conexão num lugar só, com o que está ligado, o que falta, o que cada uma destrava e onde configurar. Cobre Claude, sandbox, GitHub, Vercel, Sentry, Telegram, WhatsApp, Ollama, OpenAI/Gemini, conectores MCP e nuvem. O token do GitHub também se configura ali.
 
 ### Segurança, em resumo
 - A chave da API, os tokens e os segredos ficam cifrados neste Mac e nunca voltam para o navegador.

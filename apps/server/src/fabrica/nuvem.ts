@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { getSetting, setSetting } from "../db.ts";
 import { apagarSegredo, lerSegredo, salvarSegredo } from "../secrets.ts";
@@ -12,10 +13,13 @@ import { podeRodarComandos } from "../plataforma.ts";
 //
 // Protocolo (qualquer executor que siga isto serve: um worker seu, um contêiner na sua nuvem…):
 //   POST {url}/v1/executar   Authorization: Bearer {token}
-//   { "comando": ["npm", "test"], "rede": false, "tempoMaxS": 300, "arquivos": "<tar.gz em base64>" }
+//   { "comando": ["npm", "test"], "rede": false, "tempoMaxS": 300, "arquivos": "<tar.gz em base64>", "sessao": "<id da cópia>" }
 //   → 200 { "codigo": 0, "saida": "…", "ms": 1234 }
-// O executor deve: abrir os arquivos num diretório novo, rodar sem shell, sem rede (exceto rede: true na
-// instalação de dependências), com o tempo máximo, e apagar tudo no fim.
+//   GET {url}/v1/saude       → 200 { "ok": true, … }   (o botão "Testar conexão")
+// O executor deve: rodar sem shell, sem rede (exceto rede: true na instalação de dependências), com o tempo
+// máximo. Na mesma sessão, guarda só as pastas de dependências (node_modules, .venv…) entre as chamadas
+// e troca o resto pelos arquivos enviados: o tar não leva o que o git ignora, então sem isso o "npm ci" de
+// uma chamada não serviria para o "npm test" da seguinte. Há um executor pronto em scripts/executor-nuvem.
 
 const run = promisify(execFile);
 const SEG = "nuvem_token";
@@ -75,7 +79,7 @@ export async function rodarNaNuvem(pasta: string, argv: string[], rede: boolean,
   const res = await fetch(`${e.url}/v1/executar`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ comando: argv, rede, tempoMaxS: Math.round(tempoMaxMs / 1000), arquivos: tar.toString("base64") }),
+    body: JSON.stringify({ comando: argv, rede, tempoMaxS: Math.round(tempoMaxMs / 1000), arquivos: tar.toString("base64"), sessao: createHash("sha256").update(pasta).digest("hex").slice(0, 32) }),
     signal: AbortSignal.timeout(tempoMaxMs + 60_000),
   }).catch((err: Error) => {
     throw new Error(`O executor na nuvem não respondeu: ${err.message.slice(0, 200)}`);
@@ -83,6 +87,22 @@ export async function rodarNaNuvem(pasta: string, argv: string[], rede: boolean,
   const json = (await res.json().catch(() => ({}))) as { codigo?: number | null; saida?: string; ms?: number; erro?: string };
   if (!res.ok) throw new Error(`O executor na nuvem recusou (${res.status}): ${json.erro ?? ""}`.trim());
   return { codigo: typeof json.codigo === "number" ? json.codigo : null, saida: `${String(json.saida ?? "").slice(-12_000)}\n(rodou na sandbox na nuvem)`.trim(), ms: Number(json.ms) || Date.now() - inicio, rede };
+}
+
+/** Confere se o executor responde e aceita o token (GET /v1/saude). */
+export async function testarNuvem(): Promise<{ ok: boolean; detalhe: string }> {
+  const e = estadoNuvem();
+  const token = lerSegredo(SEG);
+  if (!e.url || !token) return { ok: false, detalhe: "Informe a URL e o token primeiro." };
+  try {
+    const res = await fetch(`${e.url}/v1/saude`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; imagem?: string; paralelo?: number; erro?: string };
+    if (res.status === 401) return { ok: false, detalhe: "O executor recusou o token." };
+    if (!res.ok || !j.ok) return { ok: false, detalhe: `O executor respondeu ${res.status}${j.erro ? `: ${j.erro}` : ""}.` };
+    return { ok: true, detalhe: `Executor no ar${j.imagem ? ` (imagem ${j.imagem}` : ""}${j.paralelo ? `, ${j.paralelo} por vez)` : j.imagem ? ")" : ""}.` };
+  } catch (err) {
+    return { ok: false, detalhe: `O executor não respondeu: ${(err as Error).message.slice(0, 200)}` };
+  }
 }
 
 /** Dá para rodar testes e comandos: sandbox local (Mac ou contêiner) ou a da nuvem, se você ligou. */

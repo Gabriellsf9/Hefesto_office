@@ -71,7 +71,7 @@ export const BotaoIcone = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
       >
         <Icone className={tamanho === "p" ? "size-4" : "size-[18px]"} strokeWidth={1.75} />
         {selo != null && selo !== 0 && (
-          <span className="tabular absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[10.5px] font-semibold leading-none text-white">{selo}</span>
+          <span className="tabular absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 text-[11.5px] font-semibold leading-none text-white">{selo}</span>
         )}
       </button>
     );
@@ -120,7 +120,7 @@ export function Chip({ ativo, onClick, children, icone: Icone, contador }: { ati
 export function Avatar({ nome, cor, tamanho = 28, status }: { nome: string; cor?: string; tamanho?: number; status?: "ativo" | "ocioso" | "alerta" | null }) {
   const ini = nome.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
-    <span className="relative inline-grid shrink-0 place-items-center rounded-full font-semibold text-white" style={{ width: tamanho, height: tamanho, background: cor ?? "var(--fg-3)", fontSize: Math.max(10, tamanho * 0.38) }}>
+    <span className="relative inline-grid shrink-0 place-items-center rounded-full font-semibold text-white" style={{ width: tamanho, height: tamanho, background: cor ?? "var(--fg-3)", fontSize: Math.max(12, tamanho * 0.38) }}>
       {ini}
       {status && (
         <span
@@ -132,7 +132,7 @@ export function Avatar({ nome, cor, tamanho = 28, status }: { nome: string; cor?
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="inline-grid h-5 min-w-5 place-items-center rounded border border-line bg-surface-2 px-1 font-sans text-[11px] font-medium text-fg-3">{children}</kbd>;
+  return <kbd className="inline-grid h-5 min-w-5 place-items-center rounded border border-line bg-surface-2 px-1 font-sans text-legenda font-medium text-fg-3">{children}</kbd>;
 }
 
 export function Cartao({ children, className, onClick, interativo }: { children: ReactNode; className?: string; onClick?: () => void; interativo?: boolean }) {

@@ -104,7 +104,7 @@ function ItemNav({ item, ativo, expandida, contador }: { item: Item; ativo: bool
         (expandida ? (
           <span className={cx("tabular rounded-full px-1.5 text-legenda font-semibold", item.area === "entrada" ? "bg-danger text-white" : "bg-whatsapp text-white")}>{contador}</span>
         ) : (
-          <span className={cx("tabular absolute right-1.5 top-1 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10.5px] font-semibold text-white", item.area === "entrada" ? "bg-danger" : "bg-whatsapp")}>{contador > 99 ? "99+" : contador}</span>
+          <span className={cx("tabular absolute right-1.5 top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[11.5px] font-semibold leading-none text-white", item.area === "entrada" ? "bg-danger" : "bg-whatsapp")}>{contador > 99 ? "99+" : contador}</span>
         ))}
     </button>
   );

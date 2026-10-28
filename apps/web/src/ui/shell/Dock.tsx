@@ -95,7 +95,7 @@ export function Dock() {
             {anexos.map((u) => (
               <div key={u} className="relative">
                 <img src={u} alt="Anexo" className="size-14 rounded-ctl object-cover shadow-1" />
-                <button type="button" onClick={() => setAnexos((a) => a.filter((x) => x !== u))} className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full bg-ink text-on-ink" aria-label="Remover imagem">
+                <button type="button" onClick={() => setAnexos((a) => a.filter((x) => x !== u))} className="absolute -right-2 -top-2 grid size-alvo place-items-center rounded-full bg-ink text-on-ink" aria-label="Remover imagem">
                   <X className="size-3" />
                 </button>
               </div>
@@ -104,7 +104,7 @@ export function Dock() {
               <span key={d.url} className="flex h-14 items-center gap-2 rounded-ctl bg-surface px-3 text-pequeno text-fg shadow-1">
                 <FileText className="size-4 text-fg-3" />
                 <span className="max-w-[160px] truncate">{d.nome}</span>
-                <button type="button" onClick={() => setDocumentos((x) => x.filter((y) => y.url !== d.url))} className="grid size-5 place-items-center rounded-full text-fg-3 hover:bg-hover" aria-label="Remover arquivo"><X className="size-3" /></button>
+                <button type="button" onClick={() => setDocumentos((x) => x.filter((y) => y.url !== d.url))} className="grid size-alvo place-items-center rounded-full text-fg-3 hover:bg-hover" aria-label="Remover arquivo"><X className="size-3" /></button>
               </span>
             ))}
             {subindo > 0 && <span className="flex items-center gap-1.5 text-pequeno text-fg-2"><Loader2 className="size-4 animate-spin" /> Enviando…</span>}
@@ -186,7 +186,7 @@ function Bolha({ m, flutuante, escrevendo }: { m: Pick<ChatMessage, "id" | "ts" 
   const a = m.de === "voce" ? null : agentById[m.de];
   return (
     <div className={cx("flex gap-2.5", a ? "" : "flex-row-reverse")}>
-      {a ? <Avatarzinho agent={a} tamanho={28} /> : <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-[10px] font-bold text-on-ink">CEO</span>}
+      {a ? <Avatarzinho agent={a} tamanho={28} /> : <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-[11.5px] font-bold tracking-tight text-on-ink">CEO</span>}
       <div
         className={cx(
           "max-w-[82%] rounded-2xl px-3.5 py-2 text-corpo",
