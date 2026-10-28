@@ -200,6 +200,8 @@ export type ServerEvent =
   | { type: "previa"; previa: Previa }
   /** Deploy de prévia na Vercel de um card (publicando, construindo, pronta ou erro). */
   | { type: "previaPublicada"; cardId: number; previa: PreviaPublicada }
+  | { type: "autonomia"; config: unknown }
+  | { type: "autonomia.decisao" }
   | { type: "escritorios"; definicoes: EscritorioDef[] }
   /** Um agente passou trabalho para outro: o 3D anima a entrega (ir até a mesa, entregar a pasta, o outro recebe). */
   | { type: "repasse"; de: string; para: string; cardId: number; motivo: "pedido" | "validacao" | "devolucao" | "proxima-etapa" }

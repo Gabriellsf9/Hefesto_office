@@ -76,7 +76,7 @@ export function verificarAuditoria(): { ok: boolean; registros: number; quebraEm
 /* ---------- Ações do CEO pela API ---------- */
 
 /** Rotas que mudam algo e o que registrar delas. Corpo nunca vai inteiro: só campos seguros. */
-const CAMPOS_SEGUROS = new Set(["coluna", "dono", "nivel", "prioridade", "titulo", "bloqueado", "pausado", "modoCusto", "orcamentoDiarioUsd", "maxSimultaneos", "limiteCardUsd", "limiteCodigoUsd", "ativo", "sombraPct", "localPrimeiro", "abAutomatico", "agente", "modelo", "orcamentoUsd", "autocritica", "advogado", "licoes", "atacante", "vereditoCeo", "decisao"]);
+const CAMPOS_SEGUROS = new Set(["coluna", "dono", "nivel", "prioridade", "titulo", "bloqueado", "pausado", "modoCusto", "orcamentoDiarioUsd", "maxSimultaneos", "limiteCardUsd", "limiteCodigoUsd", "ativo", "sombraPct", "localPrimeiro", "abAutomatico", "agente", "modelo", "orcamentoUsd", "autocritica", "advogado", "licoes", "atacante", "vereditoCeo", "decisao", "mergeLocal", "conectores", "terminal", "liberarAteLimites"]);
 const ROTA_SECRETA = /\/(chave|key|github|telegram|whatsapp|segredos?|provedores|oauth|conexao|producao\/?$|nuvem)/i;
 
 export function auditarRequisicao(metodo: string, url: string, status: number, corpo: unknown) {

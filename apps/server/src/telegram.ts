@@ -8,6 +8,7 @@ import { aprovar, devolver, ErroCard, lerCard, listarCards, listarComentarios, u
 import { codigoDoCard } from "./fabrica/workspace.ts";
 import { previaPublicadaDo } from "./fabrica/producao.ts";
 import { ehPessoa as isPessoa, lerPessoa } from "./pessoas.ts";
+import { autonomiaAtiva } from "./autonomia.ts";
 import { aprovarPedido, recusarPedido } from "./mcp/ferramentas.ts";
 import { aprovarResposta, descartarResposta, lerContato } from "./whatsapp/whatsapp.ts";
 import { pedirParaHelena } from "./agentes/helena.ts";
@@ -158,7 +159,11 @@ function avisoCard(card: Card) {
   const c = config();
   const tipo = colunaDe(card.fluxo, card.coluna)?.tipo;
   if (card.demo) return;
-  if (tipo === "ceo" && c.notificar.aprovacoes && uma(`ap-${card.id}-${card.atualizadoEm}-${card.devolucoes}`)) {
+  // Piloto automático ligado: aprovação, limite e pergunta são do Diretor; o que ficar com você chega como "deixou para você".
+  const piloto = autonomiaAtiva();
+  if (piloto) {
+    /* nada: o aviso vem do piloto quando ele escalar */
+  } else if (tipo === "ceo" && c.notificar.aprovacoes && uma(`ap-${card.id}-${card.atualizadoEm}-${card.devolucoes}`)) {
     void detalhesDaAprovacao(card).then((det) =>
       enviar(
         `✅ <b>Pronto para aprovar</b> · ${card.chave} (${card.nivel}, ${card.prioridade})\n${escapar(card.titulo)}\n<i>${escapar(nomeDaSala(card.sala))} · ${escapar(nomeDe(card.dono))}${card.validador ? `, validado por ${escapar(nomeDe(card.validador))}` : ""}</i>\n\n${det}`,

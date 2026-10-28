@@ -64,6 +64,7 @@ import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from 
 import { HOST } from "./plataforma.ts";
 import { configurarProvedores, estadoProvedores } from "./provedores.ts";
 import { listarIntegracoes } from "./integracoes.ts";
+import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
 import { montarPainel, configRelatorio, definirRelatorio, mandarRelatorio, iniciarRelatorioDiario } from "./painel.ts";
 import { resumoChamadas, estimativaDeCusto } from "./chamadas.ts";
 import { MODELOS_DE_PROJETO, criarProjetoDoModelo } from "./modelosDeProjeto.ts";
@@ -207,6 +208,17 @@ app.post<{ Params: { id: string } }>("/api/cards/:id/liberar", async (req) => li
 app.post<{ Params: { id: string } }>("/api/cards/:id/codigo/testar", async (req) => testarCard(idDe(req.params.id), "voce"));
 app.post<{ Params: { id: string } }>("/api/cards/:id/pull-request", async (req) => abrirPullRequest(idDe(req.params.id)));
 app.get("/api/integracoes", async () => listarIntegracoes());
+app.get("/api/autonomia", async () => configAutonomia());
+app.put<{ Body: Record<string, unknown> }>("/api/autonomia", async (req) => configurarAutonomia(req.body ?? {}));
+app.get("/api/autonomia/decisoes", async () => listarDecisoes());
+app.get("/api/autonomia/resumo", async () => ({ texto: resumoDoDia() }));
+app.post<{ Params: { id: string } }>("/api/autonomia/decisoes/:id/desfazer", async (req, reply) => {
+  try {
+    return desfazerDecisao(Number(req.params.id));
+  } catch (e) {
+    return reply.code(400).send({ erro: (e as Error).message });
+  }
+});
 app.get("/api/github", async () => estadoGithub());
 app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => configurarGithub(typeof req.body?.token === "string" ? req.body.token : null));
 app.get("/api/evals", async () => listarEvals());
@@ -760,6 +772,7 @@ iniciarRelatorioDiario();
 iniciarAprendizado();
 iniciarPlanejamento();
 iniciarProducao();
+iniciarAutonomia();
 limparPassosAntigos();
 setInterval(limparPassosAntigos, 24 * 3600_000).unref();
 void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de card movida(s) para ${process.env.EMPRESA_WORKSPACE_DIR}`));

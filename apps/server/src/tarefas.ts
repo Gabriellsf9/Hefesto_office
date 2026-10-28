@@ -282,16 +282,16 @@ export function registrarDevolucao(id: number, autor: string, motivo: string, co
 
 /* ---------- Aprovações do CEO ---------- */
 
-const exigeAprovacao = (card: Card) => colunaDe(card.fluxo, card.coluna)?.tipo === "ceo";
+export const exigeAprovacao = (card: Card) => colunaDe(card.fluxo, card.coluna)?.tipo === "ceo";
 
 /** Quem precisa reagir quando você aprova um card (ex.: raio-x vira Ficha do Projeto). */
 export const aoAprovar: ((card: Card) => void)[] = [];
 
-export function aprovar(id: number, comentario?: string): Card {
+export function aprovar(id: number, comentario?: string, autor = "voce"): Card {
   const card = lerCard(id);
   if (!exigeAprovacao(card)) throw new ErroCard("Este card não está aguardando a sua aprovação.");
-  comentar(id, "voce", "aprovacao", comentario?.trim() || "Aprovado.");
-  const movido = mover(id, fluxos[card.fluxo]!.aprovarPara, "voce");
+  comentar(id, autor, "aprovacao", comentario?.trim() || "Aprovado.");
+  const movido = mover(id, fluxos[card.fluxo]!.aprovarPara, autor);
   for (const fn of aoAprovar) fn(movido);
   return movido;
 }
@@ -304,7 +304,7 @@ export function aprovarLote(ids: number[]): Card[] {
   return cards.map((c) => aprovar(c.id));
 }
 
-export function devolver(id: number, comentario: string): Card {
+export function devolver(id: number, comentario: string, autor = "voce"): Card {
   const card = lerCard(id);
   if (!exigeAprovacao(card)) throw new ErroCard("Este card não está aguardando a sua aprovação.");
   if (!comentario?.trim()) throw new ErroCard("Diga o que precisa mudar ao devolver.");
@@ -315,7 +315,7 @@ export function devolver(id: number, comentario: string): Card {
   const escolhida = fluxos[card.fluxo]!.devolverPara;
   const sala = colunaDe(card.fluxo, escolhida)?.sala;
   const destino = sala && sala !== card.sala ? colunaDeTrabalho(card.fluxo, card.sala) : escolhida;
-  return registrarDevolucao(id, "voce", comentario.trim().slice(0, 5000), destino);
+  return registrarDevolucao(id, autor, comentario.trim().slice(0, 5000), destino);
 }
 
 /* ---------- Bugs ---------- */
@@ -392,6 +392,8 @@ export function somarCusto(cardId: number, usd: number) {
 
 /** Etiqueta do card parado pelo limite de gasto (aparece na Caixa de entrada com o botão Liberar). */
 export const ETIQUETA_LIMITE = "limite-de-gasto";
+/** Comentários do piloto automático (decisões no lugar do CEO) começam assim. */
+export const PREFIXO_PILOTO = "🤖 Piloto automático";
 
 /** Card que mexe no código (cópia isolada própria): tem o limite de código, maior. */
 function temCopiaPropria(id: number) {

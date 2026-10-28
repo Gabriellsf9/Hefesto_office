@@ -105,6 +105,26 @@ A barra lateral leva às áreas; **⌘K** busca e executa qualquer coisa (inclus
   O executor roda sem shell e sem rede (exceto com `rede: true`, na instalação de dependências) e respeita o tempo. Na mesma `sessao`, guarda só as pastas de dependências entre as chamadas e troca o resto pelos arquivos enviados.
 - **Integrações** (Configurações → Integrações): o estado de cada conexão num lugar só, com o que está ligado, o que falta, o que cada uma destrava e onde configurar. Cobre Claude, sandbox, GitHub, Vercel, Sentry, Telegram, WhatsApp, Ollama, OpenAI/Gemini, conectores MCP e nuvem. O token do GitHub também se configura ali.
 
+### Piloto automático (Operação → Piloto automático)
+
+Desligado por padrão. Ligado, o CTO decide o que é técnico e a Helena decide o resto, sempre no seu lugar. Ninguém decide sobre o próprio trabalho.
+
+- **O que o Diretor decide:**
+  - aprovar ou devolver entregas, olhando o parecer do validador, a crítica, o ataque, os testes, o Livro, as metas e a Ficha do projeto;
+  - responder as perguntas dos agentes e resolver impasses;
+  - liberar gasto de IA quando um card bate no limite, dentro do orçamento do dia e do projeto;
+  - fazer o merge na pasta local dos cards de código que ele aprovou, desde que os testes estejam verdes.
+- **O que você escolhe se ele também faz:** ações de escrita nos conectores (menos enviar, publicar, pagar ou apagar) e comandos de teste, build, lint e git só de leitura no terminal do Mac.
+- **O que continua sempre com você:**
+  - cards P0 ou N3, cards com dados pessoais (LGPD) ou aviso de licença;
+  - cards de pessoas do time e cards marcados com `so-ceo`;
+  - o orçamento do dia e o do projeto;
+  - push, pull request, prévia na Vercel e produção;
+  - WhatsApp, contato com leads e publicação;
+  - controle do Mac e comandos sensíveis.
+- **Quando ele não decide:** se a confiança for baixa, ou se já respondeu ou devolveu o mesmo card 3 vezes no dia, ele deixa para você e avisa no Telegram ("deixou para você").
+- **Registro:** cada decisão fica no card, na auditoria encadeada e na lista da tela. Às 20h chega um resumo no Telegram. Uma aprovação pode ser reaberta em até 24 h com "Reabrir para mim": o card volta para a sua aprovação e fica marcado `so-ceo`.
+
 ### Segurança, em resumo
 - A chave da API, os tokens e os segredos ficam cifrados neste Mac e nunca voltam para o navegador.
 - O servidor só atende o próprio Mac: pedidos com outro Host (DNS rebinding), de outra origem ou entre sites são recusados, inclusive o WebSocket.

@@ -29,7 +29,7 @@ import { ferramentasDeInfra } from "../areas/infra.ts";
 import { ferramentasDeFinancas } from "../areas/financas.ts";
 import { ferramentasDeAtendimento } from "../areas/atendimento.ts";
 import {
-  comentar, criarCard, destravarCardsNoTeto, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
+  comentar, criarCard, destravarCardsNoTeto, PREFIXO_PILOTO, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
   ultimaEntrega,
 } from "../tarefas.ts";
 import { NO_MAC } from "../plataforma.ts";
@@ -149,7 +149,11 @@ function lerRetomada(cardId: number, tipo: "executar" | "validar", agente: strin
     | { agente: string; modelo: string; mensagens: string; ts: number }
     | undefined;
   if (!r || r.agente !== agente || r.modelo !== modelo || Date.now() - r.ts > RETOMADA_VALE_MS) return null;
-  return JSON.parse(r.mensagens) as Anthropic.Beta.BetaMessageParam[];
+  const mensagens = JSON.parse(r.mensagens) as Anthropic.Beta.BetaMessageParam[];
+  // O que você comentou depois da pausa (ex.: "contorne o problema") entra na conversa retomada.
+  const novos = listarComentarios(cardId).filter((c) => c.autor === "voce" && c.ts > r.ts && c.tipo === "comentario");
+  if (novos.length) mensagens.push({ role: "user", content: `Comentários do CEO desde a pausa:\n${novos.map((c) => `- ${c.texto}`).join("\n")}` });
+  return mensagens;
 }
 
 const apagarRetomada = (cardId: number) => db.prepare("DELETE FROM retomadas WHERE card_id = ?").run(cardId);
@@ -508,6 +512,8 @@ function tratarFalha(card: Card, agenteId: string, err: unknown) {
     publicar();
     return;
   }
+  // A API recusou o pedido (400): a conversa salva não serve mais; a próxima vez recomeça do zero.
+  if (err instanceof Anthropic.BadRequestError) apagarRetomada(card.id);
   const n = (falhas.get(card.id) ?? 0) + 1;
   falhas.set(card.id, n);
   comentar(card.id, agenteId, "comentario", `Não consegui concluir agora: ${msg}`);
@@ -797,7 +803,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
 function voltarParaCorrigir(card: Card, agente: Agent) {
   let seguidas = 0;
   for (const c of listarComentarios(card.id).reverse()) {
-    if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || c.autor === "voce") break;
+    if (c.texto.startsWith("✅ Verificações passaram") || c.tipo === "aprovacao" || c.autor === "voce" || c.texto.startsWith(PREFIXO_PILOTO)) break;
     if (c.texto.startsWith("❌ Verificação falhou")) seguidas++;
   }
   if (seguidas >= 3) {

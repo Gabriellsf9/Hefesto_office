@@ -184,6 +184,8 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
   let tentativasJson = 0;
   let ultimoTexto = "";
   const fallback = o.fallback ?? !/haiku/i.test(o.modelo);
+  // Modelos 5.x pensam sempre (adaptativo) e prendem o raciocínio à conversa que o gerou.
+  const vinculo = /^claude-(opus|sonnet|haiku|fable|mythos)-5/.test(o.modelo);
   // Replay: cada passo do trabalho num card fica guardado (texto e ferramentas).
   const replay = novaExecucao(o.cardId, o.agenteId, o.modelo);
   const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
@@ -208,8 +210,11 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     const stream = client.beta.messages.stream({
       model: o.modelo,
       max_tokens: 64000,
-      betas: [...(fallback ? ["server-side-fallback-2026-07-01"] : []), "context-management-2025-06-27"],
+      betas: [...(fallback ? ["server-side-fallback-2026-07-01"] : []), "context-management-2025-06-27", ...(vinculo ? ["thinking-binding-controls-2026-08-01"] : [])],
       ...(fallback ? { fallbacks: "default" as const } : {}),
+      // Retomada: o sistema do agente muda entre uma vez e outra (livro, lições, comentários). O raciocínio salvo
+      // de antes deixa de valer; a API descarta esses blocos em vez de recusar a conversa inteira.
+      ...(vinculo ? { thinking: { type: "adaptive" as const, block_binding: { prefix_mismatch_behavior: "drop_block" as const } } } : {}),
       // Economia: em tarefas longas (raio-x, código), resultados antigos de ferramentas saem do contexto
       // (o servidor limpa; não invalida o raciocínio). Só limpa em lotes grandes, para o cache valer a pena.
       context_management: {

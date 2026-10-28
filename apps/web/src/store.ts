@@ -99,6 +99,8 @@ interface Store {
   equipeAberta: boolean;
   whatsapp: EstadoWhatsapp | null;
   telegram: EstadoTelegram | null;
+  /** Piloto automático (Operação → Piloto automático). */
+  autonomia: { ativo: boolean; mergeLocal: boolean; conectores: boolean; terminal: boolean; liberarAteLimites: number } | null;
   /** Prévias do app por card (chegam ao vivo). */
   previas: Record<number, Previa>;
   previasPublicadas: Record<number, PreviaPublicada>;
@@ -197,6 +199,7 @@ export const useStore = create<Store>((set, get) => ({
   rotinaAberta: false,
   whatsapp: null,
   telegram: null,
+  autonomia: null,
   previas: {},
   previasPublicadas: {},
   escritorios: [],
@@ -244,6 +247,9 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "telegram":
         set({ telegram: e.estado });
+        break;
+      case "autonomia":
+        set({ autonomia: e.config as Store["autonomia"] });
         break;
       case "escritorios":
         set({ escritorios: e.definicoes });

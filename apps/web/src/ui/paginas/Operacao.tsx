@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, ShieldCheck, Database, DatabaseBackup, FolderGit2, Globe, LineChart, Plus, ScanSearch, Wallet, X, Sun, Cpu, FileText, FlaskConical } from "lucide-react";
+import { Activity, Bot, CheckCircle2, Cpu, Database, DatabaseBackup, FileText, FlaskConical, FolderGit2, Globe, LineChart, Plus, ScanSearch, ShieldCheck, Sun, Wallet, X } from "lucide-react";
 import type { Card, Projeto } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -10,6 +10,7 @@ import { CalculadoraSimples, Monitoramento } from "../Operacao.tsx";
 import { ChamadasIA, PainelHoje } from "./Hoje.tsx";
 import { Qualidade } from "./Qualidade.tsx";
 import { Auditoria } from "./Auditoria.tsx";
+import { PilotoAutomatico } from "./PilotoAutomatico.tsx";
 import { PlanoProjeto } from "./PlanoProjeto.tsx";
 import { ProducaoProjeto } from "./ProducaoProjeto.tsx";
 import { BotaoEscolherPasta } from "../SeletorDePastas.tsx";
@@ -18,11 +19,11 @@ import { Avatarzinho, usd } from "../comum.tsx";
 
 // Operação (DESIGN-INTERFACE.md §6.7): projetos e banco, monitoramento, finanças e backup.
 
-type Sub = "hoje" | "projetos" | "chamadas" | "qualidade" | "auditoria" | "monitoramento" | "financas" | "backup";
+type Sub = "hoje" | "piloto" | "projetos" | "chamadas" | "qualidade" | "auditoria" | "monitoramento" | "financas" | "backup";
 
 export default function PaginaOperacao() {
   const rota = useNav((s) => s.rota);
-  const sub = (["hoje", "projetos", "chamadas", "qualidade", "auditoria", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
+  const sub = (["hoje", "piloto", "projetos", "chamadas", "qualidade", "auditoria", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
   const monitores = useStore((s) => s.monitores);
   const fora = monitores.filter((m) => m.status === "fora").length;
   return (
@@ -37,6 +38,7 @@ export default function PaginaOperacao() {
             onChange={(id) => navegar("operacao", id)}
             abas={[
               { id: "hoje", rotulo: "Hoje", icone: Sun },
+              { id: "piloto", rotulo: "Piloto automático", icone: Bot },
               { id: "projetos", rotulo: "Projetos", icone: FolderGit2 },
               { id: "chamadas", rotulo: "Chamadas de IA", icone: Cpu },
               { id: "qualidade", rotulo: "Qualidade", icone: FlaskConical },
@@ -49,6 +51,7 @@ export default function PaginaOperacao() {
         }
       />
       {sub === "hoje" && <PainelHoje />}
+      {sub === "piloto" && <PilotoAutomatico />}
       {sub === "projetos" && <Projetos />}
       {sub === "chamadas" && <ChamadasIA />}
       {sub === "qualidade" && <Qualidade />}

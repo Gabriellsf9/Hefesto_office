@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { Bell, ChevronRight, Pause, Play, Search } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Bell, Bot, ChevronRight, Pause, Play, Search } from "lucide-react";
 import { fluxos, type FluxoId } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { navegar, useNav, type Area } from "../../nav.ts";
@@ -28,7 +28,7 @@ const NOMES_SUB: Record<string, string> = {
   livro: "Livro da Empresa", conhecimento: "Conhecimento", metas: "Metas", indicadores: "Indicadores", rituais: "Rituais e atas", atas: "Rituais e atas", conquistas: "Conquistas",
   whatsapp: "WhatsApp", leads: "Leads", atendimentos: "Atendimentos", "nao-contatar": "Não contatar",
   agentes: "Agentes", "ao-vivo": "Ao vivo",
-  hoje: "Hoje", chamadas: "Chamadas de IA", qualidade: "Qualidade", auditoria: "Auditoria", projetos: "Projetos", monitoramento: "Monitoramento", financas: "Finanças", backup: "Backup",
+  hoje: "Hoje", piloto: "Piloto automático", chamadas: "Chamadas de IA", qualidade: "Qualidade", auditoria: "Auditoria", projetos: "Projetos", monitoramento: "Monitoramento", financas: "Finanças", backup: "Backup",
   geral: "Geral", integracoes: "Integrações", modelos: "Modelos de IA", voz: "Voz e sons", escritorio: "Escritório", permissoes: "Permissões dos agentes", conectores: "Conectores", sobre: "Sobre",
 };
 
@@ -74,6 +74,7 @@ export function Cabecalho() {
       <BotaoIcone icone={Search} rotulo="Buscar (⌘K)" onClick={abrirPaleta} className="md:hidden" />
 
       <div className="flex flex-1 items-center justify-end gap-1.5">
+        <SeloPiloto />
         <EstadoEquipe />
         <span className="tabular hidden whitespace-nowrap px-2 text-pequeno text-fg-2 lg:inline" title="Gasto com IA hoje">
           {usd(custo)} <span className="text-fg-3">hoje</span>
@@ -85,6 +86,20 @@ export function Cabecalho() {
 }
 
 /** Estado da equipe e controles rápidos: pausar, orçamento, agentes ao mesmo tempo, quem está trabalhando. */
+/** "Automático" no topo enquanto o piloto decide no seu lugar (clique abre Operação → Piloto automático). */
+function SeloPiloto() {
+  const piloto = useStore((s) => s.autonomia);
+  useEffect(() => {
+    if (!useStore.getState().autonomia) void api<NonNullable<typeof piloto>>("/api/autonomia").then((x) => useStore.setState({ autonomia: x })).catch(() => {});
+  }, []);
+  if (!piloto?.ativo) return null;
+  return (
+    <button type="button" onClick={() => navegar("operacao", "piloto")} className="flex h-9 items-center gap-1.5 rounded-ctl px-2.5 text-pequeno font-medium text-accent-fg hover:bg-hover" title="Piloto automático ligado">
+      <Bot className="size-4" strokeWidth={1.75} /> <span className="hidden whitespace-nowrap sm:inline">Automático</span>
+    </button>
+  );
+}
+
 function EstadoEquipe() {
   const motor = useStore((s) => s.motor);
   const chave = useStore((s) => s.chaveConfigurada);
