@@ -41,6 +41,20 @@ export class ErroOrcamentoProjeto extends Error {}
 /** O agente parou sem entregar nada que se aproveite (vale uma nova tentativa antes de bloquear). */
 export class ErroSemEntrega extends Error {}
 
+/** Como a mensagem do CEO chega ao agente no meio do trabalho. */
+export const blocoDeOrientacao = (textos: string[]) =>
+  `## Mensagem do CEO agora (enquanto você trabalha)
+${textos.map((t) => `- ${t}`).join("\n")}
+
+Leve isso em conta a partir de já: ajuste o plano se preciso e siga, sem recomeçar o que já está certo.`;
+
+/**
+ * Resposta que só anuncia o que vai fazer ("Vou pesquisar no código…") e para: modelos menores fazem isso numa
+ * conversa livre. Aí o laço lembra de agir em vez de devolver o anúncio como resposta.
+ */
+export const soAnunciou = (t: string) =>
+  t.trim().length < 400 && /^\s*(vou|deixa eu|deixe-me|vamos|irei|primeiro,? (vou|preciso)|let me|i('| wi)ll)\b/i.test(t) && !/\n\s*[-*\d]/.test(t);
+
 export interface OpcoesAgente {
   /** Cliente do Claude; sem ele, o laço cria um com a chave cadastrada. Outros provedores não usam. */
   client?: Anthropic | null;
@@ -53,6 +67,8 @@ export interface OpcoesAgente {
   esforco?: "low" | "medium" | "high";
   /** Lembrete enviado (uma vez) se o agente parar sem chamar a ferramenta final. */
   lembrete: string;
+  /** Mensagens do CEO enviadas enquanto o agente trabalha: lidas (e esvaziadas) a cada rodada, sem reiniciar. */
+  orientacoes?: () => string[];
   /** false: parar sem ferramenta é um final válido (ex.: Helena respondendo uma pergunta). */
   exigeFerramenta?: boolean;
   /** Fallback de modelo em caso de recusa. Padrão: ligado, menos no Haiku (que não tem fallback no servidor). */
@@ -342,7 +358,7 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     if (msg.stop_reason === "pause_turn") continue;
 
     if (!usos.length) {
-      if (o.exigeFerramenta === false) return { terminou: true, texto: ultimoTexto, custoUsd };
+      if (o.exigeFerramenta === false && !soAnunciou(ultimoTexto)) return { terminou: true, texto: ultimoTexto, custoUsd };
       // Parou sem ferramenta (às vezes só anuncia o que vai fazer): até dois lembretes para continuar.
       if (lembretes >= 2) return { terminou: false, texto: ultimoTexto, custoUsd };
       lembretes++;
@@ -366,7 +382,10 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
       resultados.push({ type: "tool_result", tool_use_id: u.id, content: conteudo, ...(r.erro ? { is_error: true } : {}) });
     }
     if (fim) return { terminou: true, texto: ultimoTexto, custoUsd };
-    mensagens.push({ role: "user", content: resultados });
+    // Mensagem do CEO no meio do trabalho: vai junto com os resultados desta rodada.
+    const novas = o.orientacoes?.() ?? [];
+    if (novas.length) registrarPasso(replay, { rodada, tipo: "texto", saida: `(Mensagem do CEO recebida: ${novas.join(" | ").slice(0, 300)})` });
+    mensagens.push({ role: "user", content: novas.length ? [...resultados, { type: "text", text: blocoDeOrientacao(novas) }] : resultados });
     o.aoRodada?.(mensagens);
   }
   return { terminou: false, texto: ultimoTexto, custoUsd };

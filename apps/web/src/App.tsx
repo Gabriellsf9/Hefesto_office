@@ -23,6 +23,7 @@ import "./ui/shell/tema.ts";
 // O 3D (three.js, ~1 MB) carrega sob demanda: só baixa e monta depois da primeira visita ao Escritório.
 const Office = lazy(() => import("./scene/Office.tsx").then((m) => ({ default: m.Office })));
 const PaginaEntrada = lazy(() => import("./ui/paginas/Entrada.tsx"));
+const PaginaConversas = lazy(() => import("./ui/paginas/Conversas.tsx"));
 const PaginaTrabalho = lazy(() => import("./ui/paginas/Trabalho.tsx"));
 const PaginaClientes = lazy(() => import("./ui/paginas/Clientes.tsx"));
 const PaginaEquipe = lazy(() => import("./ui/paginas/Equipe.tsx"));
@@ -76,6 +77,7 @@ export function App() {
             <div className="absolute inset-0 z-[100] bg-bg">
               <Suspense fallback={<div className="space-y-3 p-8"><Esqueleto className="h-8 w-60" /><Esqueleto className="h-40 w-full" /></div>}>
                 {rota.area === "entrada" && <PaginaEntrada />}
+                {rota.area === "conversas" && <PaginaConversas />}
                 {rota.area === "trabalho" && <PaginaTrabalho />}
                 {rota.area === "clientes" && <PaginaClientes />}
                 {rota.area === "equipe" && <PaginaEquipe />}

@@ -3,8 +3,8 @@ import { create } from "zustand";
 // Navegação por endereço (#/area/sub/id?card=25): cada página e cada card têm link, o voltar do
 // navegador funciona e recarregar volta para o mesmo lugar. DESIGN-INTERFACE.md §3.
 
-export type Area = "escritorio" | "entrada" | "trabalho" | "clientes" | "equipe" | "empresa" | "operacao" | "config" | "escritorios";
-const AREAS: Area[] = ["escritorio", "entrada", "trabalho", "clientes", "equipe", "empresa", "operacao", "config", "escritorios"];
+export type Area = "escritorio" | "entrada" | "conversas" | "trabalho" | "clientes" | "equipe" | "empresa" | "operacao" | "config" | "escritorios";
+const AREAS: Area[] = ["escritorio", "entrada", "conversas", "trabalho", "clientes", "equipe", "empresa", "operacao", "config", "escritorios"];
 
 export interface Rota {
   area: Area;

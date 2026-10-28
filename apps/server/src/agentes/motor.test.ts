@@ -114,3 +114,15 @@ test("parte criada pelo modelo local leva o contexto e os critérios do card pri
   assert.match(d, /CRUD de tickets com RN-33/);
   assert.match(d, /2\. EMP-15: eventos/);
 });
+
+test("modo plano: sem plano, propor; com plano proposto, executar com os ajustes que o CEO comentou depois dele", async () => {
+  const { estadoDoPlano, ETIQUETA_PLANO } = await import("./motor.ts");
+  const { criarCard, comentar } = await import("../tarefas.ts");
+  const c = criarCard({ titulo: "Tela de integrações", sala: "design", dono: "ui-designer", etiquetas: [ETIQUETA_PLANO] });
+  assert.deepEqual(estadoDoPlano(c), { fase: "propor" });
+  comentar(c.id, "voce", "comentario", "comentário antigo, antes do plano");
+  comentar(c.id, "ui-designer", "comentario", "📋 Plano proposto\n1. Ler a tela atual\n2. Desenhar a nova");
+  comentar(c.id, "voce", "comentario", "Use o mesmo menu lateral.");
+  assert.deepEqual(estadoDoPlano(c), { fase: "executar", plano: "1. Ler a tela atual\n2. Desenhar a nova", ajustes: ["Use o mesmo menu lateral."] });
+  assert.equal(estadoDoPlano(criarCard({ titulo: "Sem plano", sala: "design", dono: "ui-designer" })), null);
+});

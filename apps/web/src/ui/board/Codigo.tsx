@@ -5,6 +5,7 @@ import { api } from "../../api.ts";
 import { ExternalLink, Play, Square, TerminalSquare } from "lucide-react";
 import type { Previa, PreviaPublicada as TPreviaPublicada } from "@empresa/shared";
 import { Botao, Etiqueta, avisarErro } from "../kit/index.ts";
+import { DiffComentavel } from "./DiffComentavel.tsx";
 
 // Código do card (Fase 4): a branch na cópia isolada, o que mudou e o merge no seu projeto.
 
@@ -87,24 +88,7 @@ export function SecaoCodigo({ card }: { card: Card }) {
             </button>
           )}
           {verDiff && (
-            <pre className="scroll-fino mt-2 max-h-96 overflow-auto rounded-lg bg-codigo p-3 text-legenda leading-relaxed text-codigo-fg ring-1 ring-line">
-              {codigo.patch.split("\n").map((l, i) => (
-                <div
-                  key={i}
-                  className={
-                    l.startsWith("+") && !l.startsWith("+++")
-                      ? "text-emerald-300"
-                      : l.startsWith("-") && !l.startsWith("---")
-                        ? "text-rose-300"
-                        : l.startsWith("@@")
-                          ? "text-sky-300"
-                          : "text-on-ink/70"
-                  }
-                >
-                  {l || " "}
-                </div>
-              ))}
-            </pre>
+            <DiffComentavel cardId={card.id} patch={codigo.patch} />
           )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">

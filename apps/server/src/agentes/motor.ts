@@ -95,6 +95,61 @@ export function estadoMotor(): EstadoMotor {
   };
 }
 
+/* ---------- Modo plano ---------- */
+
+/** Card marcado: o agente primeiro propõe um plano (só lendo), o card para e o CEO aprova ou ajusta comentando. */
+export const ETIQUETA_PLANO = "plano-primeiro";
+const PREFIXO_PLANO = "📋 Plano proposto";
+/** Ferramentas que esperam o plano ser aprovado (mexem em arquivos, sobem ambientes ou entregam). */
+const DEPOIS_DO_PLANO = new Set(["entregar", "escrever_arquivo", "editar_arquivo", "apagar_arquivo", "ambiente_subir", "ambiente_comando", "ambiente_descer", "dividir_em_partes", "pedir_para_outra_area", "rodar_comando"]);
+
+export type EstadoDoPlano = { fase: "propor" } | { fase: "executar"; plano: string; ajustes: string[] };
+
+/** Sem plano proposto: propor. Proposto: executar com o plano e o que o CEO comentou depois dele. */
+export function estadoDoPlano(card: Card): EstadoDoPlano | null {
+  if (!card.etiquetas.includes(ETIQUETA_PLANO)) return null;
+  const coms = listarComentarios(card.id);
+  const i = coms.map((c) => c.texto.startsWith(PREFIXO_PLANO)).lastIndexOf(true);
+  if (i < 0) return { fase: "propor" };
+  return {
+    fase: "executar",
+    plano: coms[i]!.texto.slice(coms[i]!.texto.indexOf("\n") + 1),
+    ajustes: coms.slice(i + 1).filter((c) => c.autor === "voce" && c.tipo === "comentario").map((c) => c.texto),
+  };
+}
+
+const PEDIR_PLANO = `
+
+## Modo plano: proponha antes de fazer
+Este card pede um plano antes da execução. Agora só leia e entenda (projeto, card, telas): não altere nada. Depois chame propor_plano com: o que vai fazer, em passos; os arquivos e telas que vai mexer; o que vai testar; riscos e dúvidas. O card para e o CEO aprova ou ajusta; só então você executa.`;
+
+const comPlanoAprovado = (p: Extract<EstadoDoPlano, { fase: "executar" }>) => `
+
+## Plano aprovado pelo CEO (siga)
+${p.plano}${p.ajustes.length ? `
+
+### Ajustes do CEO ao plano (valem mais que o plano)
+${p.ajustes.map((a) => `- ${a}`).join("\n")}` : ""}`;
+
+/* ---------- Conduzir no meio do trabalho ---------- */
+
+const orientacoes = new Map<number, string[]>();
+
+/**
+ * Mensagem do CEO para um card cujo autor está trabalhando agora: entra na próxima rodada dele, sem reiniciar.
+ * Devolve false se ninguém está executando o card (aí fica só como comentário, lido na próxima vez).
+ */
+export function orientarCard(cardId: number, texto: string): boolean {
+  if (emAndamento.get(cardId)?.tipo !== "executar") return false;
+  orientacoes.set(cardId, [...(orientacoes.get(cardId) ?? []), texto]);
+  return true;
+}
+function pegarOrientacoes(cardId: number): string[] {
+  const lista = orientacoes.get(cardId) ?? [];
+  orientacoes.delete(cardId);
+  return lista;
+}
+
 /** O CEO mexeu no card (moveu, bloqueou, trocou o responsável, apagou) ou pausou a empresa: quem estava nele para. */
 export function interromper(cardId: number, motivo: string) {
   controles.get(cardId)?.abort(motivo);
@@ -652,8 +707,11 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     local && !card.etiquetas.includes(ETIQUETA_PARTE) && profundidade(card) < MAX_PROFUNDIDADE &&
     !listarCards().some((c) => c.paiId === card.id && c.etiquetas.includes(ETIQUETA_PARTE));
 
+  const plano = estadoDoPlano(card);
+
   let entregou = false;
   let dividiu = false;
+  let propos = false;
   let pedidos = 0;
   // Autocrítica (Fase 2f): a primeira chamada de entregar vira rascunho; o agente confere
   // contra o checklist e chama de novo com a versão final.
@@ -769,6 +827,25 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
       },
     ),
   ];
+  if (plano?.fase === "propor") {
+    ferramentas.push(
+      ferramenta(
+        "propor_plano",
+        "Registra o seu plano para o CEO aprovar antes da execução. Termina a sua vez; o card para até o CEO responder.",
+        { plano: { type: "string", description: "Passos, arquivos e telas que vai mexer, o que vai testar, riscos e dúvidas (Markdown)" } },
+        ["plano"],
+        (e) => {
+          const texto_ = texto(e, "plano", 20_000);
+          comentar(card.id, agente.id, "comentario", `${PREFIXO_PLANO}
+${texto_}`);
+          editarCard(card.id, { bloqueado: true });
+          postChat(agente.id, `Propus o plano do ${card.chave} (${card.titulo}). Aprove ou ajuste comentando no card: aí eu executo.`);
+          propos = true;
+          return { texto: "Plano registrado. O card espera o CEO.", fim: true };
+        },
+      ),
+    );
+  }
   if (podeDividir) {
     ferramentas.push(
       ferramenta(
@@ -895,18 +972,22 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     esforco: wt ? "high" : undefined,
     modelo: modeloAutor,
     sistema: sistemaAutor(agente),
-    mensagem: mensagemExecutar(card, { local, podeDividir }) + (referencia ? NOTA_DA_REFERENCIA : ""),
+    mensagem: mensagemExecutar(card, { local, podeDividir: podeDividir && plano?.fase !== "propor" }) + (referencia ? NOTA_DA_REFERENCIA : "") + (plano?.fase === "propor" ? PEDIR_PLANO : plano ? comPlanoAprovado(plano) : ""),
     imagens: imagensDoCard(card),
     arquivos: arquivosDoTexto(card.descricao),
-    ferramentas,
+    // Antes do plano aprovado: só leitura (e propor_plano).
+    ferramentas: plano?.fase === "propor" ? ferramentas.filter((f) => !("name" in f.def && DEPOIS_DO_PLANO.has(f.def.name))) : ferramentas,
     cardId: card.id,
     sinal,
     maxRodadas: wt ? 40 : undefined,
+    orientacoes: () => pegarOrientacoes(card.id),
     lembrete: "Você parou sem chamar nenhuma ferramenta. Se ainda falta trabalho, continue agora usando as ferramentas; quando terminar, chame entregar com o trabalho completo (ou perguntar_ao_ceo, se for indispensável).",
   }).finally(() => desligarCelular(card.id));
   if (sinal.aborted) throw new ErroInterrompido(String(sinal.reason));
   // Dividiu em partes: o card espera por elas (filhosAbertos) e volta para juntar quando terminarem.
   if (dividiu) return;
+  // Propôs o plano: o card está parado esperando o CEO.
+  if (propos) return;
 
   // Parou depois do rascunho, sem a chamada final: o rascunho vale como entrega.
   const r0 = rascunho as { resumo: string; conteudo: string } | null;

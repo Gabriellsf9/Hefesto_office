@@ -39,6 +39,7 @@ function Formulario({ fechar }: { fechar: () => void }) {
   const [criterios, setCriterios] = useState("");
   const [projetoId, setProjetoId] = useState<number | null>(baseDoFluxo(fluxoInicial) === "software" ? projetoAtivo : null);
   const [melhorDe3, setMelhorDe3] = useState(false);
+  const [planoPrimeiro, setPlanoPrimeiro] = useState(false);
   // Card que mexe no código (sala de código do fluxo de software, com projeto): pode usar o "melhor de 3".
   const codigo = !!projetoId && ehCardDeCodigo({ fluxo, sala, tipo });
   const [dono, setDono] = useState(liderDe(salaPadraoDo(fluxoInicial)));
@@ -56,7 +57,7 @@ function Formulario({ fechar }: { fechar: () => void }) {
     try {
       // "Começar agora" coloca o card na fila da equipe (fora do Backlog) para o motor pegar.
       const coluna = comecarAgora ? colunaDeEntrada(fluxo) : undefined;
-      const c = await api<Card>("/api/cards", "POST", { titulo, fluxo, sala, tipo, prioridade, nivel, descricao, criterios, projetoId, coluna, dono: dono || null, ...(melhorDe3 && codigo ? { etiquetas: ["melhor-de-3"] } : {}) });
+      const c = await api<Card>("/api/cards", "POST", { titulo, fluxo, sala, tipo, prioridade, nivel, descricao, criterios, projetoId, coluna, dono: dono || null, etiquetas: [...(melhorDe3 && codigo ? ["melhor-de-3"] : []), ...(planoPrimeiro ? ["plano-primeiro"] : [])] });
       fechar();
       avisar(`${c.chave} criado`);
       useStore.getState().abrirCard(c.id);
@@ -128,6 +129,12 @@ function Formulario({ fechar }: { fechar: () => void }) {
             <option value="">Sem responsável</option>
             {agents.filter((a) => a.sala === sala).map((a) => <option key={a.id} value={a.id}>{a.nome} · {a.cargo}</option>)}
           </Seletor>
+          <Interruptor
+            ativo={planoPrimeiro}
+            onChange={setPlanoPrimeiro}
+            rotulo="Plano primeiro"
+            descricao="O agente só lê e propõe um plano (passos, arquivos, testes, riscos). O card para até você aprovar ou ajustar comentando; só então ele executa."
+          />
           {codigo && (
             <Interruptor
               ativo={melhorDe3}

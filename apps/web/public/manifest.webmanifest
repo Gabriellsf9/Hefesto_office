@@ -1,0 +1,15 @@
+{
+  "name": "Hefesto",
+  "short_name": "Hefesto",
+  "description": "Sua empresa de agentes de IA: cards, aprovações e a equipe trabalhando.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1f2430",
+  "theme_color": "#1f2430",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/hefesto.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

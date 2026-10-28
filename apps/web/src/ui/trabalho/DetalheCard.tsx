@@ -360,12 +360,16 @@ const ESTILO: Record<Comentario["tipo"], { caixa: string; verbo?: string }> = {
 function Atividade({ card, comentarios }: { card: Card; comentarios: Comentario[] }) {
   const [texto, setTexto] = useState("");
   const [soDebate, setSoDebate] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  // Autor trabalhando agora: o comentário chega a ele na próxima rodada, sem reiniciar o card.
+  const rodando = useStore((s) => s.motor.emAndamento.some((t) => t.cardId === card.id && t.tipo === "executar"));
   const lista = soDebate ? comentarios.filter((c) => c.tipo !== "movimento") : comentarios;
   const enviar = async () => {
     if (!texto.trim()) return;
     try {
-      await api(`/api/cards/${card.id}/comentarios`, "POST", { texto });
+      const r = await api<{ entregueAoAgente?: boolean }>(`/api/cards/${card.id}/comentarios`, "POST", { texto });
       setTexto("");
+      setAviso(r.entregueAoAgente ? "Entregue ao agente: ele recebe na próxima rodada, sem reiniciar." : null);
     } catch (e) {
       avisarErro(e);
     }
@@ -411,10 +415,11 @@ function Atividade({ card, comentarios }: { card: Card; comentarios: Comentario[
               void enviar();
             }
           }}
-          placeholder={card.bloqueado ? "Responda à pergunta do agente para desbloquear…" : "Escreva um comentário (Enter envia, Shift+Enter quebra linha)"}
+          placeholder={card.bloqueado ? "Responda à pergunta do agente para desbloquear…" : rodando ? "Oriente o agente agora: ele recebe na próxima rodada, sem reiniciar" : "Escreva um comentário (Enter envia, Shift+Enter quebra linha)"}
         />
         <BotaoIcone icone={Send} rotulo="Enviar comentário" onClick={() => void enviar()} disabled={!texto.trim()} />
       </div>
+      {aviso && <p className="mt-1.5 text-legenda text-success-fg">{aviso}</p>}
     </Bloco>
   );
 }

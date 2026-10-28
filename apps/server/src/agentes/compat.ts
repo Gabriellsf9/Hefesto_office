@@ -13,7 +13,7 @@ import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
 import { conferirOrcamentoDoProjeto, projetoSemOrcamento } from "../planejamento.ts";
 import { registrarChamada } from "../chamadas.ts";
-import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente } from "./loop.ts";
+import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente, blocoDeOrientacao, soAnunciou } from "./loop.ts";
 
 // O laço do agente para modelos fora do Claude: Ollama (API nativa, para controlar o
 // tamanho do contexto) e OpenAI e Gemini (API de chat no formato da OpenAI). Mesmas
@@ -444,6 +444,12 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
     if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
+    // Mensagem do CEO no meio do trabalho: entra antes da próxima chamada, sem reiniciar.
+    const doCeo = rodada > 0 ? (o.orientacoes?.() ?? []) : [];
+    if (doCeo.length) {
+      msgs.push({ role: "user", content: blocoDeOrientacao(doCeo) });
+      registrarPasso(replay, { rodada, tipo: "texto", saida: `(Mensagem do CEO recebida: ${doCeo.join(" | ").slice(0, 300)})` });
+    }
     // Perto do limite: a parte antiga da conversa vira um resumo (antes de cortar resultados), como o Claude Code faz.
     // Só de novo quando a conversa crescer outros 20% do limite: se as últimas rodadas sozinhas já são grandes,
     // resumir a cada passo não ajuda (no card 11 compactou duas vezes em 30 s); aí o aparar resolve.
@@ -540,7 +546,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     msgs.push({ role: "assistant", content: r.texto, ...(r.chamadas.length ? { tool_calls: r.chamadas } : {}) });
 
     if (!r.chamadas.length) {
-      if (o.exigeFerramenta === false) return { terminou: true, texto: ultimoTexto, custoUsd };
+      if (o.exigeFerramenta === false && !soAnunciou(ultimoTexto)) return { terminou: true, texto: ultimoTexto, custoUsd };
       if (lembretes >= 2) return { terminou: false, texto: ultimoTexto, custoUsd };
       lembretes++;
       msgs.push({

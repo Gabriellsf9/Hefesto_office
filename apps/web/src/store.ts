@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, AlertaSaude, Ata, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, AlertaSaude, Ata, MensagemConversa, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -80,6 +80,10 @@ interface Store {
   monitores: Monitor[];
   /** Alertas abertos do vigia de saúde (trabalho travado, erro repetido, loop…). */
   alertas: AlertaSaude[];
+  /** Conversas diretas: mensagens que chegaram por evento, texto parcial e quem está respondendo. */
+  conversaMsgs: MensagemConversa[];
+  conversaParcial: Record<number, string>;
+  conversaRodando: Record<number, boolean>;
   conquistas: Conquista[];
   /** Sessões do navegador dos agentes, por card. */
   navegador: Record<number, SessaoNavegador>;
@@ -187,6 +191,9 @@ export const useStore = create<Store>((set, get) => ({
   pecas: {},
   monitores: [],
   alertas: [],
+  conversaMsgs: [],
+  conversaParcial: {},
+  conversaRodando: {},
   conquistas: [],
   navegador: {},
   navegadorAberto: false,
@@ -386,6 +393,15 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "alertas":
         set({ alertas: e.abertos });
+        break;
+      case "conversa.mensagem":
+        set((s) => ({ conversaMsgs: [...s.conversaMsgs.slice(-199), e.mensagem], conversaParcial: e.mensagem.papel === "agente" ? { ...s.conversaParcial, [e.mensagem.conversaId]: "" } : s.conversaParcial }));
+        break;
+      case "conversa.parcial":
+        set((s) => ({ conversaParcial: { ...s.conversaParcial, [e.conversaId]: e.texto } }));
+        break;
+      case "conversa.estado":
+        set((s) => ({ conversaRodando: { ...s.conversaRodando, [e.conversaId]: e.rodando } }));
         break;
       case "focus": {
         if (!get().seguirAtividade) break;
