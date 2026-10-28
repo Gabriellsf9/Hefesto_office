@@ -11,7 +11,7 @@ import { db, getSetting, setSetting } from "../db.ts";
 import { fichaDoProjeto } from "../projetos.ts";
 import { configCritica, criarConhecimento, extrairLicao } from "../conhecimento.ts";
 import { conferirEntregaDeLead, ferramentasDeProspeccao } from "../prospeccao.ts";
-import { codigoDoCard, commitar, g as gitEm, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
+import { codigoDoCard, commitar, g as gitEm, garantirCopiaDeReferencia, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
 import { ferramentaDeComando, ferramentaDeDiff, ferramentasDeEscrita } from "../fabrica/ferramentas.ts";
 import { ferramentaDeCaptura, ferramentaGerarImagem } from "../fabrica/capturas.ts";
 import { ambienteAtivo, ferramentasDeAmbiente, HOST_DO_AMBIENTE } from "../fabrica/ambiente.ts";
@@ -378,6 +378,11 @@ export function prontoParaExecutar(card: Card, porId: Map<number, Card>) {
 const escreveCodigo = (card: Card, agente: Agent) =>
   ehCardDeCodigo(card) || (agente.ferramentas.includes("git") && agente.ferramentas.includes("arquivos") && card.sala !== "arquitetura" && agente.sala === card.sala);
 
+const NOTA_DA_REFERENCIA = `
+
+## App rodando para você ver (cópia de referência)
+Você tem uma cópia do projeto como ele está hoje e o Docker dos agentes para subir o app de verdade: ambiente_subir, ambiente_comando, ambiente_logs, ambiente_descer. Com ele no ar, use capturar_telas (http://${HOST_DO_AMBIENTE}:PORTA) para ver e printar as telas reais e se basear nelas. Você tem autonomia: se faltar banco, contas ou dados de teste, crie (compose e .env de TESTE com escrever_arquivo nessa cópia; contas e dados com ambiente_comando). Nada que você escrever nessa cópia vira commit, e o ambiente fica de pé para os próximos cards do projeto (veja com ambiente_logs antes de subir de novo).`;
+
 /**
  * Imagens que o agente vê: as que você pôs no card, os prints da última entrega dele (o validador confere a tela,
  * o autor refaz em cima dela) e os dos cards de que ele depende (o frontend vê o protótipo). Até 6, as mais próximas primeiro.
@@ -706,6 +711,17 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
   else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
+  // Card sem código num projeto: a cópia de referência (o projeto como está hoje) para subir o app no ambiente,
+  // criar dados de teste e tirar prints das telas reais. Um ambiente por projeto, compartilhado entre os cards.
+  let referencia: Worktree | null = null;
+  if (!wt && !wtDoPai && projeto && projetoId !== null && ambienteAtivo()) {
+    try {
+      referencia = await garantirCopiaDeReferencia(card, projeto.caminho, projetoId);
+      ferramentas.push(...ferramentasDeAmbiente(referencia, `ref-${projetoId}`), ...ferramentasDeEscrita(referencia), ferramentaDeCaptura(card.id, `http://${HOST_DO_AMBIENTE}`));
+    } catch (e) {
+      if (!(e instanceof ErroCard)) throw e;
+    }
+  }
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
   if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
@@ -744,7 +760,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     esforco: wt ? "high" : undefined,
     modelo: modeloAutor,
     sistema: sistemaAutor(agente),
-    mensagem: mensagemExecutar(card),
+    mensagem: mensagemExecutar(card) + (referencia ? NOTA_DA_REFERENCIA : ""),
     imagens: imagensDoCard(card),
     arquivos: arquivosDoTexto(card.descricao),
     ferramentas,

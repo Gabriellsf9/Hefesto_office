@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { colunaDe, type Card, type CodigoDoCard } from "@empresa/shared";
@@ -96,15 +96,45 @@ export function registroDoCard(cardId: number): Worktree | null {
   return r ? deLinha(r) : null;
 }
 
+/**
+ * A pasta git do projeto: a própria pasta vinculada ou, se ela não for um repositório (ex.: uma pasta que guarda
+ * o repositório e outros arquivos soltos), a única subpasta que é.
+ */
+export async function raizDoRepositorio(pasta: string): Promise<string> {
+  try {
+    await g(pasta, "rev-parse", "--is-inside-work-tree");
+    return pasta;
+  } catch { /* procura uma subpasta com git */ }
+  const filhas = readdirSync(pasta, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".") && existsSync(join(pasta, d.name, ".git")));
+  if (filhas.length === 1) return join(pasta, filhas[0]!.name);
+  throw new ErroCard(
+    filhas.length
+      ? `A pasta do projeto tem mais de um repositório git (${filhas.map((d) => d.name).join(", ")}): vincule o projeto à pasta do repositório certo.`
+      : "O projeto não usa git: a fábrica precisa de git para trabalhar numa cópia isolada. Rode `git init` e faça o primeiro commit na pasta do projeto.",
+  );
+}
+
+const pastaDasCopias = (projetoId: number) => join(process.env.EMPRESA_WORKSPACE_DIR ?? join(DATA_DIR, "workspace"), String(projetoId));
+
+/**
+ * Cópia de referência do projeto (como está no HEAD do repositório), uma por projeto, para os cards sem código:
+ * subir o app no ambiente, criar dados de teste e tirar prints das telas reais. Não é branch de card e não vira commit.
+ */
+export async function garantirCopiaDeReferencia(card: Card, pastaDoProjeto: string, projetoId: number): Promise<Worktree> {
+  const repo = await raizDoRepositorio(pastaDoProjeto);
+  const caminho = join(pastaDasCopias(projetoId), "referencia");
+  if (!existsSync(join(caminho, ".git"))) {
+    mkdirSync(pastaDasCopias(projetoId), { recursive: true });
+    await g(repo, "worktree", "add", "--detach", caminho, "HEAD");
+  }
+  return { cardId: card.id, repo, caminho, branch: "referência (HEAD do projeto)", base: await g(caminho, "rev-parse", "HEAD"), status: "ativo" };
+}
+
 /** Cria (ou reaproveita) a cópia isolada do projeto para este card. */
-export async function garantirWorktree(card: Card, repo: string, projetoId: number): Promise<Worktree> {
+export async function garantirWorktree(card: Card, pastaDoProjeto: string, projetoId: number): Promise<Worktree> {
   const existente = worktreeDoCard(card);
   if (existente) return existente;
-  try {
-    await g(repo, "rev-parse", "--is-inside-work-tree");
-  } catch {
-    throw new ErroCard("O projeto não usa git: a fábrica precisa de git para trabalhar numa cópia isolada. Rode `git init` e faça o primeiro commit na pasta do projeto.");
-  }
+  const repo = await raizDoRepositorio(pastaDoProjeto);
   let base: string;
   try {
     base = await g(repo, "rev-parse", "HEAD");
@@ -112,7 +142,7 @@ export async function garantirWorktree(card: Card, repo: string, projetoId: numb
     throw new ErroCard("O repositório ainda não tem nenhum commit. Faça o primeiro commit e tente de novo.");
   }
   // No Docker as cópias ficam em /workspace (os agentes escrevem ali; nunca em /data).
-  const pasta = join(process.env.EMPRESA_WORKSPACE_DIR ?? join(DATA_DIR, "workspace"), String(projetoId));
+  const pasta = pastaDasCopias(projetoId);
   mkdirSync(pasta, { recursive: true });
   const caminho = join(pasta, card.chave);
   const branch = `empresa/${card.chave.toLowerCase()}-${slug(card.titulo)}`;

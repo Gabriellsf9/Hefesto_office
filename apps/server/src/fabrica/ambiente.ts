@@ -22,7 +22,6 @@ const SAIDA_MAX = 12_000;
 /** Ambientes no ar ao mesmo tempo (memória do Docker dos agentes): o mais antigo desce para o novo subir. */
 const MAX_AMBIENTES = 2;
 
-const projetoDoCard = (cardId: number) => `card-${cardId}`;
 const usados = new Map<string, number>();
 
 interface Saida {
@@ -103,15 +102,14 @@ async function abrirEspaco(raiz: string, projeto: string) {
   try {
     lista = JSON.parse(r.saida || "[]") as { Name: string }[];
   } catch { /* sem ambientes */ }
-  const outros = lista.map((x) => x.Name).filter((n) => n.startsWith("card-") && n !== projeto).sort((a, b) => (usados.get(a) ?? 0) - (usados.get(b) ?? 0));
+  const outros = lista.map((x) => x.Name).filter((n) => /^(card|ref)-/.test(n) && n !== projeto).sort((a, b) => (usados.get(a) ?? 0) - (usados.get(b) ?? 0));
   for (const nome of outros.slice(0, Math.max(0, outros.length - (MAX_AMBIENTES - 1)))) {
     await docker(["compose", "-p", nome, "down", "--remove-orphans"], raiz, 5 * 60_000);
     usados.delete(nome);
   }
 }
 
-async function compose(wt: Worktree, arquivo: string, args: string[], tempo: number): Promise<Saida> {
-  const projeto = projetoDoCard(wt.cardId);
+async function compose(wt: Worktree, projeto: string, arquivo: string, args: string[], tempo: number): Promise<Saida> {
   usados.set(projeto, Date.now());
   return docker(["compose", "-p", projeto, "-f", arquivoDoCompose(wt, arquivo), ...args], wt.caminho, tempo);
 }
@@ -123,7 +121,7 @@ export const enderecosDasPortas = (ps: string) =>
   [...new Set([...ps.matchAll(/\{\S+ \d+ (\d+) \w+\}/g)].map((m) => m[1]!).filter((p) => p !== "0"))].map((p) => `http://${HOST_DO_AMBIENTE}:${p}`);
 
 /** Ferramentas do ambiente do card: subir, rodar comandos dentro, ver logs e status, descer. */
-export function ferramentasDeAmbiente(wt: Worktree): Ferramenta[] {
+export function ferramentasDeAmbiente(wt: Worktree, projeto = `card-${wt.cardId}`): Ferramenta[] {
   const arquivoParam = { arquivo: { type: "string", description: "Compose relativo ao projeto (padrão: docker-compose.yml). Pode ser um que você criou para testes." } };
   return [
     ferramenta(
@@ -133,7 +131,7 @@ export function ferramentasDeAmbiente(wt: Worktree): Ferramenta[] {
       [],
       async (e) => {
         const arquivo = String(e.arquivo ?? "");
-        const cfg = await compose(wt, arquivo, ["config", "--format", "json"], 2 * 60_000);
+        const cfg = await compose(wt, projeto, arquivo, ["config", "--format", "json"], 2 * 60_000);
         if (cfg.codigo !== 0) return { texto: `O compose não é válido:\n${cfg.saida}`, erro: true };
         let config: { services?: Record<string, Servico> };
         try {
@@ -143,10 +141,10 @@ export function ferramentasDeAmbiente(wt: Worktree): Ferramenta[] {
         }
         const problemas = problemasDoCompose(config, wt.caminho);
         if (problemas.length) return { texto: `O ambiente não sobe com estas configurações (segurança):\n- ${problemas.join("\n- ")}\nAjuste o compose (ou crie um só para teste) e tente de novo.`, erro: true };
-        await abrirEspaco(wt.caminho, projetoDoCard(wt.cardId));
+        await abrirEspaco(wt.caminho, projeto);
         const servicos = Array.isArray(e.servicos) ? e.servicos.map(String).filter((s) => /^[\w.-]+$/.test(s)) : [];
-        const r = await compose(wt, arquivo, ["up", "-d", "--build", "--remove-orphans", "--wait", ...servicos], TEMPO_SUBIR_MS);
-        const ps = await compose(wt, arquivo, ["ps", "--format", "{{.Service}}\t{{.State}}\t{{.Publishers}}"], 60_000);
+        const r = await compose(wt, projeto, arquivo, ["up", "-d", "--build", "--remove-orphans", "--wait", ...servicos], TEMPO_SUBIR_MS);
+        const ps = await compose(wt, projeto, arquivo, ["ps", "--format", "{{.Service}}\t{{.State}}\t{{.Publishers}}"], 60_000);
         auditar("agente", "subiu ambiente", wt.branch, `${arquivo || "docker-compose.yml"} → saída ${r.codigo ?? "interrompido"}`);
         const enderecos = enderecosDasPortas(ps.saida);
         return {
@@ -164,7 +162,7 @@ export function ferramentasDeAmbiente(wt: Worktree): Ferramenta[] {
         const servico = texto(e, "servico", 80);
         if (!/^[\w.-]+$/.test(servico)) throw new ErroEntrada("Nome de serviço inválido.");
         const cmd = texto(e, "comando", 4000);
-        const r = await compose(wt, String(e.arquivo ?? ""), ["exec", "-T", servico, "sh", "-c", cmd], TEMPO_COMANDO_MS);
+        const r = await compose(wt, projeto, String(e.arquivo ?? ""), ["exec", "-T", servico, "sh", "-c", cmd], TEMPO_COMANDO_MS);
         auditar("agente", "comando no ambiente", wt.branch, `${servico}: ${cmd.slice(0, 300)} → saída ${r.codigo ?? "interrompido"}`);
         return { texto: formatar(r), erro: r.codigo !== 0 };
       },
@@ -177,12 +175,12 @@ export function ferramentasDeAmbiente(wt: Worktree): Ferramenta[] {
       async (e) => {
         const servico = typeof e.servico === "string" && /^[\w.-]+$/.test(e.servico) ? [e.servico] : [];
         const linhas = String(Math.min(500, Math.max(10, Number(e.linhas) || 120)));
-        return { texto: formatar(await compose(wt, String(e.arquivo ?? ""), ["logs", "--no-color", "--tail", linhas, ...servico], 60_000)) };
+        return { texto: formatar(await compose(wt, projeto, String(e.arquivo ?? ""), ["logs", "--no-color", "--tail", linhas, ...servico], 60_000)) };
       },
     ),
     ferramenta("ambiente_descer", "Desce o ambiente do card e apaga os volumes dele (o banco de teste volta do zero na próxima subida).", arquivoParam, [], async (e) => {
-      const r = await compose(wt, String(e.arquivo ?? ""), ["down", "-v", "--remove-orphans"], 5 * 60_000);
-      usados.delete(projetoDoCard(wt.cardId));
+      const r = await compose(wt, projeto, String(e.arquivo ?? ""), ["down", "-v", "--remove-orphans"], 5 * 60_000);
+      usados.delete(projeto);
       return { texto: formatar(r) };
     }),
   ];
