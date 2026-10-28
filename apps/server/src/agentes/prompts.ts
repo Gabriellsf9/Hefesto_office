@@ -159,6 +159,7 @@ Agora você está como VALIDADOR de uma entrega da área ${sala.nome}. Seu papel
 - Se não estiver, chame devolver com motivos numerados, específicos e acionáveis: o que está errado, onde, e o que fazer. Não devolva por gosto pessoal nem por detalhe cosmético.
 - Na primeira rodada, liste TODOS os motivos de uma vez, sem limite de quantidade: não guarde pontos para a próxima rodada.
 - Na segunda rodada em diante, confira se os motivos anteriores foram resolvidos. Só traga ponto novo se for grave ou se tiver sido introduzido pela nova versão.
+- Antes de afirmar que o autor não leu, não viu, não subiu ou não testou algo, confira a seção "O que o autor consultou e rodou nesta versão" (registro do sistema). Não afirme o que não conferiu; se a entrega não diz em que se baseou, peça que diga, sem acusar.
 - Card de um projeto: confira se a entrega partiu do que já existe no código. Decisão sem base nos arquivos do projeto, ou tela fora do padrão visual dele (cores, fontes, componentes), é motivo para devolver.
 - Confira as afirmações: fato sem fonte, número ou citação sem origem, ou nome de arquivo, função, endpoint, tabela ou biblioteca que não existe (quando houver projeto, confira com as ferramentas de arquivo) é motivo para devolver. Premissa declarada como "Premissa:" ou "A verificar:" é aceitável.
 - Termine SEMPRE chamando aprovar ou devolver.
@@ -326,6 +327,17 @@ function contextoExtra(card: Card): string {
   return partes.join("\n\n");
 }
 
+/**
+ * A entrega anterior vai inteira para quem julga (validador, advogado), mas para o autor vai até 20 mil caracteres:
+ * ele faz dezenas de chamadas por rodada e cada uma reenviava a entrega inteira (um protótipo de 78 mil caracteres
+ * multiplicado por cada passo era a maior parte do custo). O resto ele lê com ler_card quando precisar.
+ */
+const LIMITE_ENTREGA_ANTERIOR = 20_000;
+export function trechoDaEntregaAnterior(card: Card, conteudo: string): string {
+  if (conteudo.length <= LIMITE_ENTREGA_ANTERIOR) return conteudo;
+  return `${conteudo.slice(0, LIMITE_ENTREGA_ANTERIOR)}\n\n(A entrega anterior tem ${conteudo.length} caracteres; aqui vão os primeiros ${LIMITE_ENTREGA_ANTERIOR}. Para ler o resto, use ler_card ${card.chave} com a_partir_de: ${LIMITE_ENTREGA_ANTERIOR}. Ao refazer, entregue o conteúdo completo.)`;
+}
+
 /** Todo trabalho num projeto parte do que já existe: código, regras e a interface de hoje. */
 const ESTUDAR_O_PROJETO = `### Antes de decidir, estude o projeto
 Obrigatório antes de propor ou mudar qualquer coisa: entenda como o projeto funciona hoje lendo o código (mapa_do_codigo, listar_arquivos, buscar_no_codigo, ler_arquivo): as telas, os fluxos e as regras que o seu trabalho toca. Construa em cima do que existe e não reinvente o que já está pronto. Cite na entrega os arquivos que você leu e que embasam as decisões.
@@ -380,7 +392,7 @@ export function mensagemExecutar(card: Card): string {
     memoriaDoAgente(card),
     card.dono ? instrucoesAprendidas(card.dono, card.id) : "",
     blocoMetas(),
-    anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${anterior.conteudo}` : "",
+    anterior ? `## Sua entrega anterior (versão ${anterior.versao})\n${trechoDaEntregaAnterior(card, anterior.conteudo)}` : "",
     debate ? `## Comentários e devoluções\n${debate}\n\nResolva todos os pontos das devoluções e da conversa com o CEO nesta nova versão.` : "",
     anterior ? "Faça a nova versão completa (não só as mudanças) e chame entregar." : "Faça o trabalho e chame entregar.",
   ]

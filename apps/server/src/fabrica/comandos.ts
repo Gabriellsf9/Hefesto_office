@@ -122,6 +122,16 @@ export interface ResultadoComando {
 }
 
 /** Roda um comando permitido dentro da pasta (cópia isolada), na sandbox. */
+/**
+ * Argumento que aponta para fora da cópia do projeto (caminho absoluto ou ".."). O "./..." do Go (todos os pacotes
+ * abaixo da pasta) não sai do projeto: não é o ".." de subir pasta.
+ */
+export function argumentoForaDoProjeto(prog: string, x: string): boolean {
+  // Cada pasta começa com letra ou número: "..", "." e ".oculta" não passam como segmento.
+  if (prog === "go" && /^(\.\/)?(\w[\w.-]*\/)*\.\.\.$/.test(x)) return false;
+  return x.startsWith("/") || x.includes("..");
+}
+
 export async function rodarComando(pasta: string, comando: string): Promise<ResultadoComando> {
   // Só com sandbox: a do macOS ou a Linux do contêiner (sem ela, leriam os dados do próprio servidor).
   if (!podeRodarComandos() && !nuvemAtiva()) throw new ErroComando(SO_NO_MAC);
@@ -132,7 +142,7 @@ export async function rodarComando(pasta: string, comando: string): Promise<Resu
     throw new ErroComando(`"${basename(prog)}" não está na lista de programas permitidos (testes, build, lint e dependências: npm, pnpm, node, pytest, go, cargo, mvn, gradle, dotnet, php, bundle, flutter, make…).`);
   }
   if (prog === "git" && !GIT_LEITURA.has(args[0] ?? "")) throw new ErroComando("git só para leitura (status, diff, log, show). O commit é feito pelo servidor.");
-  if (args.some((a) => a.startsWith("/") || a.includes(".."))) throw new ErroComando("Use só caminhos relativos dentro do projeto (sem / no início e sem ..).");
+  if (args.some((x) => argumentoForaDoProjeto(prog, x))) throw new ErroComando("Use só caminhos relativos dentro do projeto (sem / no início e sem ..).");
   const rede = ehInstalacao(prog, args);
   // Sandbox na nuvem ligada (por você): o mesmo comando, já conferido acima, roda no executor remoto.
   if (nuvemAtiva()) {

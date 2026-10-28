@@ -187,6 +187,20 @@ export async function executarFerramenta(porNome: Map<string, Ferramenta>, nome:
   }
 }
 
+/**
+ * Conversa salva numa pausa logo depois de um pause_turn guarda a chamada de uma ferramenta do servidor (código,
+ * busca na web) sem o resultado, que ainda não tinha vindo; a API recusa a retomada (400). Tira essas chamadas
+ * pendentes (e a mensagem, se ficar vazia): o agente as refaz.
+ */
+export function semFerramentaDoServidorPendente(msgs: Anthropic.Beta.BetaMessageParam[]): Anthropic.Beta.BetaMessageParam[] {
+  return msgs.flatMap((m): Anthropic.Beta.BetaMessageParam[] => {
+    if (m.role !== "assistant" || typeof m.content === "string") return [m];
+    const comResultado = new Set(m.content.flatMap((b) => ("tool_use_id" in b && typeof b.tool_use_id === "string" ? [b.tool_use_id] : [])));
+    const content = m.content.filter((b) => b.type !== "server_tool_use" || comResultado.has(b.id));
+    return content.length ? [{ ...m, content }] : [];
+  });
+}
+
 export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
   // Modelo de outro provedor (Ollama, OpenAI, Gemini): mesmo laço, outro formato de API.
   if (provedorDe(o.modelo).provedor !== "claude") return rodarAgenteCompat(o);
@@ -195,7 +209,7 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
   const anexos: Anthropic.Beta.BetaContentBlockParam[] = [...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])];
   // Retomando de uma pausa por gasto: a mesma conversa (com as leituras e o raciocínio de antes) e um aviso para seguir.
   const mensagens: Anthropic.Beta.BetaMessageParam[] = o.retomar?.length
-    ? [...o.retomar, { role: "user", content: "Você foi pausado (limite de gasto, orçamento do dia ou reinício do sistema) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
+    ? [...semFerramentaDoServidorPendente(o.retomar), { role: "user", content: "Você foi pausado (limite de gasto, orçamento do dia ou reinício do sistema) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
     : [{ role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem }];
   const porNome = new Map(o.ferramentas.flatMap((f) => ("name" in f.def && f.executar ? [[f.def.name, f] as const] : [])));
   let custoUsd = 0;
@@ -228,9 +242,10 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     const t0 = Date.now();
     // O limite do card só é conferido entre chamadas: a saída de cada uma fica dentro do que ainda resta.
     const restante = o.cardId ? (() => { const c = lerCard(o.cardId!); return tetoDoCard(c) - c.custoUsd; })() : Infinity;
+    const tetoDeSaida = maxTokensQueCabe(o.modelo, restante);
     const stream = client.beta.messages.stream({
       model: o.modelo,
-      max_tokens: maxTokensQueCabe(o.modelo, restante),
+      max_tokens: tetoDeSaida,
       betas: [...(fallback ? ["server-side-fallback-2026-07-01"] : []), "context-management-2025-06-27", ...(vinculo ? ["thinking-binding-controls-2026-08-01"] : [])],
       ...(fallback ? { fallbacks: "default" as const } : {}),
       // Retomada: o sistema do agente muda entre uma vez e outra (livro, lições, comentários). O raciocínio salvo
@@ -296,7 +311,15 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
 
     const usos = msg.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
     if (msg.stop_reason === "refusal") throw new Error("O modelo recusou esta tarefa (filtro de segurança).");
-    if (msg.stop_reason === "max_tokens" && usos.length) throw new Error("A resposta ficou longa demais e foi cortada.");
+    if (msg.stop_reason === "max_tokens" && usos.length) {
+      // Cortada porque a saída foi reduzida para caber no limite do card: é limite de gasto, não erro. Pausa com a
+      // conversa salva (sem a resposta cortada); ao liberar mais, o agente refaz esta resposta com espaço inteiro.
+      if (o.cardId && tetoDeSaida < 64000) {
+        o.aoPausar?.(mensagens);
+        throw new ErroLimiteCard("A resposta não coube no que resta do limite do card.");
+      }
+      throw new Error("A resposta ficou longa demais e foi cortada.");
+    }
 
     const textoRodada = msg.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
     if (textoRodada.trim()) registrarPasso(replay, { rodada, tipo: "texto", saida: textoRodada });

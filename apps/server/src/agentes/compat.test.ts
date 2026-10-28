@@ -4,24 +4,31 @@ import { rodarAgente, ferramenta } from "./loop.ts";
 import { resumoChamadas } from "../chamadas.ts";
 import { setSetting } from "../db.ts";
 import { saveApiKey } from "../secrets.ts";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
-// Ollama de mentira: /api/show diz que chama ferramentas; /api/chat responde em streaming
-// com uma chamada à ferramenta final.
-function ollamaFalso() {
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (entrada: string | URL | Request) => {
-    const url = String(entrada);
-    if (url.endsWith("/api/show")) return Response.json({ capabilities: ["completion", "tools"] });
-    if (url.endsWith("/api/chat")) {
+// Ollama de mentira, num servidor HTTP de verdade (o chat não passa pelo fetch): /api/show diz que chama
+// ferramentas; /api/chat responde em streaming com uma chamada à ferramenta final.
+async function ollamaFalso() {
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    if (req.url === "/api/chat") {
       const linhas = [
         { message: { content: "", tool_calls: [{ function: { name: "entregar", arguments: { conteudo: "pronto" } } }] } },
         { done: true, done_reason: "stop", prompt_eval_count: 120, eval_count: 30 },
       ];
-      return new Response(linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
+      return void res.end(linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
     }
-    throw new Error(`fetch inesperado: ${url}`);
-  }) as typeof fetch;
-  return () => void (globalThis.fetch = original);
+    res.statusCode = 404;
+    res.end();
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  const { port } = servidor.address() as AddressInfo;
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${port}`, contexto: 16_384 } }));
+  return () => {
+    servidor.close();
+    setSetting("provedores", "{}");
+  };
 }
 
 test("trabalho que não cabe no contexto do modelo local vai para o Claude, em vez de o Ollama cortar as instruções", async () => {
@@ -40,7 +47,7 @@ test("trabalho que não cabe no contexto do modelo local vai para o Claude, em v
       rodarAgente({
         modelo: "ollama:modelo-teste",
         agenteId: "ux-writer",
-        sistema: "regras ".repeat(4000), // ~28 mil caracteres: não cabe em 4096 tokens
+        sistema: "regras ".repeat(50000), // ~350 mil caracteres: não cabe nem no maior contexto ampliado (96 mil tokens)
         mensagem: "faça",
         ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
         lembrete: "Chame entregar.",
@@ -56,7 +63,7 @@ test("trabalho que não cabe no contexto do modelo local vai para o Claude, em v
 });
 
 test("sombra no modelo local: se não couber, para (não gasta no Claude)", async () => {
-  const restaurar = ollamaFalso();
+  const restaurar = await ollamaFalso();
   try {
     await assert.rejects(
       rodarAgente({
@@ -77,7 +84,7 @@ test("sombra no modelo local: se não couber, para (não gasta no Claude)", asyn
 });
 
 test("chamadas a modelos fora do Claude entram no rastreamento (Operação → Chamadas)", async () => {
-  const restaurar = ollamaFalso();
+  const restaurar = await ollamaFalso();
   try {
     const r = await rodarAgente({
       modelo: "ollama:modelo-teste",
@@ -97,5 +104,79 @@ test("chamadas a modelos fora do Claude entram no rastreamento (Operação → C
     assert.equal(ch.usd, 0);
   } finally {
     restaurar();
+  }
+});
+
+test("não cabe no local e o Claude está fora do ar: espera (passageiro), sem chamar o Claude em loop", async () => {
+  const { marcarForaDoAr } = await import("../provedores.ts");
+  const { ErroNaoCabe } = await import("./compat.ts");
+  saveApiKey("sk-ant-teste-falsa");
+  marcarForaDoAr("claude", Date.now() + 60_000);
+  const original = globalThis.fetch;
+  const chamados: string[] = [];
+  globalThis.fetch = (async (entrada: string | URL | Request) => {
+    const url = String(entrada instanceof Request ? entrada.url : entrada);
+    chamados.push(url);
+    if (url.endsWith("/api/show")) return Response.json({ capabilities: ["completion", "tools"] });
+    throw new Error("rede desligada no teste");
+  }) as typeof fetch;
+  try {
+    const erro = await rodarAgente({
+      modelo: "ollama:modelo-teste",
+      agenteId: "dev-backend",
+      sistema: "regras ".repeat(50000),
+      mensagem: "faça",
+      ferramentas: [ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
+      lembrete: "Chame entregar.",
+    }).catch((e: unknown) => e);
+    assert.ok(erro instanceof ErroNaoCabe, "só este card espera (não derruba o provedor local)");
+    assert.ok(!chamados.some((u) => u.includes("anthropic")), "não bate no Claude fora do ar");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("calibração de caracteres por token: usa a contagem real, mas nunca passa de 4 nem fica abaixo de 3", async () => {
+  const { calibrarCaracteresPorToken } = await import("./compat.ts");
+  assert.equal(calibrarCaracteresPorToken(335_000, 90_000, 3), 335_000 / 90_000, "medido (3,7) dentro da faixa");
+  assert.equal(calibrarCaracteresPorToken(335_000, 20_000, 3), 4, "contagem baixa (cache) não deixa subestimar o tamanho");
+  assert.equal(calibrarCaracteresPorToken(30_000, 15_000, 3.5), 3, "nunca abaixo de 3");
+  assert.equal(calibrarCaracteresPorToken(9_000, 1_500, 3.2), 3.2, "resposta pequena demais: mantém o fator anterior");
+});
+
+test("modelo local: a conversa é salva a cada passo e a retomada continua dela (não recomeça do zero)", async () => {
+  const recebidos: { messages: { role: string; content: string }[] }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      // 1ª chamada: lê um arquivo (não termina); depois: entrega.
+      const chamada = recebidos.length === 1 ? { name: "ler", arguments: { caminho: "a.go" } } : { name: "entregar", arguments: { conteudo: "ok" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  let salva: unknown[] = [];
+  const ferramentas = [
+    ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], () => ({ texto: "conteúdo de a.go" })),
+    ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+  ];
+  try {
+    // 1ª execução: interrompida depois do primeiro passo (como num reinício).
+    const sinal = new AbortController();
+    await rodarAgente({ modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", ferramentas, lembrete: "Entregue.", sinal: sinal.signal, aoRodada: (m) => { salva = m; sinal.abort("reinício"); } }).catch(() => {});
+    assert.ok(salva.length >= 3, "a conversa do primeiro passo foi salva");
+    // 2ª execução: retoma a conversa salva.
+    const r = await rodarAgente({ modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", ferramentas, lembrete: "Entregue.", retomar: salva as never });
+    assert.equal(r.terminou, true);
+    const ultima = recebidos.at(-1)!.messages;
+    assert.ok(ultima.some((m) => m.role === "tool" && String(m.content).includes("conteúdo de a.go")), "continuou com o que já tinha lido");
+    assert.equal(ultima.filter((m) => m.role === "system").length, 1, "não duplicou o início da conversa");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
   }
 });

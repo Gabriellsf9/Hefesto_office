@@ -1,11 +1,11 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { criarCard } from "../tarefas.ts";
-import { garantirWorktree, worktreeDoCard } from "./workspace.ts";
+import { garantirCopiaDeReferencia, garantirWorktree, worktreeDoCard } from "./workspace.ts";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
 
@@ -73,5 +73,27 @@ describe("worktreeDoCard", () => {
   test("card sem cópia em toda a cadeia não tem cópia", () => {
     const sozinho = novoCard("Sozinho");
     assert.equal(worktreeDoCard(novoCard("Filho", sozinho.id)), null);
+  });
+});
+
+describe("pasta do projeto que guarda o repositório numa subpasta", () => {
+  test("a cópia do card usa o repositório da subpasta (ex.: Parliamo/Parliamo)", async () => {
+    const repo = repoNovo();
+    const pasta = mkdtempSync(join(tmpdir(), "hefesto-projeto-"));
+    renameSync(repo, join(pasta, "App"));
+    writeFileSync(join(pasta, "solto.sql"), "select 1;\n");
+    const wt = await garantirWorktree(novoCard("Repositório na subpasta"), pasta, 7);
+    assert.equal(wt.repo, join(pasta, "App"));
+    assert.ok(existsSync(join(wt.caminho, "a.txt")));
+  });
+
+  test("cópia de referência: uma por projeto, no HEAD, sem branch de card", async () => {
+    const repo = repoNovo();
+    const a = await garantirCopiaDeReferencia(novoCard("Design A"), repo, 8);
+    const b = await garantirCopiaDeReferencia(novoCard("Design B"), repo, 8);
+    assert.equal(a.caminho, b.caminho, "os cards do projeto compartilham a mesma cópia");
+    assert.ok(existsSync(join(a.caminho, "a.txt")));
+    assert.equal(a.base, git(repo, "rev-parse", "HEAD"));
+    assert.doesNotMatch(git(repo, "branch", "--list"), /empresa\//, "não cria branch");
   });
 });

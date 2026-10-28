@@ -10,6 +10,8 @@ const IGNORAR = new Set([
   // Ferramentas de IA guardam ali cópias inteiras do projeto em outras branches (worktrees): ler essas
   // cópias faz o agente citar código desatualizado como se fosse o atual.
   ".claude", ".codex", ".cursor", ".worktrees",
+  // Dados brutos de bancos e serviços montados no projeto (ex.: infra/selfhost/volumes): não são código.
+  "volumes",
 ]);
 
 const SEGREDO = /^\.env|\.(pem|key|p12|pfx|keystore|jks)$|^id_(rsa|ed25519|ecdsa|dsa)|^credentials|secret|^\.npmrc$|^\.netrc$|^\.pgpass$/i;
@@ -51,7 +53,8 @@ export async function listarArquivos(raiz: string, rel = ".", profundidade = 2):
   const linhas: string[] = [];
   const andar = async (dir: string, nivel: number) => {
     if (linhas.length >= 400) return;
-    const itens = (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+    // Pasta sem permissão (ex.: dados de um banco montado no projeto): pula, sem derrubar a listagem.
+    const itens = (await readdir(dir, { withFileTypes: true }).catch(() => [])).sort((a, b) => a.name.localeCompare(b.name));
     for (const it of itens) {
       if (linhas.length >= 400) {
         linhas.push("… (lista cortada em 400 itens)");
@@ -100,7 +103,7 @@ export async function buscarNoCodigo(raiz: string, texto: string): Promise<strin
   const achados: string[] = [];
   let arquivos = 0;
   const andar = async (dir: string) => {
-    for (const it of await readdir(dir, { withFileTypes: true })) {
+    for (const it of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
       if (achados.length >= 100 || arquivos >= 4000) return;
       if (IGNORAR.has(it.name)) continue;
       const caminho = join(dir, it.name);

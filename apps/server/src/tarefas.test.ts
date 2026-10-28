@@ -22,3 +22,51 @@ test("liberar gasto não zera as contagens de rodadas e falhas; um comentário d
   comentarComoCeo(card.id, "Pode seguir sem o critério Y.");
   assert.equal(falhasDoCard(card.id), 0, "a orientação do CEO recomeça a contagem");
 });
+
+test("card parado porque a resposta não coube no que restava: Liberar mais soma um limite (não só destrava)", async () => {
+  const { editarCard, lerCard, tetoDoCard, somarCusto, destravarCardsNoTeto, listarCards } = await import("./tarefas.ts");
+  const card = criarCard({ titulo: "Modelagem", sala: "dados", dono: "dba", validador: "arquiteto" });
+  somarCusto(card.id, 2.6); // sobra US$ 0,40 de US$ 3: menos que uma resposta inteira
+  editarCard(card.id, { bloqueado: true, etiquetas: ["limite-de-gasto"] });
+  assert.equal(destravarCardsNoTeto(listarCards()), 0, "não destrava sozinho sem folga (seria cortado de novo)");
+  const teto = tetoDoCard(lerCard(card.id));
+  liberarGasto(card.id);
+  assert.ok(tetoDoCard(lerCard(card.id)) > teto, "somou mais um limite");
+  assert.equal(lerCard(card.id).bloqueado, false);
+});
+
+test("escada de modelos com o Claude fora do ar: card que já falhou vai para a reserva, não para o Claude", async () => {
+  const { setSetting } = await import("./db.ts");
+  const { salvarSegredo, saveApiKey } = await import("./secrets.ts");
+  const { marcarForaDoAr } = await import("./provedores.ts");
+  const { modeloEscalonado } = await import("./aprendizado.ts");
+  const { agentById } = await import("@empresa/org");
+  saveApiKey("sk-ant-teste-falsa");
+  salvarSegredo("gemini_api_key", "chave-gemini-falsa");
+  setSetting("modelos_agentes", JSON.stringify({ "head-marketing": "gemini:gemini-3.8-flash" }));
+  const card = criarCard({ titulo: "Backend", sala: "desenvolvimento", dono: "dev-backend", validador: "reviewer-1" });
+  comentar(card.id, "reviewer-1", "devolucao", "Falta X.");
+  comentar(card.id, "reviewer-1", "devolucao", "Falta Y.");
+  marcarForaDoAr("claude", Date.now() + 60_000);
+  const { modelo } = modeloEscalonado(agentById["dev-backend"]!, "autor", card);
+  assert.equal(modelo, "gemini:gemini-3.8-flash");
+});
+
+test("escada de modelos: para no Sonnet; o Opus só sobe automático no modo Qualidade máxima", async () => {
+  // Outro teste deixou o Claude "fora do ar" por 60 s neste processo: o relógio anda 1 h para o estado não vazar.
+  const { mock } = await import("node:test");
+  mock.timers.enable({ apis: ["Date"], now: Date.now() + 3_600_000 });
+  const { modeloEscalonado } = await import("./aprendizado.ts");
+  const { configurarMotor } = await import("./agentes/motor.ts");
+  const { agentById } = await import("@empresa/org");
+  const { setSetting } = await import("./db.ts");
+  setSetting("modelos_agentes", "{}");
+  const card = criarCard({ titulo: "Backend", sala: "desenvolvimento", dono: "dev-backend", validador: "reviewer-1" });
+  for (let i = 0; i < 5; i++) comentar(card.id, "reviewer-1", "devolucao", `Falta ${i}.`);
+  configurarMotor({ modoCusto: "equilibrado" });
+  assert.equal(modeloEscalonado(agentById["dev-backend"]!, "autor", card).modelo, "claude-sonnet-5-5", "5 falhas: para no Sonnet");
+  configurarMotor({ modoCusto: "maximo" });
+  assert.equal(modeloEscalonado(agentById["dev-backend"]!, "autor", card).modelo, "claude-opus-5-5", "no máximo, sobe para o Opus");
+  configurarMotor({ modoCusto: "equilibrado" });
+  mock.timers.reset();
+});

@@ -6,14 +6,15 @@ import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude, custoHoje, limitePorCard, modoCusto, orcamentoDiario, limitePorCardDeCodigo } from "../custo.ts";
 import { foraDoArAte, marcarForaDoAr, modeloDisponivel, modeloDoAgente, provedorDe, provedorForaDoAr } from "../provedores.ts";
-import { ErroProvedor } from "./compat.ts";
+import { ErroNaoCabe, ErroProvedor } from "./compat.ts";
 import { db, getSetting, setSetting } from "../db.ts";
 import { fichaDoProjeto } from "../projetos.ts";
 import { configCritica, criarConhecimento, extrairLicao } from "../conhecimento.ts";
 import { conferirEntregaDeLead, ferramentasDeProspeccao } from "../prospeccao.ts";
-import { codigoDoCard, commitar, g as gitEm, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
+import { codigoDoCard, commitar, g as gitEm, garantirCopiaDeReferencia, garantirWorktree, registroDoCard, worktreeDoCard, type Worktree } from "../fabrica/workspace.ts";
 import { ferramentaDeComando, ferramentaDeDiff, ferramentasDeEscrita } from "../fabrica/ferramentas.ts";
 import { ferramentaDeCaptura, ferramentaGerarImagem } from "../fabrica/capturas.ts";
+import { execucoesDoCard } from "../confianca/execucoes.ts";
 import { ambienteAtivo, ferramentasDeAmbiente, HOST_DO_AMBIENTE } from "../fabrica/ambiente.ts";
 import { ferramentaDeNavegador } from "../fabrica/navegador.ts";
 import { imagensDoTexto } from "../imagens.ts";
@@ -52,7 +53,8 @@ import { mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, s
 //   validar:  o validador aprova (segue o fluxo) ou devolve (volta para o dono).
 // Sem consenso depois de MAX_RODADAS devoluções, o card sobe para o CEO.
 
-const MAX_RODADAS = 4;
+// 3, não 4: com advogado e validador convergindo (tudo de uma vez), a 4ª rodada quase só repetia custo.
+const MAX_RODADAS = 3;
 const INTERVALO_MS = 3000;
 /** Pedidos a outras áreas: por vez de trabalho e profundidade (pedido de pedido de pedido…). */
 const MAX_PEDIDOS_POR_VEZ = 3;
@@ -111,8 +113,8 @@ function esperandoEntrega(cardId: number) {
 function ferramentaLerCard(daqui: Card): Ferramenta {
   return ferramenta(
     "ler_card",
-    "Lê outro card pelo número (ex.: EMP-12): título, coluna, descrição, critérios de aceite e a ÚLTIMA ENTREGA COMPLETA. Use quando precisar do texto inteiro de um plano, contrato, schema ou entrega de outra área (a busca na memória só traz trechos).",
-    { chave: { type: "string", description: "Número do card, ex.: EMP-12 ou 12" } },
+    "Lê outro card pelo número (ex.: EMP-12): título, coluna, descrição, critérios de aceite e a ÚLTIMA ENTREGA COMPLETA. Use quando precisar do texto inteiro de um plano, contrato, schema ou entrega de outra área (a busca na memória só traz trechos). Entregas longas vêm em partes de 60 mil caracteres: continue com a_partir_de.",
+    { chave: { type: "string", description: "Número do card, ex.: EMP-12 ou 12" }, a_partir_de: { type: "integer", minimum: 0, description: "Caractere da entrega onde começar (para ler o resto de uma entrega longa)" } },
     ["chave"],
     (e) => {
       const n = Number(texto(e, "chave", 20).replace(/\D/g, ""));
@@ -125,8 +127,15 @@ function ferramentaLerCard(daqui: Card): Ferramenta {
       if (escritorioDe(alvo.sala) !== escritorioDe(daqui.sala)) throw new ErroEntrada("Esse card é de outro escritório.");
       const ent = ultimaEntrega(alvo.id);
       const col = colunaDe(alvo.fluxo, alvo.coluna)?.nome ?? alvo.coluna;
+      // Entrega longa em partes, avisando o que falta (antes era cortada em silêncio e o agente não sabia).
+      const PARTE = 60_000;
+      const ini = Math.min(Math.max(0, Number(e.a_partir_de) || 0), ent?.conteudo.length ?? 0);
+      const trecho = ent ? ent.conteudo.slice(ini, ini + PARTE) : "";
+      const resto = ent && ini + PARTE < ent.conteudo.length ? `\n\n(A entrega tem ${ent.conteudo.length} caracteres; você leu de ${ini} a ${ini + PARTE}. Para continuar, chame ler_card com a_partir_de: ${ini + PARTE}.)` : "";
+      const cabecalho = `# ${alvo.chave} · ${alvo.titulo}\nColuna: ${col} · Responsável: ${alvo.dono ? (agentById[alvo.dono]?.nome ?? alvo.dono) : "—"}`;
+      if (ini > 0) return { texto: `${cabecalho}\n\n## Última entrega (versão ${ent!.versao}), a partir do caractere ${ini}\n${trecho}${resto}` };
       return {
-        texto: `# ${alvo.chave} · ${alvo.titulo}\nColuna: ${col} · Responsável: ${alvo.dono ? (agentById[alvo.dono]?.nome ?? alvo.dono) : "—"}\n\n## Descrição\n${alvo.descricao || "(vazia)"}\n\n## Critérios de aceite\n${alvo.criterios || "(nenhum)"}\n\n## Última entrega${ent ? ` (versão ${ent.versao}): ${ent.resumo}\n${ent.conteudo.slice(0, 60_000)}` : "\n(ainda sem entrega)"}`,
+        texto: `${cabecalho}\n\n## Descrição\n${alvo.descricao || "(vazia)"}\n\n## Critérios de aceite\n${alvo.criterios || "(nenhum)"}\n\n## Última entrega${ent ? ` (versão ${ent.versao}): ${ent.resumo}\n${trecho}${resto}` : "\n(ainda sem entrega)"}`,
       };
     },
   );
@@ -378,6 +387,36 @@ export function prontoParaExecutar(card: Card, porId: Map<number, Card>) {
 const escreveCodigo = (card: Card, agente: Agent) =>
   ehCardDeCodigo(card) || (agente.ferramentas.includes("git") && agente.ferramentas.includes("arquivos") && card.sala !== "arquitetura" && agente.sala === card.sala);
 
+/** Ferramentas de consulta e verificação que o validador precisa saber se o autor usou. */
+const CONSULTAS = new Set(["ler_arquivo", "ver_imagem", "buscar_no_codigo", "listar_arquivos", "mapa_do_codigo", "ler_card", "capturar_telas", "ambiente_subir", "ambiente_comando", "rodar_comando", "gerar_imagem", "navegador"]);
+
+/**
+ * O que o autor consultou e rodou para fazer a versão atual, tirado do replay (registro do sistema, não da defesa
+ * dele): o validador confere fatos antes de afirmar que algo não foi lido, visto ou testado.
+ */
+export function consultasDoAutor(card: Card): string {
+  const desde = listarEntregas(card.id).at(-2)?.ts ?? 0;
+  const linhas = execucoesDoCard(card.id)
+    .filter((x) => x.agente === card.dono && x.fim >= desde)
+    .flatMap((x) => x.passos)
+    .filter((p) => p.tipo === "ferramenta" && p.nome && CONSULTAS.has(p.nome))
+    .map((p) => {
+      let alvo = "";
+      try {
+        const e = JSON.parse(p.entrada ?? "{}") as Record<string, unknown>;
+        alvo = String(e.caminho ?? e.texto ?? e.chave ?? e.comando ?? e.nome ?? e.arquivo ?? e.servico ?? "");
+      } catch { /* entrada que não é JSON */ }
+      return `- ${p.nome}${alvo ? `: ${alvo.replace(/\s+/g, " ").slice(0, 140)}` : ""}${p.erro ? " (deu erro)" : ""}`;
+    });
+  if (!linhas.length) return "";
+  return `\n\n## O que o autor consultou e rodou nesta versão (registro do sistema)\n${[...new Set(linhas)].slice(0, 60).join("\n")}`;
+}
+
+const NOTA_DA_REFERENCIA = `
+
+## App rodando para você ver (cópia de referência)
+Você tem uma cópia do projeto como ele está hoje e o Docker dos agentes para subir o app de verdade: ambiente_subir, ambiente_comando, ambiente_logs, ambiente_descer. Com ele no ar, use capturar_telas (http://${HOST_DO_AMBIENTE}:PORTA) para ver e printar as telas reais e se basear nelas. Você tem autonomia: se faltar banco, contas ou dados de teste, crie (compose e .env de TESTE com escrever_arquivo nessa cópia; contas e dados com ambiente_comando). Nada que você escrever nessa cópia vira commit, e o ambiente fica de pé para os próximos cards do projeto (veja com ambiente_logs antes de subir de novo).`;
+
 /**
  * Imagens que o agente vê: as que você pôs no card, os prints da última entrega dele (o validador confere a tela,
  * o autor refaz em cima dela) e os dos cards de que ele depende (o frontend vê o protótipo). Até 6, as mais próximas primeiro.
@@ -436,6 +475,9 @@ async function ciclo() {
     if (ocupados.has(t.agente) || !agentById[t.agente]) continue; // um card por agente de cada vez
     // O provedor deste agente está fora do ar e não há reserva disponível: espera.
     if (provedorForaDoAr(provedorDoAgente(t.agente))) continue;
+    // Modelo local: um trabalho por vez. Dois cards se revezando descartam o cache do Ollama (e trocam o tamanho do
+    // contexto, recarregando o modelo), e cada passo relê a conversa inteira do zero: ~2 min por passo em vez de segundos.
+    if (provedorDoAgente(t.agente) === "ollama" && [...emAndamento.values()].some((e) => provedorDoAgente(e.agenteId) === "ollama")) continue;
     // De novo aqui: o pai pode ter começado neste mesmo ciclo, depois que a lista foi montada.
     if (t.tipo === "executar" && esperaParente(t.card, porId, emAndamento.values())) continue;
     // Sem chave do provedor do agente (Claude sem chave, OpenAI sem chave…): o card espera.
@@ -490,8 +532,30 @@ const passageiro = (err: unknown) =>
   (err instanceof Anthropic.APIError && (err.status === 529 || err.status === 503)) ||
   (err instanceof ErroProvedor && err.passageiro);
 
+/** A conta da Anthropic ficou sem crédito: o Claude fica fora do ar por um tempo e os agentes vão para a reserva. */
+export const semCreditoNaAnthropic = (err: unknown) =>
+  err instanceof Anthropic.APIError && (err.status === 400 || err.status === 402) && /credit balance is too low|billing/i.test(err.message);
+const ESPERA_SEM_CREDITO_MS = 30 * 60_000;
+const ESPERA_NAO_CABE_MS = 5 * 60_000;
+
 function tratarFalha(card: Card, agenteId: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
+  // O trabalho do card não cabe em nenhum modelo no ar: só ele espera um pouco; os outros cards seguem.
+  if (err instanceof ErroNaoCabe) {
+    repassadosEm.set(card.id, Date.now() + ESPERA_NAO_CABE_MS);
+    postFeed(card.sala, agenteId, `${card.chave} espera um modelo com espaço: ${msg.slice(0, 160)}`);
+    return;
+  }
+  // Sem crédito não é falha do card: o Claude sai do ar (os agentes seguem no Gemini ou no modelo local) e o CEO é avisado.
+  if (semCreditoNaAnthropic(err)) {
+    const avisar = !provedorForaDoAr("claude");
+    marcarForaDoAr("claude", Date.now() + ESPERA_SEM_CREDITO_MS);
+    if (avisar) {
+      postChat("chief-of-staff", "A conta da Anthropic ficou sem crédito. Enquanto isso, a equipe segue nos modelos reserva (Gemini e o modelo local) e volta ao Claude sozinha quando houver crédito (tento de novo a cada 30 minutos). Para recarregar: console da Anthropic → Plans & Billing.");
+      publicar();
+    }
+    return;
+  }
   if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
     configurarMotor({ pausado: true });
     postChat("chief-of-staff", "Pausei a empresa: a chave da API foi recusada. Confira a chave e despause no topo da tela.");
@@ -705,7 +769,25 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     // Ambiente do card: o app inteiro rodando no Docker dos agentes, com autonomia para instalar e preparar o que precisar.
     if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho));
-  else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
+  // Card sem código num projeto: a cópia de referência (o projeto como está hoje) para subir o app no ambiente,
+  // criar dados de teste e tirar prints das telas reais. Um ambiente por projeto, compartilhado entre os cards.
+  let referencia: Worktree | null = null;
+  if (!wt && !wtDoPai && projeto && projetoId !== null && ambienteAtivo()) {
+    try {
+      referencia = await garantirCopiaDeReferencia(card, projeto.caminho, projetoId);
+      // Ler e escrever na mesma raiz (a do repositório): com a pasta vinculada para ler e a cópia para escrever, os
+      // caminhos não batiam e o agente gravava numa subpasta errada.
+      ferramentas.push(
+        ...ferramentasDeProjeto(referencia.caminho),
+        ...ferramentasDeAmbiente(referencia, `ref-${projetoId}`),
+        ...ferramentasDeEscrita(referencia, { envDeTeste: true }),
+        ferramentaDeCaptura(card.id, `http://${HOST_DO_AMBIENTE}`),
+      );
+    } catch (e) {
+      if (!(e instanceof ErroCard)) throw e;
+    }
+  }
+  if (!wt && !wtDoPai && projeto && !referencia) ferramentas.push(...ferramentasDeProjeto(projeto.caminho));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
   if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
@@ -744,7 +826,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
     esforco: wt ? "high" : undefined,
     modelo: modeloAutor,
     sistema: sistemaAutor(agente),
-    mensagem: mensagemExecutar(card),
+    mensagem: mensagemExecutar(card) + (referencia ? NOTA_DA_REFERENCIA : ""),
     imagens: imagensDoCard(card),
     arquivos: arquivosDoTexto(card.descricao),
     ferramentas,
@@ -1005,7 +1087,7 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   // Fora do código (que já traz o diff da branch), o validador vê o que mudou entre a versão anterior e a atual.
   const versoes = listarEntregas(card.id);
   const mudancas = !worktreeDoCard(card) && versoes.length >= 2 ? await diferencaDeTexto(versoes.at(-2)!.conteudo, versoes.at(-1)!.conteudo) : "";
-  let mensagem = mensagemValidar(card, mudancas);
+  let mensagem = mensagemValidar(card, mudancas) + consultasDoAutor(card);
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho), ferramentaDeDiff(card.id));
     if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));

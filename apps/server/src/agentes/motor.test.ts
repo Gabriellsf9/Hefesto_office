@@ -65,3 +65,35 @@ describe("esperaParente", () => {
     assert.equal(esperaParente(outro, porId, [rodando(pai.id), rodando(filho.id)]), false);
   });
 });
+
+describe("o validador julga com o registro do sistema", () => {
+  test("lista o que o autor consultou na versão atual (ex.: viu os prints com ver_imagem)", async () => {
+    const { criarCard, registrarEntrega } = await import("../tarefas.ts");
+    const { novaExecucao, registrarPasso } = await import("../confianca/execucoes.ts");
+    const { consultasDoAutor } = await import("./motor.ts");
+    const card = criarCard({ titulo: "Protótipo", sala: "design", dono: "ui-designer", validador: "pm" });
+    registrarEntrega(card.id, "ui-designer", "v1", "primeira");
+    const run = novaExecucao(card.id, "ui-designer", "claude-sonnet-5-5");
+    registrarPasso(run, { rodada: 0, tipo: "ferramenta", nome: "ver_imagem", entrada: { caminho: "frontend/public/site/vibra/mural.webp" }, saida: "Imagem" });
+    registrarPasso(run, { rodada: 1, tipo: "ferramenta", nome: "ler_arquivo", entrada: { caminho: "frontend/app/globals.css" }, saida: "..." });
+    registrarPasso(run, { rodada: 2, tipo: "ferramenta", nome: "entregar", entrada: { conteudo: "x" }, saida: "ok" });
+    registrarEntrega(card.id, "ui-designer", "v2", "segunda");
+    const lista = consultasDoAutor(card);
+    assert.match(lista, /ver_imagem: frontend\/public\/site\/vibra\/mural\.webp/);
+    assert.match(lista, /ler_arquivo: frontend\/app\/globals\.css/);
+    assert.doesNotMatch(lista, /entregar/, "só consultas e verificações");
+  });
+});
+
+describe("conta da Anthropic sem crédito", () => {
+  test("é reconhecido (não é falha do card) e não confunde com outros 400", async () => {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const { semCreditoNaAnthropic } = await import("./motor.ts");
+    const corpo = (message: string) => ({ type: "error", error: { type: "invalid_request_error", message } });
+    const semCredito = Anthropic.APIError.generate(400, corpo("Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."), undefined, new Headers());
+    const outro400 = Anthropic.APIError.generate(400, corpo("messages.1: tool use without result"), undefined, new Headers());
+    assert.equal(semCreditoNaAnthropic(semCredito), true);
+    assert.equal(semCreditoNaAnthropic(outro400), false);
+    assert.equal(semCreditoNaAnthropic(new Error("credit balance is too low")), false, "só erro da API da Anthropic");
+  });
+});

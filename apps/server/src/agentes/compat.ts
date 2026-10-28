@@ -1,10 +1,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { Readable } from "node:stream";
 import { agentById } from "@empresa/org";
 import { modeloPara, orcamentoEsgotado, registrarUsoTokens } from "../custo.ts";
 import { cardPassouDoLimite, somarCusto } from "../tarefas.ts";
 import { blocosDeImagem } from "../imagens.ts";
 import { blocosDeArquivo } from "../arquivos.ts";
-import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel, precoDe, provedorDe } from "../provedores.ts";
+import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel, precoDe, provedorDe, provedorForaDoAr } from "../provedores.ts";
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
 import { conferirOrcamentoDoProjeto, projetoSemOrcamento } from "../planejamento.ts";
 import { registrarChamada } from "../chamadas.ts";
@@ -13,6 +16,12 @@ import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcament
 // O laço do agente para modelos fora do Claude: Ollama (API nativa, para controlar o
 // tamanho do contexto) e OpenAI e Gemini (API de chat no formato da OpenAI). Mesmas
 // regras do laço do Claude: ferramentas, ferramenta final, lembretes, orçamento e limite por card.
+
+/** Conversa salva pelo laço local (formato próprio, começa pelo system); a do Claude tem outro formato e não serve aqui. */
+const ehConversaLocal = (m: readonly unknown[]) => (m[0] as { role?: string } | undefined)?.role === "system";
+
+/** O trabalho deste card não cabe em nenhum modelo no ar agora: só ele espera (não é o provedor que caiu). */
+export class ErroNaoCabe extends Error {}
 
 /** Erro de um provedor fora do Claude. `passageiro`: vale esperar e tentar de novo (limite, sobrecarga, Ollama fechado). */
 export class ErroProvedor extends Error {
@@ -72,13 +81,29 @@ function limparEsquema(v: unknown): unknown {
  * Para caber no contexto: resultados antigos de ferramentas viram uma nota (os 6 mais recentes ficam),
  * como o context_management faz no Claude. Estimativa grosseira: 3,5 caracteres por token.
  */
-/** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
-const tokensDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0) / 3;
+/**
+ * Degraus de contexto do modelo local quando o trabalho não cabe no padrão. Medido no 9b com 8 GB de VRAM: 32 mil
+ * escreve a ~19 tok/s, 64 mil a ~6 e 96 mil a ~3, com a RAM livre quase igual (o Qwen 3.5 guarda pouco por token).
+ * Usa o menor que couber: o mais lento só quando precisa.
+ */
+const CONTEXTOS_LOCAIS_AMPLIADOS = [32_768, 65_536, 98_304];
+/** Acima disso (escrita a ~6 tok/s ou menos), o modelo local trabalha sem o modo de raciocínio. */
+const CONTEXTO_COM_RACIOCINIO = 32_768;
 
-function aparar(msgs: Msg[], limiteTokens: number) {
+/** Tokens estimados da conversa (português com Markdown fica perto de 3 caracteres por token). */
+const caracteresDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
+const tokensDe = (msgs: Msg[], porToken = 3) => caracteresDe(msgs) / porToken;
+/**
+ * Caracteres por token medidos na resposta do Ollama (contagem real do prompt), presos entre 3 e 4: a contagem pode
+ * excluir o que veio do cache, e subestimar o tamanho faria o Ollama cortar o começo do prompt em silêncio.
+ */
+export const calibrarCaracteresPorToken = (caracteres: number, tokensReais: number, atual: number) =>
+  tokensReais > 2000 ? Math.min(4, Math.max(3, caracteres / tokensReais)) : atual;
+
+function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
   const ferramentas = msgs.flatMap((m, i) => (m.role === "tool" ? [i] : []));
   for (const i of ferramentas.slice(0, -6)) {
-    if (tokensDe(msgs) <= limiteTokens) return;
+    if (tokensDe(msgs, porToken) <= limiteTokens) return;
     if (textoDe(msgs[i]!.content).length > 200) msgs[i]!.content = "[Resultado antigo removido para caber no contexto. Rode a ferramenta de novo se precisar.]";
   }
 }
@@ -175,6 +200,23 @@ async function chamarCompat(p: "openai" | "gemini", modelo: string, msgs: Msg[],
 
 /* ---------- Ollama (API nativa) ---------- */
 
+/**
+ * POST sem o limite de 5 minutos sem dados do fetch do Node: com ferramentas, o Ollama segura o texto até fechar a
+ * chamada da ferramenta, e num contexto grande (a ~6 tok/s) isso passa de 5 minutos e o fetch cortava ("terminated").
+ * O sinal continua interrompendo (card movido, empresa pausada).
+ */
+function postarSemLimiteDeTempo(url: string, corpo: string, sinal?: AbortSignal): Promise<Response> {
+  return new Promise((ok, falha) => {
+    const pedido = (url.startsWith("https:") ? httpsRequest : httpRequest)(
+      url,
+      { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(corpo) }, signal: sinal },
+      (res) => ok(new Response(Readable.toWeb(res) as ReadableStream<Uint8Array>, { status: res.statusCode ?? 500, statusText: res.statusMessage })),
+    );
+    pedido.on("error", falha);
+    pedido.end(corpo);
+  });
+}
+
 // Um pedido por vez ao Ollama: numa máquina de 16 GB, dois modelos (ou dois contextos grandes)
 // ao mesmo tempo estouram a memória. Os agentes locais esperam a vez.
 let filaOllama: Promise<unknown> = Promise.resolve();
@@ -205,21 +247,22 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
     if (sinal?.aborted) throw new ErroInterrompido(String(sinal.reason ?? "interrompido"));
     let res: Response;
     try {
-      res = await fetch(`${url}/api/chat`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      res = await postarSemLimiteDeTempo(
+        `${url}/api/chat`,
+        JSON.stringify({
           model: modelo,
           messages: mensagens,
           stream: true,
           keep_alive: "15m",
           options: { num_ctx: contexto },
-          // Raciocínio deixa o modelo local mais certeiro, mas bem mais lento: só fora das conversas rápidas.
-          ...(caps?.includes("thinking") ? { think: esforco !== "low" } : {}),
+          // Raciocínio deixa o modelo local mais certeiro, mas bem mais lento: só fora das conversas rápidas e só no
+          // contexto curto. Com contexto grande o modelo escreve a ~5 tok/s, e ele chegou a "pensar" 7 mil tokens
+          // (25 minutos) antes de agir.
+          ...(caps?.includes("thinking") ? { think: esforco !== "low" && contexto <= CONTEXTO_COM_RACIOCINIO } : {}),
           ...(tools.length ? { tools } : {}),
         }),
-        signal: sinal,
-      });
+        sinal,
+      );
     } catch (e) {
       if (sinal?.aborted) throw e;
       throw new ErroProvedor(`O Ollama não está respondendo em ${url}. Abra o app do Ollama (ou rode "ollama serve").`, 0, true);
@@ -281,15 +324,22 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   }));
 
   const anexos = partesDosAnexos([...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])]);
-  const msgs: Msg[] = [
+  // Retomada (queda, reinício, pausa): a conversa salva pelo laço local continua de onde parou, sem reler tudo.
+  const salva = o.retomar?.length && ehConversaLocal(o.retomar) ? (o.retomar as unknown as Msg[]) : null;
+  const msgs: Msg[] = salva
+    ? [...salva, { role: "user", content: "Você foi pausado (reinício do sistema, limite ou espera de um modelo) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
+    : [
     { role: "system", content: `${o.sistema}${semWeb ? "\n\n(Neste modelo não há pesquisa na web: trabalhe com as ferramentas disponíveis e com o que você sabe, e diga quando faltar informação atual.)" : ""}` },
     { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
   ];
-  const contextoLocal = o.contexto ?? configOllama().contexto;
-  const limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
+  const salvarRodada = () => o.aoRodada?.(msgs as unknown as Anthropic.Beta.BetaMessageParam[]);
+  let contextoLocal = o.contexto ?? configOllama().contexto;
+  let limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
   let custoUsd = 0;
   let lembretes = 0;
   let ultimoTexto = "";
+  // Calibrado a cada resposta do Ollama com a contagem real do prompt (começa no pessimista: 3 caracteres por token).
+  let porToken = 3;
   const replay = novaExecucao(o.cardId, o.agenteId, o.modelo);
   const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
 
@@ -298,18 +348,28 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
     if (o.cardId && projetoSemOrcamento(o.cardId)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
-    aparar(msgs, limiteTokens);
+    aparar(msgs, limiteTokens, porToken);
     // Não cabe no contexto do modelo local nem depois de aparar: o Ollama cortaria o começo (as instruções e o
     // card) em silêncio e o agente trabalharia às cegas. Segue no Claude do agente, que comporta o trabalho.
-    if (provedor === "ollama" && tokensDe(msgs) > limiteTokens) {
+    // Não cabe no contexto padrão do modelo local: tenta o contexto ampliado (mais memória, só neste trabalho).
+    for (const degrau of CONTEXTOS_LOCAIS_AMPLIADOS) {
+      if (provedor !== "ollama" || o.contexto || tokensDe(msgs, porToken) <= limiteTokens || contextoLocal >= degrau) continue;
+      contextoLocal = degrau;
+      limiteTokens = contextoLocal * 0.75;
+      aparar(msgs, limiteTokens, porToken);
+    }
+    if (provedor === "ollama" && tokensDe(msgs, porToken) > limiteTokens) {
       if (o.semReserva) throw new ErroProvedor(`Não cabe no contexto do modelo local (~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}).`, 413, false);
       const claude = modeloPara(agentById[o.agenteId ?? ""]?.modelo ?? "claude-sonnet-5-5", "autor");
-      if (modeloDisponivel(claude)) {
+      if (modeloDisponivel(claude) && !provedorForaDoAr("claude")) {
         registrarPasso(replay, { rodada, tipo: "texto", saida: `(O trabalho não cabe no contexto do modelo local: ~${Math.round(tokensDe(msgs))} tokens, limite ${Math.round(limiteTokens)}. Continua no ${claude}.)` });
         return rodarAgente({ ...o, modelo: claude });
       }
+      // Nem o local comporta nem o Claude está no ar: espera (o motor tenta de novo depois), sem bater no Claude em loop.
+      throw new ErroNaoCabe(`O trabalho não cabe no modelo local (~${Math.round(tokensDe(msgs))} tokens) e o Claude está fora do ar: espero um dos dois.`);
     }
     const onTexto = (t: string) => o.onTexto?.(t);
+    const caracteresEnviados = caracteresDe(msgs);
     const t0 = Date.now();
     let r: Resposta;
     try {
@@ -318,6 +378,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
       if (o.sinal?.aborted) throw interrompido();
       throw e;
     }
+    if (provedor === "ollama") porToken = calibrarCaracteresPorToken(caracteresEnviados, r.entrada, porToken);
     const usd = provedor === "ollama" ? 0 : registrarUsoTokens(r.entrada, r.saida, precoDe(provedor as "openai" | "gemini"));
     // Mesmo rastreamento do Claude (Operação → Chamadas), com os nomes de parada dele.
     registrarChamada({
@@ -354,6 +415,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
         role: "user",
         content: lembretes === 1 ? o.lembrete : `Você parou de novo sem usar ferramentas. Não descreva o que vai fazer: faça agora, com as ferramentas, e termine com a ferramenta final. ${o.lembrete}`,
       });
+      salvarRodada();
       continue;
     }
 
@@ -373,6 +435,7 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
     }
     if (fim) return { terminou: true, texto: ultimoTexto, custoUsd };
     if (imagens.length) msgs.push({ role: "user", content: [{ type: "text", text: "Imagens devolvidas pelas ferramentas acima:" }, ...imagens] });
+    salvarRodada();
   }
   return { terminou: false, texto: ultimoTexto, custoUsd };
 }

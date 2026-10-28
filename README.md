@@ -53,7 +53,7 @@ A barra lateral leva às áreas; **⌘K** busca e executa qualquer coisa (inclus
 
 ### Como a equipe se organiza (orquestração)
 - A Helena (ou o coordenador do escritório) transforma o seu pedido em cards; o motor põe agentes livres para trabalhar, com limite de agentes ao mesmo tempo e orçamento diário conferido a cada rodada.
-- Autor entrega, um validador de outra pessoa confere (ninguém valida o próprio trabalho); no código, review, performance, segurança e QA em sequência. Sem consenso em 4 rodadas de uma etapa, sobe para você; a sua decisão recomeça a contagem.
+- Autor entrega, um validador de outra pessoa confere (ninguém valida o próprio trabalho); no código, review, performance, segurança e QA em sequência. Sem consenso em 3 rodadas de uma etapa, sobe para você; a sua decisão recomeça a contagem.
 - Se você mexe num card em andamento (bloqueia, move, troca o responsável, apaga) ou pausa a empresa, o agente para na hora.
 - Se a API (Anthropic, OpenAI, Gemini ou o Ollama fechado) limita ou fica sobrecarregada, a equipe toda espera (respeitando o retry-after) e retoma sozinha, sem bloquear o card.
 - No 3D: quem passa uma tarefa leva a pasta até a mesa do colega, que reage (📥) e só então começa; ao começar, alonga e digita (com faíscas saindo do teclado); no tempo livre, saídas curtas para café, água ou uma conversa, e de volta para a mesa.

@@ -32,3 +32,14 @@ test("advogado do diabo: na 2ª versão vê o que já questionou e só cobra o q
   assert.match(msg, /continuam sem resposta/);
   assert.match(msg, /versão 2/);
 });
+
+test("autor refazendo: a entrega anterior gigante vai em trecho (o resto por ler_card), mas a pequena vai inteira", async () => {
+  const { trechoDaEntregaAnterior } = await import("./prompts.ts");
+  const card = criarCard({ titulo: "Protótipo", sala: "design", dono: "ui-designer", validador: "pm" });
+  assert.equal(trechoDaEntregaAnterior(card, "curta"), "curta");
+  const grande = "x".repeat(78_000);
+  const trecho = trechoDaEntregaAnterior(card, grande);
+  assert.ok(trecho.length < 21_000, "não reenvia os 78 mil caracteres a cada passo");
+  assert.match(trecho, new RegExp(`ler_card ${card.chave} com a_partir_de: 20000`));
+  assert.match(trecho, /entregue o conteúdo completo/);
+});

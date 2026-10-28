@@ -1,5 +1,5 @@
 import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, normalize, sep } from "node:path";
+import { basename, dirname, join, normalize, sep } from "node:path";
 import { ehSegredo } from "../agentes/arquivos.ts";
 import { ErroEntrada, ferramenta, texto, type Ferramenta } from "../agentes/loop.ts";
 import { ErroComando, rodarComando } from "./comandos.ts";
@@ -12,11 +12,13 @@ import { lerCard } from "../tarefas.ts";
 const MAX_ARQUIVO = 400_000;
 
 /** Caminho relativo seguro dentro do worktree: sem .., sem .git, sem arquivos de segredo. */
-async function alvoSeguro(raiz: string, rel: string): Promise<string> {
+async function alvoSeguro(raiz: string, rel: string, envDeTeste = false): Promise<string> {
   const limpo = normalize(rel).replace(/^(\.\/)+/, "");
   if (!limpo || limpo.startsWith("..") || limpo.startsWith("/") || limpo.split(sep).includes("..")) throw new ErroEntrada("Use um caminho relativo dentro do projeto.");
   if (limpo.split(sep).some((p) => p === ".git")) throw new ErroEntrada("A pasta .git é do servidor: não pode ser alterada.");
-  if (ehSegredo(limpo)) throw new ErroEntrada("Arquivo de segredo: os agentes não podem criar nem alterar. Use um exemplo (ex.: .env.example).");
+  // Na cópia de referência (que nunca vira commit) o agente cria o .env de TESTE do ambiente; chaves continuam barradas.
+  const envPermitido = envDeTeste && /^\.env(\.[\w.-]+)?$/.test(basename(limpo));
+  if (ehSegredo(limpo) && !envPermitido) throw new ErroEntrada("Arquivo de segredo: os agentes não podem criar nem alterar. Use um exemplo (ex.: .env.example).");
   const base = await realpath(raiz);
   const alvo = join(base, limpo);
   // A pasta existente mais próxima do destino precisa estar dentro do projeto (protege contra links simbólicos
@@ -37,7 +39,7 @@ async function alvoSeguro(raiz: string, rel: string): Promise<string> {
   return alvo;
 }
 
-export function ferramentasDeEscrita(wt: Worktree): Ferramenta[] {
+export function ferramentasDeEscrita(wt: Worktree, opcoes: { envDeTeste?: boolean } = {}): Ferramenta[] {
   return [
     ferramenta(
       "escrever_arquivo",
@@ -45,7 +47,7 @@ export function ferramentasDeEscrita(wt: Worktree): Ferramenta[] {
       { caminho: { type: "string" }, conteudo: { type: "string" } },
       ["caminho", "conteudo"],
       async (e) => {
-        const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500));
+        const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500), opcoes.envDeTeste);
         const conteudo = typeof e.conteudo === "string" ? e.conteudo : "";
         if (conteudo.length > MAX_ARQUIVO) throw new ErroEntrada("Arquivo grande demais; divida em arquivos menores.");
         await mkdir(dirname(alvo), { recursive: true });
@@ -59,7 +61,7 @@ export function ferramentasDeEscrita(wt: Worktree): Ferramenta[] {
       { caminho: { type: "string" }, trecho_antigo: { type: "string" }, trecho_novo: { type: "string" } },
       ["caminho", "trecho_antigo", "trecho_novo"],
       async (e) => {
-        const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500));
+        const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500), opcoes.envDeTeste);
         const atual = await readFile(alvo, "utf8").catch(() => {
           throw new ErroEntrada(`Não existe: ${e.caminho}. Use escrever_arquivo para criar.`);
         });
@@ -79,7 +81,7 @@ export function ferramentasDeEscrita(wt: Worktree): Ferramenta[] {
       { caminho: { type: "string" } },
       ["caminho"],
       async (e) => {
-        const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500));
+        const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500), opcoes.envDeTeste);
         const info = await stat(alvo).catch(() => null);
         if (!info?.isFile()) throw new ErroEntrada("Não é um arquivo existente.");
         await rm(alvo);
