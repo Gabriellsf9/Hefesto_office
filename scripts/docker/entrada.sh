@@ -15,6 +15,9 @@ if iptables -L OUTPUT >/dev/null 2>&1; then
   # mas o agente não abre conexão nenhuma para fora.
   iptables -A OUTPUT -m owner --uid-owner agente -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   iptables -A OUTPUT -m owner --uid-owner agente -j REJECT
+  # O Docker dos agentes (porta 2375) só recebe ordens do servidor, que confere cada compose: a instalação de
+  # dependências (agente-rede, com internet) não alcança essa porta, nem por um script de pacote.
+  iptables -A OUTPUT -m owner --uid-owner agente-rede -p tcp --dport 2375 -j REJECT
   export HEFESTO_SANDBOX=linux
 else
   echo "Aviso: sem NET_ADMIN, a sandbox dos comandos fica desligada (os agentes não rodam testes)." >&2

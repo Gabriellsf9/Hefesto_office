@@ -19,11 +19,18 @@ RUN pnpm --filter @empresa/web build
 
 FROM node:26-trixie-slim
 # Chromium (navegador dos agentes, prints e PDF), pandoc (Word), git (cópias isoladas dos projetos), unzip (PowerPoint),
-# iptables e sudo (sandbox dos comandos dos agentes).
+# iptables e sudo (sandbox dos comandos dos agentes), make e o cliente do Postgres (build e banco dos projetos).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji tini iptables sudo tzdata \
+  && apt-get install -y --no-install-recommends chromium pandoc git unzip ca-certificates fonts-liberation fonts-noto-color-emoji tini iptables sudo tzdata make postgresql-client \
   && rm -rf /var/lib/apt/lists/* \
   && git config --system safe.directory '*'
+# Go, para compilar e testar projetos em Go (ex.: backends) na sandbox.
+COPY --from=golang:1.26-trixie /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
+# Cliente do Docker (com compose e buildx): o servidor sobe o ambiente de cada card no Docker dos agentes
+# (serviço docker-agentes), nunca no Docker da máquina.
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker:27-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 # Sandbox: "agente" (sem rede) e "agente-rede" (só para instalar dependências) escrevem só nas cópias dos cards.
 RUN groupadd -r trabalho \
   && useradd -r -M -d /tmp/agente -s /usr/sbin/nologin -G trabalho agente \

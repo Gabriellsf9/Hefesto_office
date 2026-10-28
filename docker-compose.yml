@@ -41,9 +41,30 @@ services:
       HEFESTO_PASTA_HOST: ${PWD}
       # Modelos locais: o Ollama roda no Mac, fora do container.
       HEFESTO_OLLAMA_URL: ${HEFESTO_OLLAMA_URL:-http://host.docker.internal:11434}
+      # Docker só dos agentes (ambiente de cada card: banco, backend, frontend), separado do Docker da máquina.
+      HEFESTO_DOCKER_AGENTES: tcp://docker-agentes:2375
+    depends_on:
+      - docker-agentes
     # O Chromium precisa de memória compartilhada maior que o padrão.
     shm_size: 1gb
+
+  # Docker dos agentes: onde o ambiente de cada card roda de verdade. Os agentes nunca falam com ele direto:
+  # só o servidor, que confere cada compose (nada privilegiado, nada do host, só pastas da cópia do card).
+  # O privileged é exigência do Docker-in-Docker; a porta não é publicada (só a rede interna do compose a vê).
+  docker-agentes:
+    image: docker:27-dind
+    container_name: hefesto-docker-agentes
+    restart: unless-stopped
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    command: ["--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--tls=false"]
+    volumes:
+      - hefesto-docker-agentes:/var/lib/docker
+      # As cópias dos cards no mesmo caminho do Hefesto: o compose do projeto monta as pastas dele.
+      - hefesto-copias:/workspace
 
 volumes:
   hefesto-dados:
   hefesto-copias:
+  hefesto-docker-agentes:
