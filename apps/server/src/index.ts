@@ -67,6 +67,7 @@ import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
 import { criarRaioX, vincularPasta } from "./projetoNovo.ts";
 import { arquivoDaCopia, lerArquivoDaCopia, pedidoLocal } from "./copiaHttp.ts";
 import { limparEstacoes } from "./fabrica/estacao.ts";
+import { lerTarefasDoAgente } from "./agentes/tarefasDoAgente.ts";
 import { apagarConversa, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
@@ -372,6 +373,7 @@ app.post<{ Params: { id: string }; Body: { cliente?: string } }>("/api/projetos/
   relatorioParaCliente(idDe(req.params.id), typeof req.body?.cliente === "string" ? req.body.cliente.slice(0, 120) : undefined),
 );
 app.get<{ Params: { id: string } }>("/api/cards/:id/comentarios", async (req) => listarComentarios(idDe(req.params.id)));
+app.get<{ Params: { id: string } }>("/api/cards/:id/tarefas-agente", async (req) => lerTarefasDoAgente(idDe(req.params.id)));
 app.get<{ Params: { id: string } }>("/api/cards/:id/entregas", async (req) => listarEntregas(idDe(req.params.id)));
 app.post<{ Params: { id: string }; Body: { texto: string } }>("/api/cards/:id/comentarios", async (req) => {
   const texto = req.body?.texto?.trim();

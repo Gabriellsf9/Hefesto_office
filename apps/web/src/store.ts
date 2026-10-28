@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type {
-  AgentState, AlertaSaude, Ata, MensagemConversa, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
+  AgentState, AlertaSaude, Ata, ItemTarefaAgente, MensagemConversa, Card, ChatMessage, ContatoWhatsapp, EscritorioDef, EstadoTelegram, EstadoWhatsapp, MensagemWhatsapp, Previa, PreviaPublicada, Comentario, ConfigCritica, Conquista, SessaoNavegador, ServidorMcp, PedidoMcp, SessaoControle, Entrega, ItemConhecimento, Lead, Monitor, Peca, EstadoMotor, EstadoOnboarding, FeedItem, FluxoId, Meta, Projeto, RitualInfo,
   RoomId, SecaoLivro, ServerEvent,
 } from "@empresa/shared";
 
@@ -84,6 +84,8 @@ interface Store {
   conversaMsgs: MensagemConversa[];
   conversaParcial: Record<number, string>;
   conversaRodando: Record<number, boolean>;
+  /** Lista de passos que cada agente mantém no card (id do card → itens). */
+  tarefasAgente: Record<number, ItemTarefaAgente[]>;
   conquistas: Conquista[];
   /** Sessões do navegador dos agentes, por card. */
   navegador: Record<number, SessaoNavegador>;
@@ -194,6 +196,7 @@ export const useStore = create<Store>((set, get) => ({
   conversaMsgs: [],
   conversaParcial: {},
   conversaRodando: {},
+  tarefasAgente: {},
   conquistas: [],
   navegador: {},
   navegadorAberto: false,
@@ -399,6 +402,9 @@ export const useStore = create<Store>((set, get) => ({
         break;
       case "conversa.parcial":
         set((s) => ({ conversaParcial: { ...s.conversaParcial, [e.conversaId]: e.texto } }));
+        break;
+      case "tarefas.agente":
+        set((s) => ({ tarefasAgente: { ...s.tarefasAgente, [e.cardId]: e.itens } }));
         break;
       case "conversa.estado":
         set((s) => ({ conversaRodando: { ...s.conversaRodando, [e.conversaId]: e.rodando } }));

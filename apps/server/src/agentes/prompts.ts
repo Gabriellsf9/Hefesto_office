@@ -1,13 +1,15 @@
 import { colunaDe, prioridades, secoesLivro, type Agent, type Card, type RoomId } from "@empresa/shared";
 import { projetoDoCard, agentById, agents, checklistPerformance, conhecimentoStacks, especialidades, playbookPadrao, playbooks, referencias, roomById, rooms, salasTecnicas, nomeDaSala, salaDe, agentesDe, coordenadorDe, definicaoDe, escritorioDe, salasDe, SEDE } from "@empresa/org";
 import { modeloDoAgente, provedorDe } from "../provedores.ts";
+import { tarefasEmTexto } from "./tarefasDoAgente.ts";
+import { instrucoesDoProjeto } from "./instrucoesProjeto.ts";
+import { fichaDoProjeto } from "../projetos.ts";
 import { lerLivro } from "../livro.ts";
 import { conhecimentoDaSala } from "../conhecimento.ts";
 import { contextoDoLead } from "../prospeccao.ts";
 import { contextoDaPeca } from "../marketing.ts";
 import { registroDoCard, worktreeDoCard } from "../fabrica/workspace.ts";
 import { metasEmTexto } from "../metas.ts";
-import { fichaDoProjeto } from "../projetos.ts";
 import { instrucoesAprendidas } from "../aprendizado.ts";
 import { lerCard, listarCards, listarComentarios, listarDevolucoesDoAgente, listarEntregas, ultimaEntrega } from "../tarefas.ts";
 
@@ -447,8 +449,10 @@ export function mensagemExecutar(card: Card, o: { local?: boolean; podeDividir?:
     o.local ? LER_POUCO_NO_LOCAL : "",
     descreverCard(card),
     contextoExtra(card),
+    instrucoesDoProjeto(fichaDoProjeto(card.projetoId)?.caminho, o.local ? 4000 : 12_000),
     resultadoDosPedidos(card, o.local),
     memoriaDoAgente(card),
+    tarefasEmTexto(card.id),
     licoesDoProjeto(card, o.local ? 4 : 8),
     card.dono ? instrucoesAprendidas(card.dono, card.id) : "",
     o.local ? "" : blocoMetas(),
@@ -468,6 +472,7 @@ export function mensagemValidar(card: Card, mudancas = ""): string {
   return [
     descreverCard(card),
     contextoExtra(card),
+    instrucoesDoProjeto(fichaDoProjeto(card.projetoId)?.caminho),
     blocoMetas(),
     `## Entrega para validar (versão ${atual?.versao ?? "?"}, por ${autor?.nome ?? "?"})\n${atual?.conteudo ?? "(sem entrega)"}`,
     mudancas ? `## O que mudou desde a versão anterior\n\`\`\`diff\n${mudancas}\n\`\`\`\nConfira se as mudanças resolvem as devoluções anteriores sem estragar o que já estava bom.` : "",
