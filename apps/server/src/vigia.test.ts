@@ -53,3 +53,10 @@ test("vigia: avisa uma vez, resolve sozinho quando some e não reabre o mesmo al
   assert.equal(listarAlertas().filter((x) => x.chave === "lenta:1").length, 0, "condição sumiu: resolvido");
   assert.equal(sincronizar([a], agora + 180_000).length, 0, "a mesma ocorrência não reabre");
 });
+
+test("vigia: a verificação de verdade (lendo o banco) roda sem erro", async () => {
+  const { verificarSaude } = await import("./vigia.ts");
+  const { criarCard } = await import("./tarefas.ts");
+  criarCard({ titulo: "Qualquer", sala: "produto", dono: "pm" });
+  assert.doesNotThrow(() => verificarSaude());
+});

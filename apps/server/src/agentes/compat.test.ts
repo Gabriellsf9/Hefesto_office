@@ -351,3 +351,19 @@ test("mensagem do CEO no meio do trabalho entra na próxima rodada, sem reinicia
     setSetting("provedores", "{}");
   }
 });
+
+test("falha de provedor leva o provedor que falhou (o motor não pode marcar a reserva, o modelo local, como fora do ar)", async () => {
+  const { salvarSegredo } = await import("../secrets.ts");
+  const { ErroProvedor } = await import("./compat.ts");
+  salvarSegredo("gemini_api_key", "chave-gemini-falsa"); // só no banco temporário dos testes
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ error: { message: "You exceeded your current quota" } }), { status: 429 })) as typeof fetch;
+  try {
+    const erro = await rodarAgente({ modelo: "gemini:gemini-teste", agenteId: "ui-designer", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", ferramentas: [] }).catch((e: unknown) => e);
+    assert.ok(erro instanceof ErroProvedor);
+    assert.equal(erro.provedor, "gemini");
+    assert.equal(erro.passageiro, true);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

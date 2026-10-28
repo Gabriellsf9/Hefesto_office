@@ -1,3 +1,4 @@
+import type { ProvedorIa } from "@empresa/shared";
 import { execFile } from "node:child_process";
 import { ferramentasDeWebLocal } from "./webLocal.ts";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -27,6 +28,8 @@ export class ErroNaoCabe extends Error {}
 
 /** Erro de um provedor fora do Claude. `passageiro`: vale esperar e tentar de novo (limite, sobrecarga, Ollama fechado). */
 export class ErroProvedor extends Error {
+  /** Quem falhou de verdade (o motor marca este fora do ar, não o modelo que o agente usaria agora). */
+  provedor?: ProvedorIa;
   constructor(
     message: string,
     readonly status: number,
@@ -400,6 +403,17 @@ function argumentos(texto: string): Record<string, unknown> | null {
 /* ---------- O laço ---------- */
 
 export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
+  try {
+    return await laçoCompat(o);
+  } catch (e) {
+    // Marca no erro o provedor que falhou: depois da falha, o agente já aponta para a reserva, e era a reserva
+    // (o modelo local) que acabava marcada como fora do ar, parando todo o trabalho local.
+    if (e instanceof ErroProvedor && !e.provedor) e.provedor = provedorDe(o.modelo).provedor;
+    throw e;
+  }
+}
+
+async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   const { provedor, nome } = provedorDe(o.modelo);
   if ((provedor === "openai" || provedor === "gemini") && !chaveDe(provedor)) {
     throw new ErroProvedor(`Sem chave da ${provedor === "openai" ? "OpenAI" : "Google (Gemini)"}: cadastre em Configurações → Modelos de IA.`, 401, false);
