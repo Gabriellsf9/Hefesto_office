@@ -794,10 +794,12 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
             (p): p is { titulo: string; descricao: string; criterios?: unknown } => !!p && typeof p.titulo === "string" && p.titulo.trim() !== "" && typeof p.descricao === "string" && p.descricao.trim() !== "",
           );
           if (lista.length < 2 || lista.length > MAX_PARTES) return { texto: `Mande de 2 a ${MAX_PARTES} partes, cada uma com titulo e descricao.`, erro: true };
+          // O modelo costuma repetir "Parte 1:" no título; o prefixo já diz qual parte é.
+          const titulos = lista.map((p) => p.titulo.trim().replace(/^parte\s*\d+\s*[:.\-–]\s*/i, "").slice(0, 160));
           const criadas = lista.map((p, i) =>
             criarCard(
               {
-                titulo: `${card.chave} · parte ${i + 1}/${lista.length}: ${p.titulo.trim().slice(0, 160)}`,
+                titulo: `${card.chave} · parte ${i + 1}/${lista.length}: ${titulos[i]}`,
                 descricao: p.descricao.slice(0, 20_000),
                 criterios: typeof p.criterios === "string" ? p.criterios.slice(0, 5000) : card.criterios,
                 sala: card.sala, fluxo: card.fluxo, coluna: colunaDeEntrada(card.fluxo),
@@ -808,10 +810,9 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
             ),
           );
           // Cada parte sabe das outras (lê com ler_card o que as anteriores entregaram).
-          const roteiro = criadas.map((c, i) => `${i + 1}. ${c.chave}: ${lista[i]!.titulo.trim()}`).join("\n");
-          for (const c of criadas) {
-            editarCard(c.id, { descricao: `${c.descricao}\n\n---\nParte do ${card.chave} (${card.titulo}). Todas as partes, na ordem:\n${roteiro}\nAntes de começar, leia com ler_card o que as partes anteriores já entregaram e siga o mesmo padrão.` });
-          }
+          const roteiro = criadas.map((c, i) => `${i + 1}. ${c.chave}: ${titulos[i]}`).join("\n");
+          // A descrição que o modelo local escreve costuma ser curta: a parte leva junto o contexto do card principal.
+          for (const c of criadas) editarCard(c.id, { descricao: descricaoDaParte(c.descricao, card, roteiro) });
           dividiu = true;
           comentar(card.id, agente.id, "comentario", `Dividi este card em ${criadas.length} partes para caber no modelo local:\n${roteiro}\nQuando todas terminarem, volto aqui para juntar o resultado.`);
           postFeed(card.sala, agente.id, `${agente.nome} dividiu o ${card.chave} em ${criadas.length} partes`);
@@ -1018,6 +1019,18 @@ ${c?.stat || "(sem mudanças desde o início)"}
 function focoDaEtapa(card: Card) {
   const etapa = etapaDoCodigoDe(card);
   return etapa === null ? undefined : etapasDoCodigoDe(card.fluxo, card.dono)[etapa]!.foco;
+}
+
+/** Descrição de uma parte de dividir_em_partes: o que o autor escreveu, a ordem das partes e o card principal. */
+export function descricaoDaParte(propria: string, pai: Card, roteiro: string): string {
+  return [
+    propria.trim(),
+    `---\nParte do ${pai.chave} (${pai.titulo}). Todas as partes, na ordem:\n${roteiro}\nFaça só esta parte. Antes de começar, leia com ler_card o que as partes anteriores já entregaram e siga o mesmo padrão.`,
+    `## Contexto do card principal (${pai.chave})\n${pai.descricao.slice(0, 6000)}`,
+    pai.criterios.trim() ? `Critérios de aceite do card principal (cumpra os que cabem nesta parte):\n${pai.criterios.slice(0, 3000)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /** Quantos pedidos acima deste card (o card de um pedido tem profundidade 1). */

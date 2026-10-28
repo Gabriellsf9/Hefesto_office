@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Card, TrabalhoEmAndamento } from "@empresa/shared";
-import { esperaParente, prontoParaExecutar } from "./motor.ts";
+import { descricaoDaParte, esperaParente, prontoParaExecutar } from "./motor.ts";
 
 let proximo = 1;
 function card(c: Partial<Card>): Card {
@@ -104,4 +104,13 @@ describe("conta da Anthropic sem crédito", () => {
     assert.equal(semCreditoNaAnthropic(outro400), false);
     assert.equal(semCreditoNaAnthropic(new Error("credit balance is too low")), false, "só erro da API da Anthropic");
   });
+});
+
+test("parte criada pelo modelo local leva o contexto e os critérios do card principal (a descrição dele costuma vir curta)", () => {
+  const pai = card({ chave: "EMP-7", titulo: "Backend de cards", descricao: "Gestão nativa de cards, sem Yondra.", criterios: "CRUD de tickets com RN-33." });
+  const d = descricaoDaParte("Parte 4: eventos de card", pai, "1. EMP-14: queries\n2. EMP-15: eventos");
+  assert.match(d, /^Parte 4: eventos de card/);
+  assert.match(d, /Contexto do card principal \(EMP-7\)\nGestão nativa de cards, sem Yondra\./);
+  assert.match(d, /CRUD de tickets com RN-33/);
+  assert.match(d, /2\. EMP-15: eventos/);
 });
