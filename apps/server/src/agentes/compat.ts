@@ -162,7 +162,9 @@ const CORTE_RECENTE = 3000;
 /** A partir desta fração do limite, resume a parte antiga da conversa. */
 const LIMIAR_COMPACTAR = 0.85;
 /** Trocas mais recentes que ficam inteiras (as que o modelo está usando agora). */
-const RODADAS_MANTIDAS = 3;
+// Duas: com três, a conversa saía da compactação já em ~60% do limite (o gpt-oss lê trechos grandes) e voltava a
+// compactar em dois ou três passos, de 50 a 100 s cada vez.
+const RODADAS_MANTIDAS = 2;
 
 /**
  * Onde cortar: antes da resposta do assistente que abre as últimas rodadas, para não separar uma chamada de
@@ -468,9 +470,9 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
       registrarPasso(replay, { rodada, tipo: "texto", saida: `(Mensagem do CEO recebida: ${doCeo.join(" | ").slice(0, 300)})` });
     }
     // Perto do limite: a parte antiga da conversa vira um resumo (antes de cortar resultados), como o Claude Code faz.
-    // Só de novo quando a conversa crescer outros 20% do limite: se as últimas rodadas sozinhas já são grandes,
+    // Só de novo quando a conversa crescer outros 30% do limite: se as últimas rodadas sozinhas já são grandes,
     // resumir a cada passo não ajuda (no card 11 compactou duas vezes em 30 s); aí o aparar resolve.
-    if (tokensDe(msgs, porToken) > Math.max(limiteTokens * LIMIAR_COMPACTAR, tamanhoAposCompactar + limiteTokens * 0.2)) {
+    if (tokensDe(msgs, porToken) > Math.max(limiteTokens * LIMIAR_COMPACTAR, tamanhoAposCompactar + limiteTokens * 0.3)) {
       const corte = pontoDeCorte(msgs);
       if (corte) {
         const t0 = Date.now();
