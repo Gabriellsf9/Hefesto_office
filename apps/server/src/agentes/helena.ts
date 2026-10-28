@@ -64,23 +64,31 @@ function resumoDaBoard(escritorio = SEDE): string {
 function conversaRecente(): string {
   return recentChat(16)
     .slice(0, -1) // a última é o pedido atual
-    .map((m) => `${m.de === "voce" ? "CEO" : (agentById[m.de]?.nome ?? m.de)}: ${m.texto}${m.opcoes?.length ? `\n(opções dadas ao CEO: ${m.opcoes.join(" | ")})` : ""}`)
+    .map((m) => {
+      const opcoes = m.opcoes?.length
+        ? `\n(opções dadas ao CEO: ${m.opcoes.join(" | ")}${m.recomendacao ? `; recomendada: ${m.opcoes[m.recomendacao.opcao]}` : ""})`
+        : "";
+      return `${m.de === "voce" ? "CEO" : (agentById[m.de]?.nome ?? m.de)}: ${m.texto}${opcoes}`;
+    })
     .join("\n");
 }
 
 export interface PerguntaAoCeo {
   texto: string;
+  /** A recomendada vem primeiro. */
   opcoes: string[];
+  motivo: string;
 }
 
 /**
  * Na dúvida, a coordenadora pergunta em vez de adivinhar: a pergunta vai ao chat com as opções em botões
- * (o clique responde como se o CEO tivesse escrito a opção). Termina a vez sem criar card.
+ * (o clique responde como se o CEO tivesse escrito a opção) e uma delas recomendada, com o porquê.
+ * Termina a vez sem criar card.
  */
 export function ferramentaPerguntar(aoPerguntar: (p: PerguntaAoCeo) => void) {
   return ferramenta(
     "perguntar_ao_ceo",
-    "Pergunta ao CEO quando o pedido é ambíguo e cada leitura levaria a um trabalho diferente (ex.: atividade nova ou continuação de um card que já existe; escopo de um projeto inteiro ou de uma parte). Não crie card antes da resposta. As opções viram botões no chat; o CEO também pode escrever outra coisa.",
+    "Pergunta ao CEO quando o pedido é ambíguo e cada leitura levaria a um trabalho diferente (ex.: atividade nova ou continuação de um card que já existe; escopo de um projeto inteiro ou de uma parte). Antes de perguntar, analise a board, a memória e o Livro e diga qual opção você recomenda e por quê. Não crie card antes da resposta. As opções viram botões no chat (a recomendada em destaque); o CEO também pode escrever outra coisa.",
     {
       pergunta: { type: "string", description: "Uma pergunta curta, dizendo o que ficou em dúvida" },
       opcoes: {
@@ -88,17 +96,22 @@ export function ferramentaPerguntar(aoPerguntar: (p: PerguntaAoCeo) => void) {
         minItems: 2,
         maxItems: 4,
         items: { type: "string" },
-        description: "2 a 4 respostas prontas, escritas como o CEO diria (ex.: \"Atividade nova: pentest do Parliamo inteiro\"), a mais provável primeiro",
+        description: "2 a 4 respostas prontas, escritas como o CEO diria (ex.: \"Atividade nova: pentest do Parliamo inteiro\")",
       },
+      recomendada: { type: "integer", minimum: 0, maximum: 3, description: "Índice (começando em 0) da opção que você considera a melhor depois de analisar" },
+      motivo: { type: "string", description: "Por que essa é a melhor, em uma frase, com o que você viu na board, na memória ou no Livro" },
     },
-    ["pergunta", "opcoes"],
+    ["pergunta", "opcoes", "recomendada", "motivo"],
     (e) => {
-      const opcoes = (Array.isArray(e.opcoes) ? e.opcoes : [])
-        .filter((o): o is string => typeof o === "string" && !!o.trim())
-        .map((o) => o.trim().slice(0, 120))
-        .slice(0, 4);
+      const brutas = Array.isArray(e.opcoes) ? e.opcoes : [];
+      const recomendadaBruta = typeof e.recomendada === "number" ? brutas[e.recomendada] : undefined;
+      const limpa = (o: unknown) => (typeof o === "string" ? o.trim().slice(0, 120) : "");
+      const recomendada = limpa(recomendadaBruta);
+      if (!recomendada) throw new ErroEntrada("Diga em recomendada o índice de uma das opções.");
+      const outras = brutas.filter((o) => o !== recomendadaBruta).map(limpa).filter((o) => o && o !== recomendada);
+      const opcoes = [recomendada, ...outras].slice(0, 4);
       if (opcoes.length < 2) throw new ErroEntrada("Envie de 2 a 4 opções em opcoes.");
-      aoPerguntar({ texto: texto(e, "pergunta", 600), opcoes });
+      aoPerguntar({ texto: texto(e, "pergunta", 600), opcoes, motivo: texto(e, "motivo", 300) });
       return { texto: "Pergunta enviada ao CEO. Espere a resposta.", fim: true };
     },
   );
@@ -266,7 +279,7 @@ Se for um pedido de trabalho, crie os cards com criar_cards e depois responda. $
     emit({ type: "chat.parcial", de: HELENA_, texto: "" });
     const p = pergunta as PerguntaAoCeo | null;
     if (p) {
-      postChat(HELENA_, p.texto, undefined, undefined, p.opcoes);
+      postChat(HELENA_, p.texto, undefined, undefined, p.opcoes, p.motivo ? { opcao: 0, motivo: p.motivo } : undefined);
       return;
     }
     const resposta = r.texto.trim() || (criados.length ? `Feito. Criei e distribuí:\n${criados.map((c) => `- ${c}`).join("\n")}` : "");

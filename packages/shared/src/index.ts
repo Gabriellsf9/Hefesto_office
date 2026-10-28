@@ -109,6 +109,8 @@ export interface ChatMessage {
   arquivos?: { url: string; nome: string }[];
   /** Pergunta com respostas prontas (ex.: Helena na dúvida): cada opção vira um botão que responde por você. */
   opcoes?: string[];
+  /** A opção que quem pergunta recomenda (índice em opcoes) e por quê, depois de analisar. */
+  recomendacao?: { opcao: number; motivo: string };
 }
 
 /* ---------- Livro da Empresa e entrevista de onboarding (Fase 2a) ---------- */

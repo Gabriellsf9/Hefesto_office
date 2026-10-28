@@ -191,7 +191,7 @@ function FimDaLista({ dep }: { dep: number }) {
 
 /** responder: só na pergunta ainda sem resposta; nas já respondidas as opções aparecem apagadas. */
 function Bolha({ m, flutuante, escrevendo, responder }: {
-  m: Pick<ChatMessage, "id" | "ts" | "de" | "texto" | "imagens" | "arquivos" | "opcoes">;
+  m: Pick<ChatMessage, "id" | "ts" | "de" | "texto" | "imagens" | "arquivos" | "opcoes" | "recomendacao">;
   flutuante?: boolean;
   escrevendo?: boolean;
   responder?: (opcao: string) => void;
@@ -215,21 +215,27 @@ function Bolha({ m, flutuante, escrevendo, responder }: {
         <div className="whitespace-pre-wrap">{m.texto}</div>
         {m.opcoes && m.opcoes.length > 0 && (
           <div className="mt-2 flex flex-col items-start gap-1.5">
-            {m.opcoes.map((o, i) => (
-              <button
-                key={o}
-                type="button"
-                disabled={!responder}
-                onClick={() => responder?.(o)}
-                className={cx(
-                  "min-h-alvo rounded-ctl px-3 py-1.5 text-left text-pequeno font-medium transition-colors",
-                  i === 0 ? "border border-ink bg-ink text-on-ink" : "border border-line bg-surface text-fg hover:bg-hover",
-                  "disabled:cursor-default disabled:opacity-45",
-                )}
-              >
-                {o}
-              </button>
-            ))}
+            {m.opcoes.map((o, i) => {
+              const recomendada = m.recomendacao?.opcao === i;
+              return (
+                <div key={o} className="flex flex-col items-start gap-1">
+                  <button
+                    type="button"
+                    disabled={!responder}
+                    onClick={() => responder?.(o)}
+                    className={cx(
+                      "flex min-h-alvo items-center gap-2 rounded-ctl px-3 py-1.5 text-left text-pequeno font-medium transition-colors",
+                      recomendada ? "border border-ink bg-ink text-on-ink" : "border border-line bg-surface text-fg hover:bg-hover",
+                      "disabled:cursor-default disabled:opacity-45",
+                    )}
+                  >
+                    {o}
+                    {recomendada && <span className="rounded-full bg-on-ink/15 px-1.5 py-px text-legenda font-semibold">Recomendado</span>}
+                  </button>
+                  {recomendada && m.recomendacao!.motivo && <span className="max-w-full text-legenda text-fg-2">Por que recomendo: {m.recomendacao!.motivo}</span>}
+                </div>
+              );
+            })}
             {responder && <span className="text-legenda text-fg-3">Ou escreva outra coisa abaixo.</span>}
           </div>
         )}
