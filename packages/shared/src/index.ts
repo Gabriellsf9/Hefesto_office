@@ -197,6 +197,12 @@ export interface MensagemConversa {
   custoUsd?: number;
 }
 
+/** Um passo da lista de tarefas que o agente mantém no card (como o TodoWrite do Claude Code). */
+export interface ItemTarefaAgente {
+  texto: string;
+  status: "pendente" | "fazendo" | "feita";
+}
+
 export type ServerEvent =
   | {
       type: "hello";
@@ -279,7 +285,8 @@ export type ServerEvent =
   | { type: "alertas"; abertos: AlertaSaude[] }
   | { type: "conversa.mensagem"; mensagem: MensagemConversa }
   | { type: "conversa.parcial"; conversaId: number; texto: string }
-  | { type: "conversa.estado"; conversaId: number; rodando: boolean };
+  | { type: "conversa.estado"; conversaId: number; rodando: boolean }
+  | { type: "tarefas.agente"; cardId: number; itens: ItemTarefaAgente[] };
 
 export type ClientEvent =
   | { type: "command"; texto: string; imagens?: string[]; arquivos?: string[]; escritorio?: string }

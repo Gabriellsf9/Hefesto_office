@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2, Wallet } from "lucide-react";
-import { baseDoFluxo, colunaDe, ehCardDeCodigo, fluxos, niveis, prioridades, severidades, tiposCard, type Card, type CardEditavel, type Comentario, type Entrega } from "@empresa/shared";
+import { baseDoFluxo, colunaDe, ehCardDeCodigo, fluxos, niveis, prioridades, severidades, tiposCard, type Card, type CardEditavel, type Comentario, type Entrega, type ItemTarefaAgente } from "@empresa/shared";
 import { agentById, agents, rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
 import { api } from "../../api.ts";
@@ -79,6 +79,13 @@ function Corpo({ card }: { card: Card }) {
   const trabalho = useStore((s) => s.motor.emAndamento.find((t) => t.cardId === card.id));
   // Por que não está rodando (o motor diz: provedor fora do ar, vez do modelo local, dependência…).
   const espera = useStore((s) => s.motor.esperas?.[card.id]);
+  // Passos que o agente marcou no card (chegam ao vivo; na abertura, busca os já salvos).
+  const passos = useStore((s) => s.tarefasAgente[card.id]);
+  useEffect(() => {
+    void api<ItemTarefaAgente[]>(`/api/cards/${card.id}/tarefas-agente`)
+      .then((itens) => useStore.setState((s) => ({ tarefasAgente: { ...s.tarefasAgente, [card.id]: itens } })))
+      .catch(() => null);
+  }, [card.id]);
   const coluna = colunaDe(card.fluxo, card.coluna);
   const bugs = Object.values(cards).filter((c) => c.bugDe === card.id);
   const origem = card.bugDe ? cards[card.bugDe] : undefined;
@@ -92,6 +99,20 @@ function Corpo({ card }: { card: Card }) {
             <span className="pulsar size-2 rounded-full bg-accent" />
             {agentById[trabalho.agenteId]?.nome} está {trabalho.tipo === "validar" ? "validando" : "trabalhando"} neste card agora.
           </p>
+        )}
+        {passos && passos.length > 0 && (
+          <div className="rounded-card bg-sunken px-3.5 py-2.5 text-pequeno">
+            <p className="mb-1 font-semibold text-fg">
+              Passos do agente ({passos.filter((p) => p.status === "feita").length}/{passos.length})
+            </p>
+            <ul className="space-y-0.5">
+              {passos.map((p, i) => (
+                <li key={i} className={p.status === "feita" ? "text-fg-3 line-through" : p.status === "fazendo" ? "font-medium text-accent-fg" : "text-fg-2"}>
+                  {p.status === "feita" ? "✓" : p.status === "fazendo" ? "▸" : "○"} {p.texto}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
         {!trabalho && espera && !(card.bloqueado && card.etiquetas.includes("limite-de-gasto")) && (
           <p className="flex items-center gap-2 rounded-card bg-sunken px-3.5 py-2.5 text-pequeno text-fg-2">

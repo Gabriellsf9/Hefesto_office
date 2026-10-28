@@ -55,3 +55,26 @@ test("estação: escolhe a imagem da linguagem do projeto", () => {
   assert.equal(imagemDoProjeto(raiz), "golang:1.26");
   assert.equal(imagemDoProjeto(mkdtempSync(join(tmpdir(), "vazio-"))), "node:22");
 });
+
+test("lista de tarefas do agente: salva, volta na mensagem do card e aceita só status válidos", async () => {
+  const { ferramentaDeTarefas, tarefasEmTexto, lerTarefasDoAgente } = await import("./tarefasDoAgente.ts");
+  const f = ferramentaDeTarefas(4242);
+  await f.executar!({ tarefas: [{ texto: "Ler o handler", status: "feita" }, { texto: "Escrever o teste", status: "fazendo" }, { texto: "Rodar", status: "qualquer" }] });
+  assert.deepEqual(lerTarefasDoAgente(4242).map((i) => i.status), ["feita", "fazendo", "pendente"]);
+  assert.match(tarefasEmTexto(4242), /\[x\] Ler o handler[\s\S]*\[~\] Escrever o teste[\s\S]*\[ \] Rodar/);
+  assert.equal(tarefasEmTexto(999_999), "", "card sem lista: nada");
+});
+
+test("instruções do projeto: AGENTS.md e CLAUDE.md, também quando o repositório está numa subpasta; cortadas no limite", async () => {
+  const { instrucoesDoProjeto } = await import("./instrucoesProjeto.ts");
+  const pasta = mkdtempSync(join(tmpdir(), "instr-"));
+  mkdirSync(join(pasta, "App", ".git"), { recursive: true });
+  writeFileSync(join(pasta, "App", "AGENTS.md"), "Use pnpm. Nunca edite migrações antigas.");
+  writeFileSync(join(pasta, "App", "CLAUDE.md"), "x".repeat(5000));
+  const t = instrucoesDoProjeto(pasta, 3000);
+  assert.match(t, /### AGENTS\.md\nUse pnpm\. Nunca edite migrações antigas\./);
+  assert.match(t, /### CLAUDE\.md/);
+  assert.match(t, /cortado: leia o arquivo inteiro/);
+  assert.ok(t.length < 3400);
+  assert.equal(instrucoesDoProjeto(mkdtempSync(join(tmpdir(), "sem-"))), "");
+});

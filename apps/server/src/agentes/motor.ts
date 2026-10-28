@@ -45,7 +45,8 @@ import { arquivosDoDiff, relatorioVarredura, varrerSegredos, verificarLicencas }
 import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confianca/atacante.ts";
 import { auditar } from "../confianca/auditoria.ts";
 import { ETIQUETA_ORCAMENTO_PROJETO, projetoSemOrcamento } from "../planejamento.ts";
-import { ferramentaDePesquisa } from "./pesquisa.ts";
+import { ferramentaDeDelegar, ferramentaDePesquisa } from "./pesquisa.ts";
+import { ferramentaDeTarefas } from "./tarefasDoAgente.ts";
 import { ferramentasDeEstacao } from "../fabrica/estacao.ts";
 import { ETIQUETA_PARTE, mensagemAdvogado, mensagemExecutar, mensagemValidar, sistemaAdvogado, sistemaAutor, sistemaValidador } from "./prompts.ts";
 
@@ -1019,6 +1020,13 @@ ${texto_}`);
   const raizDoProjeto = wt?.caminho ?? wtDoPai?.caminho ?? referencia?.caminho ?? projeto?.caminho;
   const pesquisa = raizDoProjeto ? ferramentaDePesquisa(raizDoProjeto, { cardId: card.id, agenteId: agente.id, sinal }) : null;
   if (pesquisa) ferramentas.push(pesquisa);
+  // Subagente para qualquer tarefa fechada; no card de código ele também escreve e usa o terminal da estação.
+  if (raizDoProjeto && plano?.fase !== "propor") {
+    const extras = wt ? [...ferramentasDeEscrita(wt), ...(agente.ferramentas.includes("terminal") ? ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local }) : [])] : [];
+    ferramentas.push(ferramentaDeDelegar(raizDoProjeto, { cardId: card.id, agenteId: agente.id, sinal, extras, modeloDoAutor: modeloAutor }));
+  }
+  // A lista de passos do card (aparece no card e volta para o agente na próxima rodada).
+  ferramentas.push(ferramentaDeTarefas(card.id));
   // Treinamento e QA de tela: prints do app rodando na máquina do CEO.
   // Prévia do código deste card (antes do merge): QA, devs e treinamento sobem e testam.
   if (podeVerificar() && wt && ["playwright", "terminal", "navegador", "celular"].some((f) => agente.ferramentas.includes(f as Agent["ferramentas"][number]))) ferramentas.push(ferramentaPrevia(card));
