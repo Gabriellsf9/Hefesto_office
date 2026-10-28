@@ -329,6 +329,8 @@ export interface TrabalhoEmAndamento {
   agenteId: string;
   tipo: "executar" | "validar";
   desde: number;
+  /** Provedor com que o trabalho começou (o do agente pode mudar no meio, quando outro provedor volta ao ar). */
+  provedor?: ProvedorIa;
 }
 
 export interface EstadoMotor {
