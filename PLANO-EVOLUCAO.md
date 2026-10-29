@@ -50,6 +50,18 @@ Este plano parte do inventário do que já existe (out/2026). Cada item diz o qu
 | **5.3 Segurança** | O terminal deixa de herdar as chaves do servidor; conteúdo da web e de páginas vai marcado como dado externo |
 | **5.4 Batch da Anthropic** | Avaliações e testes-sombra pela Batch API, que custa metade e não tem pressa |
 
+## Feito depois da fase 5 (29/10/2026)
+
+| Item | O que mudou |
+|---|---|
+| **Servidor MCP** | `/mcp`: o Claude Code, o Cursor ou o VS Code veem e criam cards, comentam e conversam com os agentes |
+| **Vários computadores com Ollama** | Um agente local por computador ao mesmo tempo; extra fora do ar → segue no principal |
+| **Medição** | Entregas por dia, % sem o CEO entrar (meta 90%), cada modelo nos cards de verdade e sugestão de troca |
+| **Testes da interface** | O CI abre as 37 páginas no Chrome; uma página quebrada mostra o aviso só nela, em vez de apagar o app |
+| **Acesso remoto** | Senha, endereços liberados (Tailscale), chave para apps; Host forjado não passa |
+| **Vigia de memória** | Falta de memória no Ollama → o agente passa para o modelo menor; fora do Docker, também previne pela memória livre |
+| **Manual** | [MANUAL.md](MANUAL.md), por tarefa |
+
 ## Fora do código (decisão sua)
 - Recarregar a Anthropic e ativar o faturamento do Gemini.
 - Tirar o Parliamo de produção desta máquina.

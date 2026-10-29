@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
+import { agentById } from "@empresa/org";
 import type { AlertaSaude, TipoAlertaSaude } from "@empresa/shared";
 import { db } from "./db.ts";
 import { emit, postChat } from "./bus.ts";
 import { custoHoje } from "./custo.ts";
 import { estadoMotor } from "./agentes/motor.ts";
+import { rebaixamentosRecentes } from "./agentes/memoria.ts";
 import { listarCards } from "./tarefas.ts";
 import { enviar } from "./telegram.ts";
 
@@ -58,6 +60,8 @@ export interface Fotografia {
   fila: { naFila: number; pausado: boolean; semOrcamento: boolean };
   filaParadaDesde: number | null;
   chaveDoCard: (cardId: number) => string;
+  /** Agentes que passaram para um modelo local menor por falta de memória (últimas 6 h). */
+  rebaixamentos?: { id: number; agentes: string[]; de: string; para: string; motivo: string }[];
 }
 
 const resumo = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -66,6 +70,13 @@ const minutos = (ms: number) => Math.round(ms / 60_000);
 
 export function examinar(f: Fotografia): Achado[] {
   const achados: Achado[] = [];
+  for (const r of f.rebaixamentos ?? []) {
+    const nomes = r.agentes.map((a) => agentById[a]?.nome ?? a).join(", ");
+    achados.push({
+      chave: `memoria:${r.id}`, tipo: "memoria", cardId: null,
+      texto: `${nomes} passou de ${r.de} para ${r.para}: ${r.motivo}. Volte em Configurações → Modelos de IA quando houver memória.`,
+    });
+  }
   for (const t of f.emAndamento) {
     const ultimo = f.ultimoPasso(t.cardId, t.desde) ?? t.desde;
     if (f.agora - ultimo >= SEM_PROGRESSO_MS) {
@@ -188,6 +199,7 @@ function fotografar(agora: number): Fotografia {
     fila: { naFila: m.naFila, pausado: m.pausado, semOrcamento: m.semOrcamento },
     filaParadaDesde,
     chaveDoCard: (id) => chaves.get(id) ?? `card ${id}`,
+    rebaixamentos: rebaixamentosRecentes(agora - 6 * 3_600_000),
   };
 }
 
@@ -198,6 +210,7 @@ const ROTULO: Record<TipoAlertaSaude, string> = {
   "chamada-lenta": "Chamada lenta",
   "gasto-do-dia": "Gasto do dia",
   "fila-parada": "Fila parada",
+  memoria: "Pouca memória",
 };
 
 export function verificarSaude(agora = Date.now()) {

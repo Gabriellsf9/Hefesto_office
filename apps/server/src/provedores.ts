@@ -171,6 +171,14 @@ async function modelosOllama(): Promise<{ versao: string | null; modelos: Modelo
   return { versao: versao.version ?? null, modelos };
 }
 
+/** Modelos instalados no Ollama principal (vazio se ele não responder). */
+export const modelosOllamaInstalados = () => modelosOllama().then((r) => r.modelos).catch(() => [] as ModeloDisponivel[]);
+
+/** Troca o modelo de um agente (o mesmo que escolher na tela Modelos de IA). */
+export function escolherModelo(agente: string, modelo: string) {
+  setSetting("modelos_agentes", JSON.stringify({ ...escolhas(), [agente]: modelo }));
+}
+
 // Só modelos de conversa (sem embeddings, áudio, imagem, moderação…).
 const SO_CONVERSA = /embed|audio|tts|transcri|realtime|image|dall-e|whisper|moderation|search|computer|davinci|babbage|aqa|imagen|veo|learnlm|live/i;
 

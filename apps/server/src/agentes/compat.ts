@@ -15,6 +15,7 @@ import { BASE_COMPAT, capacidadesOllama, chaveDe, configOllama, modeloDisponivel
 import { novaExecucao, registrarPasso } from "../confianca/execucoes.ts";
 import { conferirOrcamentoDoProjeto, projetoSemOrcamento } from "../planejamento.ts";
 import { registrarChamada } from "../chamadas.ts";
+import { ERRO_DE_MEMORIA, semMemoriaPara } from "./memoria.ts";
 import { ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemOrcamento, executarFerramenta, ferramenta, rodarAgente, type Ferramenta, type OpcoesAgente, type ResultadoAgente, blocoDeOrientacao, soAnunciou } from "./loop.ts";
 
 // O laço do agente para modelos fora do Claude: Ollama (API nativa, para controlar o
@@ -37,6 +38,13 @@ export class ErroProvedor extends Error {
     readonly passageiro: boolean,
   ) {
     super(message);
+  }
+}
+
+/** O Ollama não conseguiu carregar o modelo por falta de memória (a troca para um menor é automática). */
+export class ErroSemMemoria extends ErroProvedor {
+  constructor(message: string, readonly modelo: string) {
+    super(message, 507, true);
   }
 }
 
@@ -381,7 +389,10 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
       throw new ErroProvedor(`O Ollama não está respondendo em ${url}. Abra o app do Ollama (ou rode "ollama serve").`, 0, true);
     }
     if (res.status === 404) throw new ErroProvedor(`O modelo ${modelo} não está instalado no Ollama. Rode no terminal: ollama pull ${modelo}`, 404, false);
-    if (!res.ok) throw await erroDaResposta(res, "O Ollama");
+    if (!res.ok) {
+      const erro = await erroDaResposta(res, "O Ollama");
+      throw ERRO_DE_MEMORIA.test(erro.message) ? new ErroSemMemoria(erro.message, modelo) : erro;
+    }
 
     const r: Resposta = { texto: "", chamadas: [], entrada: 0, saida: 0, cortada: false };
     await lerLinhas(res, (linha) => {
@@ -393,7 +404,7 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
         prompt_eval_count?: number;
         eval_count?: number;
       };
-      if (j.error) throw new ErroProvedor(`O Ollama falhou: ${j.error}`, 500, false);
+      if (j.error) throw ERRO_DE_MEMORIA.test(j.error) ? new ErroSemMemoria(`O Ollama falhou: ${j.error}`, modelo) : new ErroProvedor(`O Ollama falhou: ${j.error}`, 500, false);
       if (j.message?.content) {
         r.texto += j.message.content;
         onTexto(r.texto);
@@ -426,6 +437,11 @@ export async function rodarAgenteCompat(o: OpcoesAgente): Promise<ResultadoAgent
   try {
     return await laçoCompat(o);
   } catch (e) {
+    // Faltou memória para o modelo local: segue com o próximo menor instalado (o agente passa a usá-lo; a vigia avisa).
+    if (e instanceof ErroSemMemoria) {
+      const menor = await semMemoriaPara(e.modelo, o.agenteId, e.message);
+      if (menor) return rodarAgenteCompat({ ...o, modelo: `ollama:${menor}` });
+    }
     // Marca no erro o provedor que falhou: depois da falha, o agente já aponta para a reserva, e era a reserva
     // (o modelo local) que acabava marcada como fora do ar, parando todo o trabalho local.
     if (e instanceof ErroProvedor && !e.provedor) e.provedor = provedorDe(o.modelo).provedor;
