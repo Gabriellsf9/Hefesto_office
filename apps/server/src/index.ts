@@ -46,6 +46,7 @@ import {
   aprovarConhecimento, configCritica, configurarCritica, criarConhecimento, editarConhecimento, excluirConhecimento, listarConhecimento,
 } from "./conhecimento.ts";
 import { calcularIndicadores, listarMetas, removerMeta, salvarMeta, sugerirMetas } from "./metas.ts";
+import { calcularMedicao } from "./medicao.ts";
 import { configurarRitual, executarRitual, iniciarRituais, listarAtas, listarRituais } from "./rituais.ts";
 import { isDemoActive, setDemo } from "./demo.ts";
 import { ehSecao, lerLivro, marcarRevisada, salvarSecao } from "./livro.ts";
@@ -437,6 +438,7 @@ app.delete<{ Params: { id: string } }>("/api/metas/:id", async (req) => {
 });
 app.post("/api/metas/sugerir", async () => sugerirMetas());
 app.get("/api/indicadores", async () => calcularIndicadores());
+app.get("/api/medicao", async () => calcularMedicao());
 app.get("/api/rituais", async () => listarRituais());
 app.put<{ Params: { id: RitualId }; Body: { ativo?: boolean; hora?: string } }>("/api/rituais/:id", async (req) => {
   configurarRitual(req.params.id, req.body ?? {});

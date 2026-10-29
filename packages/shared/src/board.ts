@@ -418,6 +418,28 @@ export interface Indicadores {
   custoMesUsd: number;
 }
 
+/** Como um modelo se saiu nos cards de verdade (últimos 30 dias) e nos evals. */
+export interface MedicaoModelo {
+  modelo: string;
+  local: boolean;
+  /** Cards em que ele foi o autor principal. */
+  cards: number;
+  concluidos: number;
+  aprovadosDePrimeira: number | null;
+  semCeo: number | null;
+  minutosPorCard: number | null;
+  tokensPorSegundo: number | null;
+  custoUsd: number;
+  notaEval: number | null;
+}
+
+export interface Medicao {
+  dias: { dia: string; concluidos: number; devolucoes: number; custoUsd: number; horasDeModelo: number }[];
+  resumo: { concluidos: number; aprovadosDePrimeira: number | null; semCeo: number | null; horasPorCard: number | null; custoUsd: number; custoPorCardUsd: number | null };
+  modelos: MedicaoModelo[];
+  sugestoes: { agente: string; nomeAgente: string; de: string; para: string; motivo: string }[];
+}
+
 export type RitualId = "daily" | "planejamento" | "revisao" | "retrospectiva" | "fechamento" | "cadencias";
 
 export interface RitualInfo {
