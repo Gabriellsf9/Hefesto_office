@@ -553,3 +553,43 @@ test("chamada de ferramenta malformada (Ollama 500 'error parsing tool call'): o
     setSetting("provedores", "{}");
   }
 });
+
+test("gpt-oss recebe o nível de raciocínio (não desliga), e resumo vazio não é pedido de novo a cada passo", async () => {
+  const pedidos: { think?: unknown; tools?: unknown[] }[] = [];
+  let leituras = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools", "thinking"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const p = JSON.parse(corpo);
+      pedidos.push(p);
+      const fim = `\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`;
+      // Pedido de resumo (sem ferramentas): o modelo só "pensa" e devolve texto vazio.
+      if (!p.tools) return void res.end(JSON.stringify({ message: { content: "", thinking: "pensando..." } }) + fim);
+      const chamada = leituras >= 14 ? { name: "entregar", arguments: { conteudo: "ok" } } : { name: "ler", arguments: { caminho: `a${leituras++}` } };
+      const pensou = chamada.name === "ler" ? `Analisando: ${"raciocínio detalhado ".repeat(110)}` : "";
+      res.end(JSON.stringify({ message: { content: pensou, tool_calls: [{ function: chamada }] } }) + fim);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:gpt-oss-teste:20b", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", maxRodadas: 20,
+      ferramentas: [
+        ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], () => ({ texto: "curto" })),
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true);
+    const comFerramentas = pedidos.filter((p) => p.tools);
+    assert.ok(comFerramentas.every((p) => p.think === "low" || p.think === "medium"), `think: ${[...new Set(comFerramentas.map((p) => String(p.think)))].join(", ")}`);
+    const resumos = pedidos.filter((p) => !p.tools).length;
+    assert.ok(resumos >= 1 && resumos <= 2, `pediu ${resumos} resumo(s); com resumo vazio não repete a cada passo`);
+  } finally {
+    servidor.closeAllConnections();
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
