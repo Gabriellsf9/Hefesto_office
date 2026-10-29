@@ -86,29 +86,32 @@ export function leituraDeMemoria(): { livreGb: number; fonte: "computador" | "es
 // Volta sozinho: com a memória sobrando (o tamanho do modelo original + LIMITE_GB + 1 GB) por 30 minutos seguidos,
 // os agentes que ainda estão no menor voltam ao original. Antes ficavam no menor (mais fraco) até o CEO trocar à mão.
 export const FOLGA_PARA_VOLTAR_MS = 30 * 60_000;
-let folgaDesde: number | null = null;
+/** Desde quando cada troca pendente tem memória para voltar (por id da troca). */
+const folgaDesde = new Map<number, number>();
 
+// Cada troca pendente conta a própria folga: antes só a mais recente era olhada, e a volta do 9b dos agentes de texto
+// (cabia com ~9 GB livres) ficava presa atrás da do gpt-oss do Rafael (que pede ~16 GB e quase nunca cabe).
 async function talvezVoltar(livreGb: number, agora: number): Promise<string | null> {
-  const r = db.prepare("SELECT * FROM memoria_rebaixamentos WHERE restaurado = 0 ORDER BY id DESC LIMIT 1").get() as
-    | { id: number; agentes: string; de: string; para: string }
-    | undefined;
-  if (!r) {
-    folgaDesde = null;
-    return null;
+  const pendentes = db.prepare("SELECT * FROM memoria_rebaixamentos WHERE restaurado = 0 ORDER BY id DESC").all() as { id: number; agentes: string; de: string; para: string }[];
+  for (const id of [...folgaDesde.keys()]) if (!pendentes.some((r) => r.id === id)) folgaDesde.delete(id);
+  if (!pendentes.length) return null;
+  const instalados = await modelosOllamaInstalados();
+  for (const r of pendentes) {
+    const tamanho = instalados.find((m) => m.nome === r.de)?.tamanhoGb ?? 8;
+    if (livreGb < tamanho + LIMITE_GB + 1) {
+      folgaDesde.delete(r.id);
+      continue;
+    }
+    if (!folgaDesde.has(r.id)) folgaDesde.set(r.id, agora);
+    if (agora - folgaDesde.get(r.id)! < FOLGA_PARA_VOLTAR_MS) continue;
+    // Só quem continua no menor (se o CEO trocou à mão, fica como ele escolheu).
+    const atuais = escolhas();
+    for (const a of r.agentes.split(",")) if (atuais[a] === `ollama:${r.para}`) escolherModelo(a, `ollama:${r.de}`);
+    db.prepare("UPDATE memoria_rebaixamentos SET restaurado = 1 WHERE id = ?").run(r.id);
+    folgaDesde.delete(r.id);
+    return r.de; // uma volta por leitura: a próxima conta com a memória que o modelo de volta vai usar
   }
-  const tamanho = (await modelosOllamaInstalados()).find((m) => m.nome === r.de)?.tamanhoGb ?? 8;
-  if (livreGb < tamanho + LIMITE_GB + 1) {
-    folgaDesde = null;
-    return null;
-  }
-  folgaDesde ??= agora;
-  if (agora - folgaDesde < FOLGA_PARA_VOLTAR_MS) return null;
-  // Só quem continua no menor (se o CEO trocou à mão, fica como ele escolheu).
-  const atuais = escolhas();
-  for (const a of r.agentes.split(",")) if (atuais[a] === `ollama:${r.para}`) escolherModelo(a, `ollama:${r.de}`);
-  db.prepare("UPDATE memoria_rebaixamentos SET restaurado = 1 WHERE id = ?").run(r.id);
-  folgaDesde = null;
-  return r.de;
+  return null;
 }
 
 /** Uma leitura. Exportada com a memória e a hora como parâmetros para o teste. Devolve o modelo para onde trocou. */
@@ -116,7 +119,7 @@ export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb, ag
   if (livreGb === undefined) return null;
   baixas = livreGb < LIMITE_GB ? baixas + 1 : 0;
   if (baixas === 0) return talvezVoltar(livreGb, agora);
-  folgaDesde = null;
+  folgaDesde.clear();
   // Três leituras seguidas (~90 s): um pico passageiro (o build de uma atualização do Docker) trocava modelos à toa.
   // Falta de memória de verdade ao carregar um modelo continua tratada na hora (semMemoriaPara).
   if (baixas < LEITURAS_BAIXAS) return null;
