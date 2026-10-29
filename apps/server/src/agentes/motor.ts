@@ -1035,7 +1035,7 @@ ${texto_}`);
     ferramentas.push(...ferramentasDeProjeto(wt.caminho, { enxuto: local }), ...ferramentasDeEscrita(wt));
     if (podeVerificar() && agente.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
     // Terminal completo numa estação só do card (contêiner com a linguagem do projeto e a cópia montada).
-    if (agente.ferramentas.includes("terminal")) ferramentas.push(...ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local }));
+    if (agente.ferramentas.includes("terminal")) ferramentas.push(...ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local, area: card.dono ?? undefined }));
     // Ambiente do card: o app inteiro rodando no Docker dos agentes, com autonomia para instalar e preparar o que precisar.
     if (ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
   } else if (wtDoPai) ferramentas.push(...ferramentasDeProjeto(wtDoPai.caminho, { enxuto: local }));
@@ -1065,7 +1065,7 @@ ${texto_}`);
   if (pesquisa) ferramentas.push(pesquisa);
   // Subagente para qualquer tarefa fechada; no card de código ele também escreve e usa o terminal da estação.
   if (raizDoProjeto && plano?.fase !== "propor") {
-    const extras = wt ? [...ferramentasDeEscrita(wt), ...(agente.ferramentas.includes("terminal") ? ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local }) : [])] : [];
+    const extras = wt ? [...ferramentasDeEscrita(wt), ...(agente.ferramentas.includes("terminal") ? ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local, area: card.dono ?? undefined }) : [])] : [];
     ferramentas.push(ferramentaDeDelegar(raizDoProjeto, { cardId: card.id, agenteId: agente.id, sinal, extras, modeloDoAutor: modeloAutor }));
   }
   // A lista de passos do card (aparece no card e volta para o agente na próxima rodada).
@@ -1411,7 +1411,7 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
   if (wt) {
     ferramentas.push(...ferramentasDeProjeto(wt.caminho, { enxuto: local }), ferramentaDeDiff(card.id));
     if (podeVerificar() && validador.ferramentas.includes("terminal")) ferramentas.push(ferramentaDeComando(wt));
-    if (validador.ferramentas.includes("terminal")) ferramentas.push(...ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local }));
+    if (validador.ferramentas.includes("terminal")) ferramentas.push(...ferramentasDeEstacao(`card-${card.id}`, wt.caminho, { enxuto: local, area: card.dono ?? undefined }));
     // QA sobe o app de verdade no ambiente do card (banco, backend, frontend) e testa no navegador.
     if (validador.id.startsWith("qa") && ambienteAtivo()) ferramentas.push(...ferramentasDeAmbiente(wt));
     const urlQa = projeto?.urlLocal ?? (ambienteAtivo() ? `http://${HOST_DO_AMBIENTE}` : null);

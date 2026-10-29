@@ -19,12 +19,18 @@ const OCIOSA_MS = 3 * 3600_000;
 const usadas = new Map<string, number>();
 const nomeDe = (chave: string) => `hefesto-estacao-${chave.replace(/[^a-z0-9-]/gi, "-").toLowerCase()}`;
 
-/** Imagem da linguagem do projeto (a raiz ou o primeiro subprojeto); sem nada reconhecido, Node (Debian, com apt). */
-export function imagemDoProjeto(pasta: string): string {
+/**
+ * Imagem da linguagem do projeto: a da raiz; num monorepo, a do subprojeto cujo nome bate com a área do agente
+ * (dev-backend → backend/, dev-frontend → frontend/), senão a do primeiro. Sem nada reconhecido, Node (Debian, com
+ * apt). Antes era sempre a do primeiro: no Parliamo o Rafael (backend em Go) ficava sem Go na estação.
+ */
+export function imagemDoProjeto(pasta: string, area?: string): string {
   const raiz = verificacoesDaPasta(pasta)?.imagem;
   if (raiz) return raiz;
   try {
-    return comandoDeTestes(pasta)?.find((s) => s.imagem)?.imagem ?? "node:22";
+    const subs = (comandoDeTestes(pasta) ?? []).filter((s) => s.imagem);
+    const partes = new Set((area ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+    return (subs.find((s) => partes.has(s.dir.toLowerCase())) ?? subs[0])?.imagem ?? "node:22";
   } catch {
     return "node:22";
   }
@@ -42,9 +48,13 @@ export async function garantirEstacao(chave: string, pasta: string, imagem: stri
   if (!dentroDasCopias(pasta)) throw new ErroEntrada("A estação só monta pastas das cópias dos projetos.");
   const nome = nomeDe(chave);
   usadas.set(chave, Date.now());
-  const estado = await docker(["inspect", "-f", "{{.State.Running}}", nome], pasta, 30_000);
-  if (estado.codigo === 0 && estado.saida.trim() === "true") return nome;
-  if (estado.codigo === 0) {
+  const estado = await docker(["inspect", "-f", "{{.State.Running}} {{.Config.Image}}", nome], pasta, 30_000);
+  const [rodando, imagemAtual] = estado.saida.trim().split(" ");
+  // Estação de outra imagem (criada antes de a escolha mudar): refaz com a certa.
+  if (estado.codigo === 0 && imagemAtual && imagemAtual !== imagem) {
+    await docker(["rm", "-f", nome], pasta, 60_000);
+  } else if (estado.codigo === 0 && rodando === "true") return nome;
+  else if (estado.codigo === 0) {
     const r = await docker(["start", nome], pasta, 60_000);
     if (r.codigo === 0) return nome;
   }
@@ -59,9 +69,9 @@ export async function garantirEstacao(chave: string, pasta: string, imagem: stri
 
 let contadorFundo = 0;
 
-export function ferramentasDeEstacao(chave: string, pasta: string, o: { imagem?: string; enxuto?: boolean } = {}): Ferramenta[] {
+export function ferramentasDeEstacao(chave: string, pasta: string, o: { imagem?: string; enxuto?: boolean; area?: string } = {}): Ferramenta[] {
   if (!ambienteAtivo()) return [];
-  const imagem = o.imagem ?? imagemDoProjeto(pasta);
+  const imagem = o.imagem ?? imagemDoProjeto(pasta, o.area);
   const max = o.enxuto ? 8000 : 16_000;
   return [
     ferramenta(
