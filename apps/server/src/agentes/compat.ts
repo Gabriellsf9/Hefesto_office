@@ -503,6 +503,10 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   const msgs: Msg[] = salva
     ? [...salva, { role: "user", content: "Você foi pausado (reinício do sistema, limite ou espera de um modelo) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
     : novas();
+  // Conversa retomada de antes do teto: o pedido inicial salvo também encolhe (senão ela compacta a cada passo).
+  if (salva && provedor === "ollama" && typeof msgs[1]?.content === "string" && msgs[1].role === "user") {
+    msgs[1] = { ...msgs[1], content: encolherPedido(msgs[1].content, Math.floor((o.contexto ?? configOllama().contexto) * 0.75 * TETO_PEDIDO_LOCAL * 3)) };
+  }
   const salvarRodada = () => o.aoRodada?.(msgs as unknown as Anthropic.Beta.BetaMessageParam[]);
   let contextoLocal = o.contexto ?? configOllama().contexto;
   let limiteTokens = provedor === "ollama" ? contextoLocal * 0.75 : 150_000;
