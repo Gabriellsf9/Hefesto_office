@@ -51,6 +51,9 @@ test("modelo menor: o maior entre os menores que chamam ferramentas", () => {
   assert.equal(modeloMenor("grande:20b", lista), "medio:9b");
   assert.equal(modeloMenor("medio:9b", lista), "pequeno:2b", "pula o que não chama ferramentas");
   assert.equal(modeloMenor("pequeno:2b", lista), null);
+  // Entre os menores, prefere um que algum agente já usa (mesmo que não seja o maior).
+  assert.equal(modeloMenor("grande:20b", [...lista, { nome: "antigo:14b", tamanhoGb: 9, ferramentas: true }], new Set(["medio:9b"])), "medio:9b");
+  assert.equal(modeloMenor("grande:20b", [...lista, { nome: "antigo:14b", tamanhoGb: 9, ferramentas: true }]), "antigo:14b", "sem nenhum em uso: o maior");
 });
 
 test("sem memória para o modelo: o agente passa para o menor, o trabalho termina e a vigia avisa", async () => {
@@ -74,13 +77,14 @@ test("sem memória para o modelo: o agente passa para o menor, o trabalho termin
   }
 });
 
-test("prevenção: memória baixa em duas leituras seguidas troca os agentes do modelo carregado e o descarrega", async () => {
+test("prevenção: memória baixa em três leituras seguidas troca os agentes do modelo carregado e o descarrega", async () => {
   const o = await ollamaFalso();
   setSetting("modelos_agentes", JSON.stringify({ "dev-backend": "ollama:grande:20b", "dev-frontend": "ollama:grande:20b", designer: "ollama:medio:9b" }));
   try {
     assert.equal(await verificarMemoria(0.9), null, "uma leitura baixa só não basta");
     assert.equal(await verificarMemoria(5), null, "voltou ao normal: zera");
     assert.equal(await verificarMemoria(0.9), null);
+    assert.equal(await verificarMemoria(0.85), null, "duas ainda não (um pico passageiro, como o build de uma atualização)");
     assert.equal(await verificarMemoria(0.8), "medio:9b");
     const e = escolhas();
     assert.equal(e["dev-backend"], "ollama:medio:9b");
