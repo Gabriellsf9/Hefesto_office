@@ -593,3 +593,36 @@ test("gpt-oss recebe o nível de raciocínio (não desliga), e resumo vazio não
     setSetting("provedores", "{}");
   }
 });
+
+test("chamada de ferramenta escrita como texto: vira a chamada de verdade (só para ferramentas que o agente tem)", async () => {
+  const { chamadasNoTexto } = await import("./compat.ts");
+  const tem = new Set(["ler_arquivo", "entregar"]);
+  const bloco = '```json\n{"name": "ler_arquivo", "arguments": {"caminho": "backend/internal/supabase/queries_tickets.go"}}\n```';
+  const [c] = chamadasNoTexto(bloco, tem);
+  assert.equal(c?.function.name, "ler_arquivo");
+  assert.deepEqual(JSON.parse(c!.function.arguments), { caminho: "backend/internal/supabase/queries_tickets.go" });
+  assert.equal(chamadasNoTexto('{"name":"entregar","parameters":{"conteudo":"ok"}}', tem)[0]?.function.name, "entregar", "JSON solto e 'parameters'");
+  assert.equal(chamadasNoTexto('```json\n{"name": "apagar_tudo", "arguments": {}}\n```', tem).length, 0, "ferramenta que ele não tem: ignora");
+  assert.equal(chamadasNoTexto("Vou ler o arquivo de queries agora.", tem).length, 0, "texto comum: nada");
+
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    req.resume();
+    req.on("end", () => res.end(`${JSON.stringify({ message: { content: '```json\n{"name": "entregar", "arguments": {"conteudo": "ok"}}\n```' } })}\n${JSON.stringify({ done: true, prompt_eval_count: 10, eval_count: 5 })}\n`));
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    let entregue = "";
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "s", mensagem: "m", lembrete: "Entregue.",
+      ferramentas: [ferramenta("entregar", "E.", { conteudo: { type: "string" } }, ["conteudo"], (e) => ((entregue = String(e.conteudo)), { texto: "ok", fim: true }))],
+    });
+    assert.equal(r.terminou, true);
+    assert.equal(entregue, "ok");
+  } finally {
+    servidor.closeAllConnections();
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
