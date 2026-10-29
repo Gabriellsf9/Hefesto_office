@@ -492,7 +492,7 @@ ${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
     assert.ok(!recebidos.some((p) => !p.tools), "não pediu resumo");
     const ultimo = recebidos.at(-1)!.messages.filter((m) => m.role === "tool").map((m) => String(m.content));
     assert.ok(ultimo.some((t) => t.includes("Resultado antigo limpo")), "limpou os antigos");
-    assert.ok(ultimo.slice(-4).every((t) => t.startsWith("conteúdo de")), "os 4 últimos inteiros");
+    assert.ok(ultimo.slice(-2).every((t) => t.startsWith("conteúdo de")), "os 2 últimos inteiros");
   } finally {
     servidor.close();
     setSetting("provedores", "{}");

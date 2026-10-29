@@ -208,8 +208,12 @@ export function chamadasNoTexto(texto: string, ferramentas: Set<string>): Chamad
 const CHAMADA_MALFORMADA = /error parsing tool call|XML syntax error|failed to parse (tool|function)|invalid tool call/i;
 /** Rodadas por execução no modelo local quando quem chama não define (no Claude e nas APIs, 16). */
 const RODADAS_LOCAIS = 40;
-/** Resultados de ferramenta mais recentes que ficam inteiros quando os antigos são limpos. */
-const RESULTADOS_MANTIDOS = 4;
+/**
+ * Resultados de ferramenta mais recentes que ficam inteiros quando os antigos são limpos. Eram 4: com leituras de ~6 mil
+ * caracteres, só eles somavam ~11 mil tokens e a conversa já nascia no limite de resumir (card 14: um resumo a cada
+ * duas leituras, ~40 s).
+ */
+const RESULTADOS_MANTIDOS = 2;
 const LIMPO = "[Resultado antigo limpo para economizar contexto. Rode a ferramenta de novo se precisar dele.]";
 
 /**
