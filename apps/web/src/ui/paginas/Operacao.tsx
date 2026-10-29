@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Bot, CheckCircle2, Cpu, Database, DatabaseBackup, FileText, FlaskConical, FolderGit2, Globe, LineChart, Plus, ScanSearch, ShieldCheck, Sun, Wallet, X } from "lucide-react";
+import { Activity, BarChart3, Bot, CheckCircle2, Cpu, Database, DatabaseBackup, FileText, FlaskConical, FolderGit2, Globe, LineChart, Plus, ScanSearch, ShieldCheck, Sun, Wallet, X } from "lucide-react";
 import type { Card, Projeto } from "@empresa/shared";
 import { agentById } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -9,6 +9,7 @@ import { Abas, Botao, BotaoIcone, CabecalhoPagina, Campo, Etiqueta, EstadoVazio,
 import { CalculadoraSimples, Monitoramento } from "../Operacao.tsx";
 import { ChamadasIA, PainelHoje } from "./Hoje.tsx";
 import { Qualidade } from "./Qualidade.tsx";
+import { PainelMedicao } from "./Medicao.tsx";
 import { Auditoria } from "./Auditoria.tsx";
 import { PilotoAutomatico } from "./PilotoAutomatico.tsx";
 import { PlanoProjeto } from "./PlanoProjeto.tsx";
@@ -19,11 +20,11 @@ import { Avatarzinho, usd } from "../comum.tsx";
 
 // Operação (DESIGN-INTERFACE.md §6.7): projetos e banco, monitoramento, finanças e backup.
 
-type Sub = "hoje" | "piloto" | "projetos" | "chamadas" | "qualidade" | "auditoria" | "monitoramento" | "financas" | "backup";
+type Sub = "hoje" | "medicao" | "piloto" | "projetos" | "chamadas" | "qualidade" | "auditoria" | "monitoramento" | "financas" | "backup";
 
 export default function PaginaOperacao() {
   const rota = useNav((s) => s.rota);
-  const sub = (["hoje", "piloto", "projetos", "chamadas", "qualidade", "auditoria", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
+  const sub = (["hoje", "medicao", "piloto", "projetos", "chamadas", "qualidade", "auditoria", "monitoramento", "financas", "backup"].includes(rota.sub ?? "") ? rota.sub : "hoje") as Sub;
   const monitores = useStore((s) => s.monitores);
   const fora = monitores.filter((m) => m.status === "fora").length;
   return (
@@ -38,6 +39,7 @@ export default function PaginaOperacao() {
             onChange={(id) => navegar("operacao", id)}
             abas={[
               { id: "hoje", rotulo: "Hoje", icone: Sun },
+              { id: "medicao", rotulo: "Medição", icone: BarChart3 },
               { id: "piloto", rotulo: "Piloto automático", icone: Bot },
               { id: "projetos", rotulo: "Projetos", icone: FolderGit2 },
               { id: "chamadas", rotulo: "Chamadas de IA", icone: Cpu },
@@ -51,6 +53,7 @@ export default function PaginaOperacao() {
         }
       />
       {sub === "hoje" && <PainelHoje />}
+      {sub === "medicao" && <PainelMedicao />}
       {sub === "piloto" && <PilotoAutomatico />}
       {sub === "projetos" && <Projetos />}
       {sub === "chamadas" && <ChamadasIA />}
