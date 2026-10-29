@@ -15,6 +15,9 @@ const TAGS = { models: [
   { name: "pequeno:2b", size: 1.5e9, capabilities: ["completion", "tools"] },
 ] };
 
+/** O que o Ollama falso diz ter carregado (/api/ps). */
+let carregados: { name: string; size: number }[] = [{ name: "grande:20b", size: 14e9 }];
+
 /** Ollama falso: recusa "grande" por falta de memória; o resto responde entregando. */
 async function ollamaFalso() {
   const pedidos: { url: string; corpo: Record<string, unknown> }[] = [];
@@ -27,7 +30,7 @@ async function ollamaFalso() {
       if (req.url === "/api/tags") return void res.end(JSON.stringify(TAGS));
       if (req.url === "/api/version") return void res.end(JSON.stringify({ version: "0.12.0" }));
       if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
-      if (req.url === "/api/ps") return void res.end(JSON.stringify({ models: [{ name: "grande:20b", size: 14e9 }] }));
+      if (req.url === "/api/ps") return void res.end(JSON.stringify({ models: carregados }));
       if (req.url === "/api/generate") return void res.end("{}");
       if (j.model === "grande:20b") {
         res.statusCode = 500;
@@ -53,7 +56,11 @@ test("modelo menor: o maior entre os menores que chamam ferramentas", () => {
   assert.equal(modeloMenor("pequeno:2b", lista), null);
   // Entre os menores, prefere um que algum agente já usa (mesmo que não seja o maior).
   assert.equal(modeloMenor("grande:20b", [...lista, { nome: "antigo:14b", tamanhoGb: 9, ferramentas: true }], new Set(["medio:9b"])), "medio:9b");
-  assert.equal(modeloMenor("grande:20b", [...lista, { nome: "antigo:14b", tamanhoGb: 9, ferramentas: true }]), "antigo:14b", "sem nenhum em uso: o maior");
+  assert.equal(modeloMenor("grande:20b", [...lista, { nome: "antigo:14b", tamanhoGb: 8, ferramentas: true }]), "antigo:14b", "sem nenhum em uso: o maior");
+  // Com mais de 60% do tamanho não conta como menor: o gpt-oss (14 GB) caiu num 14b de 12,7 GB carregado.
+  assert.equal(modeloMenor("grande:20b", [...lista, { nome: "antigo:14b", tamanhoGb: 9, ferramentas: true }]), "medio:9b");
+  // No empate de tamanho, a versão -hefesto.
+  assert.equal(modeloMenor("grande:20b", [...lista, { nome: "medio-hefesto:9b", tamanhoGb: 6.6, ferramentas: true }]), "medio-hefesto:9b");
 });
 
 test("sem memória para o modelo: o agente passa para o menor, o trabalho termina e a vigia avisa", async () => {
@@ -109,12 +116,13 @@ test("volta sozinho: com memória sobrando por 30 minutos seguidos, os agentes q
   const o = await ollamaFalso();
   setSetting("modelos_agentes", JSON.stringify({ copywriter: "ollama:grande:20b", rh: "ollama:grande:20b" }));
   try {
+    carregados = [{ name: "medio:9b", size: 6.6e9 }];
     rebaixar("grande:20b", "medio:9b", "teste de volta");
     // O CEO trocou o rh à mão depois: ele fica como está.
     setSetting("modelos_agentes", JSON.stringify({ ...escolhas(), rh: "ollama:pequeno:2b" }));
     const t0 = Date.now();
     assert.equal(await verificarMemoria(30, t0), null, "começa a contar a folga");
-    assert.equal(await verificarMemoria(5, t0 + 60_000), null, "folga curta (5 GB < 14 + 2,5): zera");
+    assert.equal(await verificarMemoria(5, t0 + 60_000), null, "folga curta (5 GB < 14 - 6,6 que o menor devolve + 2,5): zera");
     assert.equal(await verificarMemoria(30, t0 + 120_000), null);
     assert.equal(await verificarMemoria(30, t0 + 120_000 + FOLGA_PARA_VOLTAR_MS - 1000), null, "ainda não deu 30 min");
     assert.equal(await verificarMemoria(30, t0 + 120_000 + FOLGA_PARA_VOLTAR_MS), "grande:20b");
@@ -133,6 +141,7 @@ test("volta sozinho: cada troca pendente conta a sua folga; a que cabe volta mes
   const o = await ollamaFalso();
   setSetting("modelos_agentes", JSON.stringify({ copywriter: "ollama:medio:9b", "dev-backend": "ollama:grande:20b" }));
   try {
+    carregados = [];
     rebaixar("medio:9b", "pequeno:2b", "teste antiga"); // copywriter: 9b → 2b (precisa de ~9,1 GB)
     rebaixar("grande:20b", "medio:9b", "teste recente"); // dev-backend: 20b → 9b (precisa de ~16,5 GB)
     const t0 = Date.now() + 10 * 60_000;
@@ -141,6 +150,25 @@ test("volta sozinho: cada troca pendente conta a sua folga; a que cabe volta mes
     assert.equal(await verificarMemoria(10, t0 + FOLGA_PARA_VOLTAR_MS), "medio:9b", "a mais antiga (que cabe) voltou");
     assert.equal(escolhas().copywriter, "ollama:medio:9b");
     assert.equal(escolhas()["dev-backend"], "ollama:medio:9b", "a do 20b continua pendente");
+  } finally {
+    await o.fechar();
+    setSetting("modelos_agentes", "{}");
+    setSetting("provedores", "{}");
+    carregados = [{ name: "grande:20b", size: 14e9 }];
+  }
+});
+
+test("volta sozinho: com o original ainda carregado (outros agentes o usam), a volta não custa memória", async () => {
+  const { FOLGA_PARA_VOLTAR_MS, rebaixar } = await import("./memoria.ts");
+  const o = await ollamaFalso();
+  setSetting("modelos_agentes", JSON.stringify({ seo: "ollama:grande:20b" }));
+  try {
+    carregados = [{ name: "grande:20b", size: 14e9 }];
+    rebaixar("grande:20b", "medio:9b", "teste carregado");
+    const t0 = Date.now() + 20 * 60_000;
+    assert.equal(await verificarMemoria(3, t0), null, "3 GB livres bastam (1,5 + 1)");
+    assert.equal(await verificarMemoria(3, t0 + FOLGA_PARA_VOLTAR_MS), "grande:20b");
+    assert.equal(escolhas().seo, "ollama:grande:20b");
   } finally {
     await o.fechar();
     setSetting("modelos_agentes", "{}");
