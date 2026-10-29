@@ -15,6 +15,7 @@ import { Dock } from "./ui/shell/Dock.tsx";
 import { Paleta } from "./ui/shell/Paleta.tsx";
 import { PainelContexto, PainelSalas, TickerAtividade } from "./ui/escritorio/Paineis.tsx";
 import { Avisos, Confirmacoes, Esqueleto } from "./ui/kit/index.ts";
+import { ProtecaoDeErro } from "./ui/ProtecaoDeErro.tsx";
 import "./ui/shell/tema.ts";
 
 // Casca da aplicação (DESIGN-INTERFACE.md §3): barra lateral + cabeçalho + página.
@@ -60,9 +61,11 @@ export function App() {
         <main className="relative min-h-0 flex-1 overflow-hidden">
           {visitouEscritorio && (
             <div className={noEscritorio ? "absolute inset-0" : "invisible absolute inset-0"} aria-hidden={!noEscritorio}>
-              <Suspense fallback={null}>
-                <Office ativo={noEscritorio} />
-              </Suspense>
+              <ProtecaoDeErro onde="escritorio-3d">
+                <Suspense fallback={null}>
+                  <Office ativo={noEscritorio} />
+                </Suspense>
+              </ProtecaoDeErro>
             </div>
           )}
           {noEscritorio && (
@@ -75,6 +78,7 @@ export function App() {
           )}
           {!noEscritorio && (
             <div className="absolute inset-0 z-[100] bg-bg">
+              <ProtecaoDeErro key={`${rota.area}/${rota.sub ?? ""}`} onde={rota.area}>
               <Suspense fallback={<div className="space-y-3 p-8"><Esqueleto className="h-8 w-60" /><Esqueleto className="h-40 w-full" /></div>}>
                 {rota.area === "entrada" && <PaginaEntrada />}
                 {rota.area === "conversas" && <PaginaConversas />}
@@ -86,6 +90,7 @@ export function App() {
                 {rota.area === "config" && <PaginaConfig />}
                 {rota.area === "escritorios" && <PaginaEscritorios />}
               </Suspense>
+              </ProtecaoDeErro>
             </div>
           )}
           <div className="pointer-events-none absolute inset-0 z-[200]">
@@ -96,7 +101,9 @@ export function App() {
           <Dock />
         </main>
       </div>
-      <DetalheCard />
+      <ProtecaoDeErro key={rota.card ?? 0} onde="detalhe-do-card">
+        <DetalheCard />
+      </ProtecaoDeErro>
       <NovoCard />
       <Onboarding />
       <Paleta />
