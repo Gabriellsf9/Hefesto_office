@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ferramentasDeEscrita } from "./ferramentas.ts";
@@ -23,7 +23,6 @@ test("escrita: .env de teste só na cópia de referência; chaves continuam barr
 });
 
 test("escrever_arquivo com anexar: escreve um arquivo grande em partes (cria na primeira, acrescenta nas seguintes)", async () => {
-  const { readFileSync } = await import("node:fs");
   const raiz = mkdtempSync(join(tmpdir(), "copia-"));
   const f = ferramentasDeEscrita({ cardId: 1, repo: raiz, caminho: raiz, branch: "x", base: "x", status: "ativo" }).find((t) => "name" in t.def && t.def.name === "escrever_arquivo")!;
   await f.executar!({ caminho: "proto/index.html", conteudo: "<html>\n<body>", anexar: true });
@@ -45,4 +44,17 @@ test("escrever_arquivo sem anexar que encolhe muito um arquivo existente avisa (
   // Reescrever do mesmo tamanho (uma nova versão do arquivo) não avisa.
   const r2 = await f.executar!({ caminho: "p.html", conteudo: "<div>\n".repeat(30) });
   assert.doesNotMatch(r2.texto, /ATENÇÃO/);
+});
+
+test("escrever_arquivo não troca um arquivo grande por menos da metade (o router.go de 3529 linhas virou 15)", async () => {
+  const raiz = mkdtempSync(join(tmpdir(), "copia-"));
+  const f = ferramentasDeEscrita({ cardId: 1, repo: raiz, caminho: raiz, branch: "x", base: "x", status: "ativo" }).find((t) => "name" in t.def && t.def.name === "escrever_arquivo")!;
+  const grande = "linha\n".repeat(400);
+  await f.executar!({ caminho: "router.go", conteudo: grande });
+  await assert.rejects(async () => f.executar!({ caminho: "router.go", conteudo: "package router\n".repeat(15) }), /Não gravei: router.go tem 401 linhas/);
+  assert.equal(readFileSync(join(raiz, "router.go"), "utf8"), grande, "nada foi gravado");
+  // Anexar e reescrever do mesmo porte continuam valendo.
+  await f.executar!({ caminho: "router.go", conteudo: "fim\n", anexar: true });
+  await f.executar!({ caminho: "router.go", conteudo: "nova\n".repeat(300) });
+  assert.equal(readFileSync(join(raiz, "router.go"), "utf8"), "nova\n".repeat(300));
 });

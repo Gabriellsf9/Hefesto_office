@@ -10,6 +10,8 @@ import { lerCard } from "../tarefas.ts";
 // Ferramentas de escrita e de comandos dentro da cópia isolada (Fase 4).
 
 const MAX_ARQUIVO = 400_000;
+/** A partir deste tamanho, escrever_arquivo não substitui o arquivo por menos da metade. */
+const LINHAS_PROTEGIDAS = 150;
 
 /** Caminho relativo seguro dentro do worktree: sem .., sem .git, sem arquivos de segredo. */
 async function alvoSeguro(raiz: string, rel: string, envDeTeste = false): Promise<string> {
@@ -59,6 +61,13 @@ export function ferramentasDeEscrita(wt: Worktree, opcoes: { envDeTeste?: boolea
         const antes = e.anexar === true ? existente : "";
         const final = antes && !antes.endsWith("\n") ? `${antes}\n${conteudo}` : `${antes}${conteudo}`;
         if (final.length > MAX_ARQUIVO) throw new ErroEntrada("Arquivo grande demais; divida em arquivos menores.");
+        // Arquivo grande trocado por menos da metade: recusa, nada é gravado. O aviso não bastou: no card 14 o gpt-oss
+        // trocou um router.go de 3529 linhas por 15 e um handlers/tickets.go de 1460 por 243, mesmo avisado.
+        const linhasExistente = existente ? existente.split("\n").length : 0;
+        if (e.anexar !== true && linhasExistente >= LINHAS_PROTEGIDAS && final.split("\n").length < linhasExistente * 0.5)
+          throw new ErroEntrada(
+            `Não gravei: ${e.caminho} tem ${linhasExistente} linhas e o conteúdo novo tem ${final.split("\n").length}; substituir apagaria o que já existe. Para mudar trechos, use editar_arquivo. Para acrescentar, use anexar: true. Para código novo, crie outro arquivo.`,
+          );
         await mkdir(dirname(alvo), { recursive: true });
         await writeFile(alvo, final);
         const linhas = final.split("\n").length;
