@@ -47,6 +47,7 @@ import {
 } from "./conhecimento.ts";
 import { calcularIndicadores, listarMetas, removerMeta, salvarMeta, sugerirMetas } from "./metas.ts";
 import { calcularMedicao } from "./medicao.ts";
+import { iniciarVigiaDeMemoria } from "./agentes/memoria.ts";
 import { configurarRitual, executarRitual, iniciarRituais, listarAtas, listarRituais } from "./rituais.ts";
 import { isDemoActive, setDemo } from "./demo.ts";
 import { ehSecao, lerLivro, marcarRevisada, salvarSecao } from "./livro.ts";
@@ -900,6 +901,7 @@ setInterval(() => void sincronizarGithub().catch((e) => console.error("Ciclo do 
 iniciarLembretesDeMarketing();
 iniciarMonitoramento();
 iniciarVigia();
+iniciarVigiaDeMemoria();
 iniciarConquistas();
 iniciarConectores();
 iniciarBackup();

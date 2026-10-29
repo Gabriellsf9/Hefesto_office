@@ -2,7 +2,7 @@
 
 Escritório 3D (visão de cima, estilo jogo) onde cada sala é um departamento de uma software house e cada mesa é um agente de IA.
 
-O plano completo, com as decisões, o organograma e o roadmap, está em [PLANO.md](PLANO.md).
+O plano completo, com as decisões, o organograma e o roadmap, está em [PLANO.md](PLANO.md). Para o dia a dia (escolher a IA, ligar um projeto, usar do celular ou do editor, o que fazer quando algo dá errado), veja o [MANUAL.md](MANUAL.md).
 
 ## Rodar
 
