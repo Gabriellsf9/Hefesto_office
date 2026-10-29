@@ -232,6 +232,22 @@ function lerRetomada(cardId: number, tipo: "executar" | "validar", agente: strin
 
 const apagarRetomada = (cardId: number) => db.prepare("DELETE FROM retomadas WHERE card_id = ?").run(cardId);
 
+// Entrega registrada, mas a verificação e a ida para a revisão ainda não terminaram. Se o Hefesto reiniciar nesse
+// meio (atualização, queda), a próxima vez pula direto para a verificação. Antes, a retomada voltava a conversa de
+// antes da entrega: o agente refazia o trabalho e entregava de novo (um card entregou 7 versões e não saiu de "Em dev").
+db.exec("CREATE TABLE IF NOT EXISTS pos_entrega (card_id INTEGER PRIMARY KEY, versao INTEGER NOT NULL, ts INTEGER NOT NULL)");
+export function marcarEntregue(cardId: number) {
+  const e = ultimaEntrega(cardId);
+  if (e) db.prepare("INSERT OR REPLACE INTO pos_entrega (card_id, versao, ts) VALUES (?, ?, ?)").run(cardId, e.versao, Date.now());
+  apagarRetomada(cardId);
+}
+/** A entrega mais recente ainda espera a verificação (e não houve outra versão depois). */
+function entregaPendente(cardId: number): boolean {
+  const r = db.prepare("SELECT versao FROM pos_entrega WHERE card_id = ?").get(cardId) as { versao: number } | undefined;
+  return !!r && ultimaEntrega(cardId)?.versao === r.versao;
+}
+const limparPosEntrega = (cardId: number) => db.prepare("DELETE FROM pos_entrega WHERE card_id = ?").run(cardId);
+
 /** Etiqueta que liga o "melhor de N" num card de código. */
 export const ETIQUETA_MELHOR_DE = "melhor-de-3";
 
@@ -652,6 +668,7 @@ async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "v
     falhas.delete(card.id);
     esperaMs.delete(provedorDoAgente(agenteId));
     apagarRetomada(card.id);
+    limparPosEntrega(card.id);
   } catch (err) {
     if (controle.signal.aborted || err instanceof ErroInterrompido) avisarInterrupcao(card.id, agenteId, String(controle.signal.reason ?? "interrompido"));
     else tratarFalha(card, agenteId, err);
@@ -802,7 +819,9 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
 
   const plano = estadoDoPlano(card);
 
-  let entregou = false;
+  // Reiniciou entre a entrega e a revisão: segue da verificação, sem rodar o agente de novo.
+  let entregou = entregaPendente(card.id);
+  if (entregou) postFeed(card.sala, agente.id, `${card.chave}: retomo a verificação da entrega v${ultimaEntrega(card.id)?.versao ?? "?"} (o Hefesto reiniciou no meio)`);
   let dividiu = false;
   let propos = false;
   let pedidos = 0;
@@ -846,6 +865,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
           comentar(card.id, agente.id, "autocritica", e.autocritica.trim().slice(0, 5000));
         }
         registrarEntrega(card.id, agente.id, resumo, wt ? await comCodigo(wt, agente.id, card, resumo, conteudo) : conteudo);
+        marcarEntregue(card.id);
         entregou = true;
         return { texto: "Entrega registrada.", fim: true };
       },
@@ -1060,6 +1080,7 @@ ${texto_}`);
     const venc = await melhorDeN(client, card, agente, wt, 3, sinal);
     if (venc) {
       registrarEntrega(card.id, agente.id, venc.resumo, await comCodigo(wt, agente.id, card, venc.resumo, venc.conteudo));
+      marcarEntregue(card.id);
       entregou = true;
     }
   }
@@ -1096,6 +1117,7 @@ ${texto_}`);
   const r0 = rascunho as { resumo: string; conteudo: string } | null;
   if (!entregou && r0 && !lerCard(card.id).bloqueado) {
     registrarEntrega(card.id, agente.id, r0.resumo, wt ? await comCodigo(wt, agente.id, card, r0.resumo, r0.conteudo) : r0.conteudo);
+    marcarEntregue(card.id);
     entregou = true;
   }
   // Sem chamar entregar, mas com um texto de verdade: o texto vira a entrega, para não perder trabalho.
@@ -1104,6 +1126,7 @@ ${texto_}`);
     const t = r.texto.trim();
     if (t.length < 400) throw new ErroSemEntrega(`O agente parou sem entregar${t ? ` (escreveu só: "${t.slice(0, 120)}")` : ""}.`);
     registrarEntrega(card.id, agente.id, "Entrega (texto final do agente)", r.texto);
+    marcarEntregue(card.id);
     entregou = true;
   }
   if (!entregou) return;

@@ -108,7 +108,7 @@ interface Store {
   whatsapp: EstadoWhatsapp | null;
   telegram: EstadoTelegram | null;
   /** Piloto automático (Operação → Piloto automático). */
-  autonomia: { ativo: boolean; mergeLocal: boolean; conectores: boolean; terminal: boolean; liberarAteLimites: number } | null;
+  autonomia: { ativo: boolean; mergeLocal: boolean; conectores: boolean; terminal: boolean; liberarAteLimites: number; aprovarSemRevisao: boolean } | null;
   /** Prévias do app por card (chegam ao vivo). */
   previas: Record<number, Previa>;
   previasPublicadas: Record<number, PreviaPublicada>;

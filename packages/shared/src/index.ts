@@ -164,7 +164,7 @@ export interface PreviaPublicada {
 }
 
 /** Alerta do vigia de saúde (trabalho travado, erro repetido, loop, chamada lenta, gasto, fila parada). */
-export type TipoAlertaSaude = "card-sem-progresso" | "erro-repetido" | "loop-de-ferramenta" | "chamada-lenta" | "gasto-do-dia" | "fila-parada" | "memoria";
+export type TipoAlertaSaude = "card-sem-progresso" | "erro-repetido" | "loop-de-ferramenta" | "chamada-lenta" | "gasto-do-dia" | "fila-parada" | "memoria" | "card-girando";
 export interface AlertaSaude {
   id: number;
   chave: string;

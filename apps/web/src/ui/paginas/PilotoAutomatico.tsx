@@ -57,6 +57,10 @@ export function PilotoAutomatico() {
     salvar({ ativo: v });
     avisar(v ? "Piloto automático ligado" : "Piloto automático desligado");
   };
+  const semRevisao = async (v: boolean) => {
+    if (v && !(await confirmar({ titulo: "Aprovar e liberar tudo sem revisão?", texto: "Tudo o que chegar para você será aprovado na hora, e os cards parados no limite de gasto voltam a gastar (o orçamento do dia continua valendo). Você pode reabrir qualquer aprovação por 24 h.", confirmar: "Ligar" }))) return;
+    salvar({ aprovarSemRevisao: v });
+  };
   const reabrir = async (d: Decisao) => {
     try {
       await api(`/api/autonomia/decisoes/${d.id}/desfazer`, "POST");
@@ -93,6 +97,15 @@ export function PilotoAutomatico() {
             <span className="text-legenda text-fg-3">nas últimas 24 h</span>
           </div>
         )}
+      </section>
+
+      <section className={cx("rounded-panel p-5 shadow-1", c.aprovarSemRevisao ? "bg-warning-soft" : "bg-surface")}>
+        <Interruptor
+          ativo={c.aprovarSemRevisao}
+          onChange={(v) => void semRevisao(v)}
+          rotulo="Aprovar e liberar sem revisão"
+          descricao="Regra sua, sem IA: aprova tudo o que chega para você e libera todo card parado no limite de gasto. Só os cards marcados so-ceo ficam com você. Não faz merge na sua pasta. Cada decisão aparece abaixo, com Reabrir para mim por 24 h."
+        />
       </section>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -135,7 +148,7 @@ export function PilotoAutomatico() {
                   <t.icone className="mt-0.5 size-4 shrink-0 text-fg-3" aria-hidden />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-pequeno">
-                      <span className="font-medium text-fg">{agentById[d.decisor]?.nome ?? d.decisor}</span>
+                      <span className="font-medium text-fg">{agentById[d.decisor]?.nome ?? (d.decisor === "regra-do-ceo" ? "Sua regra" : d.decisor)}</span>
                       <Etiqueta tom={t.tom}>{t.rotulo}</Etiqueta>
                       {d.chave && d.cardId !== null && (
                         <button type="button" className="inline-flex min-h-alvo items-center gap-0.5 font-mono text-accent-fg hover:underline" onClick={() => useStore.getState().abrirCard(d.cardId!)}>

@@ -38,6 +38,8 @@ const CHAMADA_LENTA_JANELA_MS = 3600_000;
 const GASTO_ALERTA = 0.8;
 /** Fila com trabalho pronto e ninguém rodando há este tempo. */
 export const FILA_PARADA_MS = 15 * 60_000;
+/** Entregas seguidas sem o card mudar de coluna. */
+export const GIRANDO_ENTREGAS = 3;
 
 export interface Achado {
   chave: string;
@@ -60,6 +62,8 @@ export interface Fotografia {
   fila: { naFila: number; pausado: boolean; semOrcamento: boolean };
   filaParadaDesde: number | null;
   chaveDoCard: (cardId: number) => string;
+  /** Cards que entregaram várias versões sem sair da coluna (desde o último movimento). */
+  girando?: { cardId: number; entregas: number; desde: number }[];
   /** Agentes que passaram para um modelo local menor por falta de memória (últimas 6 h). */
   rebaixamentos?: { id: number; agentes: string[]; de: string; para: string; motivo: string }[];
 }
@@ -75,6 +79,15 @@ export function examinar(f: Fotografia): Achado[] {
     achados.push({
       chave: `memoria:${r.id}`, tipo: "memoria", cardId: null,
       texto: `${nomes} passou de ${r.de} para ${r.para}: ${r.motivo}. Volte em Configurações → Modelos de IA quando houver memória.`,
+    });
+  }
+  // Várias entregas sem o card andar: algo entre a entrega e a revisão está falhando (no card 11, a verificação era
+  // cortada por um reinício e o agente refazia o trabalho; foram 7 versões em 70 minutos).
+  for (const g of f.girando ?? []) {
+    if (g.entregas < GIRANDO_ENTREGAS) continue;
+    achados.push({
+      chave: `girando:${g.cardId}:${g.desde}`, tipo: "card-girando", cardId: g.cardId,
+      texto: `${f.chaveDoCard(g.cardId)} entregou ${g.entregas} versões sem sair da coluna desde ${new Date(g.desde).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}: alguma coisa impede a ida para a revisão.`,
     });
   }
   for (const t of f.emAndamento) {
@@ -200,6 +213,13 @@ function fotografar(agora: number): Fotografia {
     filaParadaDesde,
     chaveDoCard: (id) => chaves.get(id) ?? `card ${id}`,
     rebaixamentos: rebaixamentosRecentes(agora - 6 * 3_600_000),
+    girando: db
+      .prepare(
+        `SELECT e.card_id AS cardId, COUNT(*) AS entregas, m.ts AS desde FROM entregas e
+         JOIN (SELECT card_id, MAX(ts) AS ts FROM comentarios WHERE tipo = 'movimento' GROUP BY card_id) m ON m.card_id = e.card_id
+         WHERE e.ts > m.ts GROUP BY e.card_id HAVING COUNT(*) >= ?`,
+      )
+      .all(GIRANDO_ENTREGAS) as { cardId: number; entregas: number; desde: number }[],
   };
 }
 
@@ -211,6 +231,7 @@ const ROTULO: Record<TipoAlertaSaude, string> = {
   "gasto-do-dia": "Gasto do dia",
   "fila-parada": "Fila parada",
   memoria: "Pouca memória",
+  "card-girando": "Card girando",
 };
 
 export function verificarSaude(agora = Date.now()) {

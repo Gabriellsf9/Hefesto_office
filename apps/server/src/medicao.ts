@@ -36,6 +36,10 @@ export function calcularMedicao(agora = Date.now(), dias = 30): Medicao {
     ts: number; card_id: number | null; agente: string | null; modelo: string; saida: number; usd: number; ms: number; parada: string | null;
   }[];
 
+  const inicio = new Map(
+    (db.prepare("SELECT card_id, MIN(ts) AS ts FROM chamadas WHERE card_id IS NOT NULL GROUP BY card_id").all() as { card_id: number; ts: number }[]).map((r) => [r.card_id, r.ts]),
+  );
+
   // Série por dia.
   const serie = new Map<string, Medicao["dias"][number]>();
   for (let t = desde + DIA; t <= agora + 1; t += DIA) serie.set(diaDe(t), { dia: diaDe(t), concluidos: 0, devolucoes: 0, custoUsd: 0, horasDeModelo: 0 });
@@ -100,7 +104,8 @@ export function calcularMedicao(agora = Date.now(), dias = 30): Medicao {
       concluidos: feitos.length,
       aprovadosDePrimeira: pct(feitos.filter((c) => c.devolucoes === 0).length, feitos.length),
       semCeo: pct(feitos.filter((c) => !comCeo.has(c.id)).length, feitos.length),
-      horasPorCard: feitos.length ? Math.round(feitos.reduce((s, c) => s + (terminou.get(c.id)! - c.criadoEm), 0) / feitos.length / 3_600_000 * 10) / 10 : null,
+      // Do primeiro trabalho de IA no card até ele terminar (a criação pode ser dias antes, na fila).
+      horasPorCard: feitos.length ? Math.round(feitos.reduce((s, c) => s + (terminou.get(c.id)! - (inicio.get(c.id) ?? c.criadoEm)), 0) / feitos.length / 3_600_000 * 10) / 10 : null,
       custoUsd: chamadas.reduce((s, r) => s + r.usd, 0),
       custoPorCardUsd: feitos.length ? chamadas.reduce((s, r) => s + r.usd, 0) / feitos.length : null,
     },

@@ -42,6 +42,11 @@ export interface ConfigAutonomia {
   terminal: boolean;
   /** Quantos limites por card o Diretor pode liberar (0 = sem limite por card; o orçamento do dia e do projeto seguram). */
   liberarAteLimites: number;
+  /**
+   * Regra do CEO, sem IA e independente do Diretor: aprova tudo o que chega para ele e libera todo card parado no
+   * limite de gasto. Só o card marcado "so-ceo" fica de fora. Não faz merge (isso continua só com o Diretor).
+   */
+  aprovarSemRevisao: boolean;
 }
 
 export interface DecisaoAutonomia {
@@ -56,7 +61,7 @@ export interface DecisaoAutonomia {
 }
 
 const CHAVE = "autonomia";
-const PADRAO: ConfigAutonomia = { ativo: false, mergeLocal: true, conectores: true, terminal: true, liberarAteLimites: 0 };
+const PADRAO: ConfigAutonomia = { ativo: false, mergeLocal: true, conectores: true, terminal: true, liberarAteLimites: 0, aprovarSemRevisao: false };
 export const ETIQUETA_SO_CEO = "so-ceo";
 /** Respostas ou devoluções do Diretor no mesmo card em 24 h antes de passar para você (evita laço). */
 const MAX_POR_CARD = 3;
@@ -89,8 +94,10 @@ export function configurarAutonomia(d: Partial<Record<keyof ConfigAutonomia, unk
     conectores: typeof d.conectores === "boolean" ? d.conectores : a.conectores,
     terminal: typeof d.terminal === "boolean" ? d.terminal : a.terminal,
     liberarAteLimites: typeof d.liberarAteLimites === "number" && d.liberarAteLimites >= 0 && d.liberarAteLimites <= 20 ? Math.round(d.liberarAteLimites) : a.liberarAteLimites,
+    aprovarSemRevisao: typeof d.aprovarSemRevisao === "boolean" ? d.aprovarSemRevisao : a.aprovarSemRevisao,
   };
   setSetting(CHAVE, JSON.stringify(n));
+  if (n.aprovarSemRevisao !== a.aprovarSemRevisao) auditar("voce", n.aprovarSemRevisao ? "ligou aprovar e liberar sem revisão" : "desligou aprovar e liberar sem revisão", null, null);
   if (n.ativo !== a.ativo) {
     auditar("voce", n.ativo ? "ligou o piloto automático" : "desligou o piloto automático", null, JSON.stringify(n));
     if (n.ativo) setSetting("autonomia_desde", String(Date.now()));
@@ -325,6 +332,27 @@ async function decidirPedidos(c: ConfigAutonomia) {
   }
 }
 
+/* ---------- Regra do CEO: aprovar e liberar sem revisão ---------- */
+
+export const DECISOR_REGRA = "regra-do-ceo";
+
+function aprovarSemRevisao(cards: Card[]) {
+  for (const card of cards) {
+    if (card.etiquetas.includes(ETIQUETA_SO_CEO)) continue;
+    try {
+      if (card.bloqueado && card.etiquetas.includes(ETIQUETA_LIMITE)) {
+        liberarGasto(card.id, "voce");
+        registrar(card, "liberar", DECISOR_REGRA, `card parou com US$ ${card.custoUsd.toFixed(2)}; liberei mais um limite (regra do CEO)`);
+      } else if (exigeAprovacao(card) && !card.bloqueado) {
+        aprovar(card.id, "Aprovado automaticamente (regra do CEO: aprovar tudo o que chega para mim).", "voce");
+        registrar(card, "aprovar", DECISOR_REGRA, "regra do CEO: aprovar tudo o que chega para ele");
+      }
+    } catch {
+      /* você decidiu no mesmo instante */
+    }
+  }
+}
+
 /* ---------- Laço ---------- */
 
 let rodando = false;
@@ -332,19 +360,25 @@ const pensando = new Set<number>();
 
 export async function conferirAutonomia(): Promise<void> {
   const c = configAutonomia();
-  if (!c.ativo || rodando) return;
+  if ((!c.ativo && !c.aprovarSemRevisao) || rodando) return;
   const motor = estadoMotor();
   if (motor.pausado) return;
   rodando = true;
   try {
     const desde = Number(getSetting("autonomia_desde") ?? 0);
-    const cards = listarCards().filter((x) => !x.demo);
+    let cards = listarCards().filter((x) => !x.demo);
+    if (c.aprovarSemRevisao) {
+      aprovarSemRevisao(cards);
+      cards = listarCards().filter((x) => !x.demo);
+    }
+    if (!c.ativo) return;
     // Sem IA (rápido): limites, pedidos de ação e merges.
     for (const card of cards.filter((x) => x.bloqueado && x.etiquetas.includes(ETIQUETA_LIMITE))) liberarNoLimite(card, c);
     await decidirPedidos(c);
     if (c.mergeLocal) {
       const aprovadosPeloDiretor = new Set(
-        (db.prepare("SELECT card_id FROM autonomia_decisoes WHERE tipo = 'aprovar' AND desfeita = 0 AND ts >= ?").all(desde) as { card_id: number }[]).map((r) => r.card_id),
+        // Só o que o Diretor aprovou revisando (a regra de aprovar tudo não faz merge na sua pasta).
+        (db.prepare("SELECT card_id FROM autonomia_decisoes WHERE tipo = 'aprovar' AND desfeita = 0 AND decisor != ? AND ts >= ?").all(DECISOR_REGRA, desde) as { card_id: number }[]).map((r) => r.card_id),
       );
       for (const card of cards.filter((x) => aprovadosPeloDiretor.has(x.id) && x.coluna === "concluido" && registroDoCard(x.id)?.status === "ativo" && !jaEscalado(x))) await mergeLocal(card);
     }
@@ -394,7 +428,7 @@ export function iniciarAutonomia() {
   setInterval(() => {
     const agora = new Date();
     const hoje = agora.toISOString().slice(0, 10);
-    if (!autonomiaAtiva() || agora.getHours() < 20 || getSetting("autonomia_resumo_dia") === hoje) return;
+    if ((!autonomiaAtiva() && !configAutonomia().aprovarSemRevisao) || agora.getHours() < 20 || getSetting("autonomia_resumo_dia") === hoje) return;
     setSetting("autonomia_resumo_dia", hoje);
     void enviarTelegram(resumoDoDia()).catch(() => {});
   }, 60_000).unref();
