@@ -363,7 +363,7 @@ export const ETIQUETA_PARTE = "parte";
 // disso, era cortado depois de 2 a 4 minutos e refeito em pedaços (7% do tempo do modelo local em 3 horas).
 const LER_POUCO_NO_LOCAL = `## Leia pouco e escreva em partes (contexto curto)
 Para entender o projeto, prefira pesquisar_no_projeto (outro modelo lê e te devolve só a resposta) e buscar_no_indice (os trechos certos com arquivo:linha). Leia arquivos inteiros só quando for editar.
-Cada resposta sua vai até ~300 linhas: arquivo maior que isso, crie com o começo (escrever_arquivo) e complete com editar_arquivo em trechos. Nunca escreva um arquivo grande inteiro de uma vez, nem repita o arquivo no texto.`;
+Cada resposta sua vai até ~300 linhas: arquivo maior que isso, crie com o começo (escrever_arquivo) e complete com escrever_arquivo e anexar: true, até ~200 linhas por chamada. Nunca escreva um arquivo grande inteiro de uma vez, nem repita o arquivo no texto.`;
 
 const DIVIDIR_NO_LOCAL = `## Você está no modelo local (memória curta)
 Este trabalho roda num modelo local que comporta só uns 24 mil tokens de conversa: leituras longas e entregas grandes não cabem. Se o card tem mais de uma entrega que dá para fazer separada (várias telas, vários endpoints, serviços ou documentos), chame dividir_em_partes AGORA, antes de ler o projeto: 2 a 4 partes pequenas, na ordem em que devem ser feitas, cada uma com título, descrição completa (o que fazer, onde, em que se basear) e critérios de aceite, para ser feita sem ler este card. Quando todas terminarem, você volta a este card para juntar o resultado. Se o card já é pequeno, faça direto e leia só o necessário.`;

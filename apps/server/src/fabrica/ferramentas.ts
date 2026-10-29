@@ -43,16 +43,24 @@ export function ferramentasDeEscrita(wt: Worktree, opcoes: { envDeTeste?: boolea
   return [
     ferramenta(
       "escrever_arquivo",
-      "Cria ou substitui um arquivo inteiro na cópia isolada do projeto (sua branch). Para mudar só um trecho, prefira editar_arquivo.",
-      { caminho: { type: "string" }, conteudo: { type: "string" } },
+      "Cria ou substitui um arquivo inteiro na cópia isolada do projeto (sua branch). Arquivo grande: escreva o começo e complete com anexar: true, em partes de até ~200 linhas por chamada. Para mudar só um trecho, prefira editar_arquivo.",
+      {
+        caminho: { type: "string" },
+        conteudo: { type: "string" },
+        anexar: { type: "boolean", description: "true: acrescenta o conteúdo ao fim do arquivo (cria se não existir), para escrever um arquivo grande em partes" },
+      },
       ["caminho", "conteudo"],
       async (e) => {
         const alvo = await alvoSeguro(wt.caminho, texto(e, "caminho", 500), opcoes.envDeTeste);
         const conteudo = typeof e.conteudo === "string" ? e.conteudo : "";
-        if (conteudo.length > MAX_ARQUIVO) throw new ErroEntrada("Arquivo grande demais; divida em arquivos menores.");
+        // Anexar: um modelo pequeno que não consegue escrever um HTML inteiro numa resposta (cortada no tamanho
+        // máximo três vezes no card 20) escreve em partes, sem precisar copiar trechos exatos para editar.
+        const antes = e.anexar === true ? await readFile(alvo, "utf8").catch(() => "") : "";
+        const final = antes && !antes.endsWith("\n") ? `${antes}\n${conteudo}` : `${antes}${conteudo}`;
+        if (final.length > MAX_ARQUIVO) throw new ErroEntrada("Arquivo grande demais; divida em arquivos menores.");
         await mkdir(dirname(alvo), { recursive: true });
-        await writeFile(alvo, conteudo);
-        return { texto: `Gravado: ${e.caminho} (${conteudo.split("\n").length} linhas).` };
+        await writeFile(alvo, final);
+        return { texto: `${e.anexar === true ? "Anexado" : "Gravado"}: ${e.caminho} (${final.split("\n").length} linhas no total).` };
       },
     ),
     ferramenta(
