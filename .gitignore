@@ -6,3 +6,4 @@ workspace/
 .env.*
 .DS_Store
 Hefesto.app/
+apps/server/fumaca-interface/
