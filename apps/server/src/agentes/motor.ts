@@ -173,6 +173,36 @@ function esperandoEntrega(cardId: number) {
   return false;
 }
 
+/**
+ * Pausa o card com uma pergunta ao CEO. A primeira chamada da vez só lembra o agente de decidir sozinho o que sai do
+ * projeto: o Rafael (gpt-oss) parou o card 14 perguntando "que status HTTP e campos devo usar", com o card dizendo
+ * "siga o padrão dos outros handlers". Insistindo (decisão de produto de verdade), a pergunta vai.
+ */
+export function ferramentaPerguntarAoCeo(card: Card, agente: Agent): Ferramenta {
+  let lembrou = false;
+  return ferramenta(
+    "perguntar_ao_ceo",
+    "Pausa este card e faz uma pergunta ao CEO. Use só para decisão de produto ou de negócio que só o CEO tem e sem a qual a entrega não faz sentido.",
+    { pergunta: { type: "string" } },
+    ["pergunta"],
+    (e) => {
+      const pergunta = texto(e, "pergunta", 2000);
+      if (!lembrou) {
+        lembrou = true;
+        return {
+          texto:
+            "Ainda não perguntei. O CEO não decide detalhe técnico: formato de resposta, status HTTP, validação, nomes, estrutura de pastas e bibliotecas saem do que já existe no projeto (leia arquivos parecidos e siga o mesmo padrão) e dos cards anteriores. Decida você e escreva \"Premissa: ...\" na entrega. Se for mesmo uma decisão de produto ou de negócio que só o CEO pode tomar, chame perguntar_ao_ceo de novo.",
+          erro: true,
+        };
+      }
+      comentar(card.id, agente.id, "comentario", `❓ Pergunta para o CEO: ${pergunta}`);
+      editarCard(card.id, { bloqueado: true });
+      postChat(agente.id, `Tenho uma dúvida no ${card.chave} (${card.titulo}): ${pergunta}\nResponda comentando no card.`);
+      return { texto: "Pergunta enviada. O card fica pausado até o CEO responder.", fim: true };
+    },
+  );
+}
+
 /** Lê outro card do mesmo escritório pelo número: descrição, critérios e a última entrega completa. */
 function ferramentaLerCard(daqui: Card): Ferramenta {
   return ferramenta(
@@ -900,19 +930,7 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
         }
       },
     ),
-    ferramenta(
-      "perguntar_ao_ceo",
-      "Pausa este card e faz uma pergunta ao CEO. Use só quando a entrega não faz sentido sem a resposta.",
-      { pergunta: { type: "string" } },
-      ["pergunta"],
-      (e) => {
-        const pergunta = texto(e, "pergunta", 2000);
-        comentar(card.id, agente.id, "comentario", `❓ Pergunta para o CEO: ${pergunta}`);
-        editarCard(card.id, { bloqueado: true });
-        postChat(agente.id, `Tenho uma dúvida no ${card.chave} (${card.titulo}): ${pergunta}\nResponda comentando no card.`);
-        return { texto: "Pergunta enviada. O card fica pausado até o CEO responder.", fim: true };
-      },
-    ),
+    ferramentaPerguntarAoCeo(card, agente),
     ferramenta(
       "pedir_para_outra_area",
       "Abre um card para outra área fazer uma parte do trabalho. Não termina a sua vez.",
