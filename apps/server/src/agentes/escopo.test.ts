@@ -55,3 +55,12 @@ test("comentar num pedido que espera o OK libera e tira a etiqueta", () => {
   assert.equal(c.bloqueado, false);
   assert.deepEqual(c.etiquetas, [ETIQUETA_PEDIDO]);
 });
+
+test("cancelar um card de projeto refaz a linha de base (o replanejamento não reabre contra o plano antigo)", async () => {
+  const { getSetting, setSetting } = await import("../db.ts");
+  const card = criarCard({ titulo: "Replanejar", sala: "diretoria", nivel: "N1", coluna: colunaDeEntrada(fluxoPadrao("diretoria")), projetoId: 4242 });
+  setSetting("projeto_4242_linha_base", "1793200000000");
+  cancelarCard(card.id, "voce", "escopo reduzido");
+  assert.equal(getSetting("projeto_4242_linha_base"), "");
+  assert.equal(lerCard(card.id).coluna, "cancelado");
+});

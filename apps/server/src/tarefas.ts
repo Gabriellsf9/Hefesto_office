@@ -418,6 +418,9 @@ export function cancelarCard(id: number, autor: string, motivo: string): number[
     comentar(c.id, autor, "comentario", c.id === id ? `Cancelado: ${motivo}` : `Cancelado junto com o ${lerCard(id).chave}: ${motivo}`);
     mover(c.id, fluxos[c.fluxo]!.colunas.find((k) => k.tipo === "perdido")!.id, autor);
   }
+  // Escopo mudou: a previsão de agora vira o novo combinado (o planejamento fixa na próxima conferida). Sem isso,
+  // cancelar o card de replanejamento abria outro na hora, medindo o atraso contra o plano antigo.
+  for (const p of new Set(alvo.map((c) => c.projetoId).filter((x): x is number => x != null))) setSetting(`projeto_${p}_linha_base`, "");
   return alvo.map((c) => c.id);
 }
 /** Comentários do piloto automático (decisões no lugar do CEO) começam assim. */
