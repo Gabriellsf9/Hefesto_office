@@ -137,11 +137,12 @@ const CONTEXTO_COM_RACIOCINIO = 32_768;
 const caracteresDe = (msgs: Msg[]) => msgs.reduce((n, m) => n + textoDe(m.content).length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
 const tokensDe = (msgs: Msg[], porToken = 3) => caracteresDe(msgs) / porToken;
 /**
- * Caracteres por token medidos na resposta do Ollama (contagem real do prompt), presos entre 3 e 4: a contagem pode
- * excluir o que veio do cache, e subestimar o tamanho faria o Ollama cortar o começo do prompt em silêncio.
+ * Caracteres por token medidos na resposta do Ollama (contagem real do prompt), presos entre 2,2 e 4: a contagem pode
+ * excluir o que veio do cache (o teto de 4 não deixa subestimar o tamanho). O piso era 3, mas HTML e código ficam
+ * abaixo disso: a conversa que o Hefesto achava ter 24 mil tokens tinha 31 mil, e sobrava pouco para a resposta.
  */
 export const calibrarCaracteresPorToken = (caracteres: number, tokensReais: number, atual: number) =>
-  tokensReais > 2000 ? Math.min(4, Math.max(3, caracteres / tokensReais)) : atual;
+  tokensReais > 2000 ? Math.min(4, Math.max(2.2, caracteres / tokensReais)) : atual;
 
 function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
   const ferramentas = msgs.flatMap((m, i) => (m.role === "tool" ? [i] : []));
@@ -175,13 +176,32 @@ const TETO_PEDIDO_LOCAL = 0.4;
 const RESULTADOS_MANTIDOS = 4;
 const LIMPO = "[Resultado antigo limpo para economizar contexto. Rode a ferramenta de novo se precisar dele.]";
 
-/** Troca o conteúdo dos resultados de ferramenta antigos (menos os `manter` últimos) por um aviso. Diz se limpou algo. */
+/**
+ * Troca o conteúdo dos resultados de ferramenta antigos (menos os `manter` últimos) por um aviso, e encurta os textos
+ * longos que o próprio agente mandou em chamadas antigas (o arquivo inteiro de escrever_arquivo fica no disco: 271
+ * linhas eram ~5,7 mil tokens repetidos em toda chamada). Diz se limpou algo.
+ */
 export function limparResultadosAntigos(msgs: Msg[], manter: number): boolean {
   const ferramentas = msgs.flatMap((m, i) => (m.role === "tool" ? [i] : []));
+  const ate = ferramentas.length > manter ? ferramentas[ferramentas.length - manter]! : -1;
   let limpou = false;
   for (const i of ferramentas.slice(0, Math.max(0, ferramentas.length - manter))) {
     if (textoDe(msgs[i]!.content).length > 300) {
       msgs[i]!.content = LIMPO;
+      limpou = true;
+    }
+  }
+  for (let i = 0; i < ate; i++) {
+    const m = msgs[i]!;
+    if (m.role !== "assistant" || !m.tool_calls) continue;
+    for (const c of m.tool_calls) {
+      if (c.function.arguments.length <= 1500) continue;
+      const args = argumentos(c.function.arguments);
+      if (!args) continue;
+      for (const [k, v] of Object.entries(args)) {
+        if (typeof v === "string" && v.length > 500) args[k] = `[${v.length} caracteres já enviados nesta chamada; o resultado está gravado. Leia de novo se precisar.]`;
+      }
+      c.function.arguments = JSON.stringify(args);
       limpou = true;
     }
   }

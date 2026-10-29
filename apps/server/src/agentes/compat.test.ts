@@ -140,7 +140,8 @@ test("calibração de caracteres por token: usa a contagem real, mas nunca passa
   const { calibrarCaracteresPorToken } = await import("./compat.ts");
   assert.equal(calibrarCaracteresPorToken(335_000, 90_000, 3), 335_000 / 90_000, "medido (3,7) dentro da faixa");
   assert.equal(calibrarCaracteresPorToken(335_000, 20_000, 3), 4, "contagem baixa (cache) não deixa subestimar o tamanho");
-  assert.equal(calibrarCaracteresPorToken(30_000, 15_000, 3.5), 3, "nunca abaixo de 3");
+  assert.equal(calibrarCaracteresPorToken(30_000, 15_000, 3.5), 2.2, "nunca abaixo de 2,2");
+  assert.equal(calibrarCaracteresPorToken(70_000, 30_000, 3), 70_000 / 30_000, "HTML e código ficam abaixo de 3 caracteres por token");
   assert.equal(calibrarCaracteresPorToken(9_000, 1_500, 3.2), 3.2, "resposta pequena demais: mantém o fator anterior");
 });
 
@@ -496,4 +497,25 @@ ${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
     servidor.close();
     setSetting("provedores", "{}");
   }
+});
+
+test("limpar resultados antigos também encurta o arquivo inteiro mandado em escrever_arquivo antigo", async () => {
+  const { limparResultadosAntigos } = await import("./compat.ts");
+  const arquivo = "<div>linha</div>\n".repeat(400);
+  const msgs = [
+    { role: "system", content: "s" },
+    { role: "user", content: "pedido" },
+    { role: "assistant", content: "", tool_calls: [{ id: "e1", type: "function", function: { name: "escrever_arquivo", arguments: JSON.stringify({ caminho: "a.html", conteudo: arquivo }) } }] },
+    { role: "tool", tool_call_id: "e1", name: "escrever_arquivo", content: "Gravado: a.html (400 linhas)." },
+    ...[1, 2, 3, 4].flatMap((n) => [
+      { role: "assistant", content: "", tool_calls: [{ id: `l${n}`, type: "function", function: { name: "escrever_arquivo", arguments: JSON.stringify({ caminho: `b${n}.html`, conteudo: arquivo }) } }] },
+      { role: "tool", tool_call_id: `l${n}`, name: "escrever_arquivo", content: "Gravado." },
+    ]),
+  ] as Parameters<typeof limparResultadosAntigos>[0];
+  assert.equal(limparResultadosAntigos(msgs, 4), true);
+  const antigo = JSON.parse(msgs[2]!.tool_calls![0]!.function.arguments) as { caminho: string; conteudo: string };
+  assert.equal(antigo.caminho, "a.html", "o caminho fica");
+  assert.match(antigo.conteudo, /caracteres já enviados/);
+  const recente = JSON.parse(msgs.at(-2)!.tool_calls![0]!.function.arguments) as { conteudo: string };
+  assert.equal(recente.conteudo, arquivo, "as chamadas recentes ficam inteiras");
 });
