@@ -99,3 +99,27 @@ test("leitura do computador: a informada pelo script vale por 90 s e tem priorid
   informarMemoriaLivre(3.25);
   assert.deepEqual(leituraDeMemoria(), { livreGb: 3.25, fonte: "computador" });
 });
+
+test("volta sozinho: com memória sobrando por 30 minutos seguidos, os agentes que ainda estão no menor voltam ao original", async () => {
+  const { FOLGA_PARA_VOLTAR_MS, rebaixar } = await import("./memoria.ts");
+  const o = await ollamaFalso();
+  setSetting("modelos_agentes", JSON.stringify({ copywriter: "ollama:grande:20b", rh: "ollama:grande:20b" }));
+  try {
+    rebaixar("grande:20b", "medio:9b", "teste de volta");
+    // O CEO trocou o rh à mão depois: ele fica como está.
+    setSetting("modelos_agentes", JSON.stringify({ ...escolhas(), rh: "ollama:pequeno:2b" }));
+    const t0 = Date.now();
+    assert.equal(await verificarMemoria(30, t0), null, "começa a contar a folga");
+    assert.equal(await verificarMemoria(5, t0 + 60_000), null, "folga curta (5 GB < 14 + 2,5): zera");
+    assert.equal(await verificarMemoria(30, t0 + 120_000), null);
+    assert.equal(await verificarMemoria(30, t0 + 120_000 + FOLGA_PARA_VOLTAR_MS - 1000), null, "ainda não deu 30 min");
+    assert.equal(await verificarMemoria(30, t0 + 120_000 + FOLGA_PARA_VOLTAR_MS), "grande:20b");
+    assert.equal(escolhas().copywriter, "ollama:grande:20b", "voltou");
+    assert.equal(escolhas().rh, "ollama:pequeno:2b", "o que o CEO trocou fica");
+    assert.ok(!rebaixamentosRecentes(t0 - 60_000).some((r) => r.motivo === "teste de volta"), "o alerta some");
+  } finally {
+    await o.fechar();
+    setSetting("modelos_agentes", "{}");
+    setSetting("provedores", "{}");
+  }
+});
