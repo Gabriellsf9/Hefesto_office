@@ -69,6 +69,7 @@ import { arquivoDaCopia, lerArquivoDaCopia, pedidoLocal } from "./copiaHttp.ts";
 import { limparEstacoes } from "./fabrica/estacao.ts";
 import { lerTarefasDoAgente } from "./agentes/tarefasDoAgente.ts";
 import { registrarPrDoCard, sincronizarGithub } from "./fabrica/cicloGithub.ts";
+import { atenderMcp } from "./mcp/servidor.ts";
 import { apagarConversa, caminhoDoArtifact, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa, pastaDaConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
@@ -227,6 +228,11 @@ app.post<{ Params: { id: string } }>("/api/autonomia/decisoes/:id/desfazer", asy
   } catch (e) {
     return reply.code(400).send({ erro: (e as Error).message });
   }
+});
+// O Hefesto como servidor MCP: claude mcp add --transport http hefesto http://localhost:4417/mcp
+app.all("/mcp", async (req, reply) => {
+  reply.hijack();
+  await atenderMcp(req.raw, reply.raw, req.body);
 });
 app.get("/api/github", async () => estadoGithub());
 // Sincronizar o ciclo do GitHub agora (issues, revisões e CI), sem esperar os 5 minutos.

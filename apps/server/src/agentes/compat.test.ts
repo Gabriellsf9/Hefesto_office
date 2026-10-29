@@ -403,3 +403,28 @@ test("resposta cortada no tamanho máximo não vira erro: nada é executado e o 
     setSetting("provedores", "{}");
   }
 });
+
+test("computador extra fora do ar: a chamada segue no principal (não derruba o trabalho local)", async () => {
+  const { computadorOllama } = await import("./compat.ts");
+  let atendidas = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    req.resume();
+    req.on("end", () => {
+      atendidas++;
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: { name: "entregar", arguments: { conteudo: "ok" } } }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 10, eval_count: 5 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384, extras: ["http://127.0.0.1:1"] } }));
+  try {
+    const r = await computadorOllama.run({ url: "http://127.0.0.1:1" }, () =>
+      rodarAgente({ modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "s", mensagem: "m", lembrete: "Entregue.", ferramentas: [ferramenta("entregar", "E.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))] }),
+    );
+    assert.equal(r.terminou, true);
+    assert.equal(atendidas, 1, "o principal atendeu");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});

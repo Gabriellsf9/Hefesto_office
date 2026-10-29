@@ -5,8 +5,8 @@ import {
 import { agentById, roomById, nomeDaSala, agentesDe, coordenadorDe, escritorioDe, etapaDoCodigoDe, etapasDoCodigoDe, projetoDoCard, SEDE } from "@empresa/org";
 import { emit, focus, postChat, postFeed, setAgentStatus } from "../bus.ts";
 import { clienteClaude, custoHoje, limitePorCard, modoCusto, orcamentoDiario, limitePorCardDeCodigo } from "../custo.ts";
-import { foraDoArAte, marcarForaDoAr, modeloDisponivel, modeloDoAgente, provedorDe, provedorForaDoAr } from "../provedores.ts";
-import { ErroNaoCabe, ErroProvedor } from "./compat.ts";
+import { foraDoArAte, marcarForaDoAr, modeloDisponivel, modeloDoAgente, provedorDe, provedorForaDoAr, enderecosOllama } from "../provedores.ts";
+import { computadorExtraNoAr, computadorOllama, ErroNaoCabe, ErroProvedor } from "./compat.ts";
 import { db, getSetting, setSetting } from "../db.ts";
 import { fichaDoProjeto } from "../projetos.ts";
 import { configCritica, criarConhecimento, extrairLicao } from "../conhecimento.ts";
@@ -525,7 +525,17 @@ export function esperaParente(card: Card, porId: Map<number, Card>, rodando: Ite
  * provedor volta ao ar no meio (a Ana começou no local com o Claude fora; o prazo do Claude venceu e o motor pôs o
  * Rafael no local junto, os dois se revezando na placa).
  */
-export const localOcupado = (rodando: Iterable<TrabalhoEmAndamento>) => [...rodando].some((e) => (e.provedor ?? provedorDoAgente(e.agenteId)) === "ollama");
+export const localOcupado = (rodando: Iterable<TrabalhoEmAndamento>, computadores: string[] = computadoresLocais()) =>
+  [...rodando].filter((e) => (e.provedor ?? provedorDoAgente(e.agenteId)) === "ollama").length >= Math.max(1, computadores.length);
+
+/** Computadores com Ollama no ar agora (o principal sempre conta; os extras, se não falharam há pouco). */
+const computadoresLocais = () => enderecosOllama().filter((u, i) => i === 0 || computadorExtraNoAr(u));
+
+/** Um computador livre para o trabalho local que vai começar (o principal se todos estiverem ocupados). */
+export function computadorLivre(rodando: Iterable<TrabalhoEmAndamento>, computadores: string[] = computadoresLocais()): string {
+  const usados = new Set([...rodando].map((e) => e.computador).filter(Boolean));
+  return computadores.find((u) => !usados.has(u)) ?? computadores[0]!;
+}
 
 /* ---------- Por que o card está parado ---------- */
 
@@ -628,14 +638,17 @@ async function ciclo() {
 async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "validar", agenteId: string) {
   const controle = new AbortController();
   controles.set(card.id, controle);
-  emAndamento.set(card.id, { cardId: card.id, agenteId, tipo, desde: Date.now(), provedor: provedorDoAgente(agenteId) });
+  const provedor = provedorDoAgente(agenteId);
+  // Trabalho local fica preso a um computador do começo ao fim (o cache do contexto fica nele).
+  const computador = provedor === "ollama" ? computadorLivre(emAndamento.values()) : undefined;
+  emAndamento.set(card.id, { cardId: card.id, agenteId, tipo, desde: Date.now(), provedor, ...(computador ? { computador } : {}) });
   naFila = Math.max(0, naFila - 1);
   publicar();
   try {
     // Projeto sem orçamento: nem começa (o card para e espera você aumentar o orçamento).
     if (projetoSemOrcamento(card.id)) throw new ErroOrcamentoProjeto("O projeto deste card chegou ao orçamento.");
-    if (tipo === "executar") await executar(client, card, agentById[agenteId]!, controle.signal);
-    else await validar(client, card, agentById[agenteId]!, controle.signal);
+    const trabalho = () => (tipo === "executar" ? executar(client, card, agentById[agenteId]!, controle.signal) : validar(client, card, agentById[agenteId]!, controle.signal));
+    await (computador ? computadorOllama.run({ url: computador }, trabalho) : trabalho());
     falhas.delete(card.id);
     esperaMs.delete(provedorDoAgente(agenteId));
     apagarRetomada(card.id);

@@ -331,6 +331,8 @@ export interface TrabalhoEmAndamento {
   desde: number;
   /** Provedor com que o trabalho começou (o do agente pode mudar no meio, quando outro provedor volta ao ar). */
   provedor?: ProvedorIa;
+  /** Computador com Ollama em que o trabalho local roda (com vários, um trabalho por computador). */
+  computador?: string;
 }
 
 export interface EstadoMotor {
@@ -948,7 +950,7 @@ export interface RecomendacaoLocal {
 
 export interface EstadoProvedores {
   maquina: { chip: string; memoriaGb: number; nucleos: number; discoLivreGb: number | null };
-  ollama: { url: string; online: boolean; versao: string | null; contexto: number; modelos: ModeloDisponivel[]; erro: string | null; recomendados: RecomendacaoLocal[] };
+  ollama: { url: string; online: boolean; versao: string | null; contexto: number; extras?: string[]; modelos: ModeloDisponivel[]; erro: string | null; recomendados: RecomendacaoLocal[] };
   openai: { temChave: boolean; precoEntrada: number; precoSaida: number; modelos: ModeloDisponivel[]; erro: string | null };
   gemini: { temChave: boolean; precoEntrada: number; precoSaida: number; modelos: ModeloDisponivel[]; erro: string | null };
   /** Modelo escolhido por agente (id do agente → id do modelo). Quem não está aqui usa o Claude do modo de custo. */
