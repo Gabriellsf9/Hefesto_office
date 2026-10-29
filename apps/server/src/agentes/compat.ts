@@ -172,6 +172,8 @@ const CORTE_RECENTE = 3000;
  * deixava ~4 mil tokens de folga antes de compactar, e a compactação não reduzia abaixo dele.
  */
 const TETO_PEDIDO_LOCAL = 0.4;
+/** Rodadas por execução no modelo local quando quem chama não define (no Claude e nas APIs, 16). */
+const RODADAS_LOCAIS = 40;
 /** Resultados de ferramenta mais recentes que ficam inteiros quando os antigos são limpos. */
 const RESULTADOS_MANTIDOS = 4;
 const LIMPO = "[Resultado antigo limpo para economizar contexto. Rode a ferramenta de novo se precisar dele.]";
@@ -561,7 +563,10 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   const replay = novaExecucao(o.cardId, o.agenteId, o.modelo);
   const interrompido = () => new ErroInterrompido(String(o.sinal?.reason ?? "interrompido"));
 
-  for (let rodada = 0; rodada < (o.maxRodadas ?? 16); rodada++) {
+  // No modelo local cada passo não custa dinheiro e o 4b faz 16 em ~30 s: com 16, o card "continuava" numa execução
+  // nova a cada meio minuto, e cada uma começava resumindo a conversa retomada.
+  const maxRodadas = o.maxRodadas ?? (provedor === "ollama" ? RODADAS_LOCAIS : 16);
+  for (let rodada = 0; rodada < maxRodadas; rodada++) {
     if (o.sinal?.aborted) throw interrompido();
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
     if (o.cardId && rodada > 0 && cardPassouDoLimite(o.cardId)) throw new ErroLimiteCard("Este card chegou ao limite de gasto.");
