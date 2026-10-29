@@ -1,4 +1,4 @@
-import { baseDoFluxo, colunaDeEntrada, fluxoDaSala, type Card, fluxoPadrao } from "@empresa/shared";
+import { baseDoFluxo, colunaDeEntrada, ehCardDeCodigo, fluxoDaSala, type Card, fluxoPadrao } from "@empresa/shared";
 import { getSetting, setSetting } from "./db.ts";
 import { postFeed } from "./bus.ts";
 import { aoAprovar, comentar, criarCard, ultimaEntrega } from "./tarefas.ts";
@@ -38,8 +38,12 @@ export function configurarGatilho(id: GatilhoId, ativo: boolean) {
   return listarGatilhos();
 }
 
-/** Só funcionalidades de verdade (histórias e épicos de software), não bugs nem tarefas internas. */
-const ehFuncionalidade = (c: Card) => !c.demo && baseDoFluxo(c.fluxo) === "software" && (c.tipo === "historia" || c.tipo === "epico");
+/**
+ * Só funcionalidades de verdade: épicos de software e histórias que viraram código. Bugs, tarefas internas e histórias
+ * de outras salas (protótipo do design, especificação do produto) não: o protótipo do EMP-3 aprovado abriu site,
+ * documentação, treinamento, medição e textos para uma tela que ainda nem existia.
+ */
+export const ehFuncionalidade = (c: Card) => !c.demo && baseDoFluxo(c.fluxo) === "software" && (c.tipo === "epico" || (c.tipo === "historia" && ehCardDeCodigo(c)));
 
 aoAprovar.push((card) => {
   if (!ehFuncionalidade(card)) return;
