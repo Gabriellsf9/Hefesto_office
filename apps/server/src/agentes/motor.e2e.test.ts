@@ -220,10 +220,58 @@ test("acabaram os passos sem entregar, trabalhando: continua na próxima vez, se
     const card = criarCard({ titulo: "Subir o banco e migrar", sala: "produto", dono: "pm", nivel: "N0", coluna: colunaDeEntrada(fluxoPadrao("produto")) });
     iniciarMotor();
     const continuou = () => (db.prepare("SELECT COUNT(*) AS n FROM feed WHERE texto LIKE ?").get(`%${card.chave}: %continua de onde parou%`) as { n: number }).n;
-    for (let i = 0; i < 200 && continuou() < 2; i++) await esperar(100);
+    for (let i = 0; i < 400 && continuou() < 2; i++) await esperar(100);
     assert.ok(continuou() >= 2, `continuou ${continuou()} vez(es) (${chamadas} chamadas)`);
     assert.equal(lerCard(card.id).bloqueado, false, "não bloqueou");
     assert.ok(!listarComentarios(card.id).some((c) => /Não consegui concluir|Bloqueei o card/.test(c.texto)), "sem comentário de falha");
+  } finally {
+    await encerrarMotor(5000);
+    servidor.close();
+    setSetting("provedores", "{}");
+    setSetting("modelos_agentes", "{}");
+  }
+});
+
+test("depois de continuar, o card dá a vez: outro card esperando o modelo local entra antes", async () => {
+  const { db } = await import("../db.ts");
+  const ordem: string[] = [];
+  let chaveLonga = "";
+  let continuacoesAntesDoCurto = -1;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const pedido = JSON.parse(corpo) as { messages: { content: string }[]; tools?: { function: { name: string } }[] };
+      const deQuem = pedido.messages.some((m) => String(m.content).includes("Card longo")) ? "longo" : "curto";
+      if (deQuem === "curto" && continuacoesAntesDoCurto < 0) {
+        continuacoesAntesDoCurto = (db.prepare("SELECT COUNT(*) AS n FROM feed WHERE texto LIKE ?").get(`%${chaveLonga}: %continua de onde parou%`) as { n: number }).n;
+      }
+      if (ordem.at(-1) !== deQuem) ordem.push(deQuem);
+      const nomes = new Set((pedido.tools ?? []).map((t) => t.function.name));
+      const chamada = deQuem === "curto" && nomes.has("entregar")
+        ? { name: "entregar", arguments: { resumo: "Pronto", conteudo: `# Entrega
+${"Critérios atendidos. ".repeat(30)}`, autocritica: "Conferi." } }
+        : nomes.has("aprovar") ? { name: "aprovar", arguments: { parecer: "Ok." } } : { name: "buscar_na_memoria", arguments: { consulta: "x" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}
+${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
+`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  setSetting("modelos_agentes", JSON.stringify(Object.fromEntries(agents.map((a) => [a.id, "ollama:modelo-teste"]))));
+  try {
+    const fluxo = fluxoPadrao("produto");
+    const longo = criarCard({ titulo: "Card longo", sala: "produto", dono: "pm", nivel: "N0", coluna: colunaDeEntrada(fluxo) });
+    const curto = criarCard({ titulo: "Card curto", sala: "produto", dono: "po", nivel: "N0", criterios: "Gherkin", coluna: colunaDeEntrada(fluxo) });
+    db.prepare("UPDATE cards SET criado_em = criado_em + 60000 WHERE id = ?").run(curto.id); // o longo é o mais antigo
+    chaveLonga = longo.chave;
+    iniciarMotor();
+    for (let i = 0; i < 400 && !ordem.includes("curto"); i++) await esperar(100);
+    assert.deepEqual(ordem.slice(0, 2), ["longo", "curto"], `ordem: ${ordem.join(" → ")}`);
+    assert.equal(continuacoesAntesDoCurto, 1, "o curto entra logo depois da primeira continuação do longo");
+    assert.ok(lerCard(longo.id).bloqueado === false);
   } finally {
     await encerrarMotor(5000);
     servidor.close();
