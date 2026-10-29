@@ -1430,7 +1430,20 @@ ${c.stat}
 \`\`\`diff
 ${c.patch.slice(0, tetoDiff)}
 \`\`\`${c.patch.length > tetoDiff ? `\n(diff cortado em ${tetoDiff} de ${c.patch.length} caracteres: veja o resto com ver_diff)` : ""}${podeVerificar() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
-  } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho, { enxuto: local }));
+  } else if (projeto) {
+    // Card sem código: o autor trabalhou na cópia de referência (protótipos, prints, dados de teste); o validador lê a
+    // mesma. Lendo a pasta vinculada, o PM devolveu o card 20 por "o arquivo e a pasta docs/prototipos não existem".
+    const projetoId = projetoDoCard(card);
+    let raiz = projeto.caminho;
+    if (projetoId !== null && ambienteAtivo()) {
+      try {
+        raiz = (await garantirCopiaDeReferencia(card, projeto.caminho, projetoId)).caminho;
+      } catch (e) {
+        if (!(e instanceof ErroCard)) throw e;
+      }
+    }
+    ferramentas.push(...ferramentasDeProjeto(raiz, { enxuto: local }));
+  }
 
   const modeloValidador = modeloDoAgente(validador, etapaDoCodigoDe(card) !== null ? "validador-codigo" : "validador");
   await rodarAgente({
