@@ -18,7 +18,8 @@ export const BASE_COMPAT: Record<"openai" | "gemini", string> = {
 };
 
 interface Config {
-  ollama: { url: string; contexto: number };
+  /** extras: outros computadores com Ollama (cada um roda um trabalho local por vez, em paralelo). */
+  ollama: { url: string; contexto: number; extras?: string[] };
   // Preço (US$ por milhão de tokens) só para o orçamento: confira na página do provedor.
   openai: { precoEntrada: number; precoSaida: number };
   gemini: { precoEntrada: number; precoSaida: number };
@@ -33,13 +34,15 @@ function config(): Config {
     salvo = JSON.parse(getSetting("provedores") ?? "{}") as Partial<Config>;
   } catch { /* configuração corrompida: volta ao padrão */ }
   return {
-    ollama: { url: URL_OLLAMA_PADRAO, contexto: 32_768, ...salvo.ollama },
+    ollama: { url: URL_OLLAMA_PADRAO, contexto: 32_768, extras: [], ...salvo.ollama },
     openai: { precoEntrada: 2, precoSaida: 12, ...salvo.openai },
     gemini: { precoEntrada: 1.5, precoSaida: 9, ...salvo.gemini },
   };
 }
 
 export const configOllama = () => config().ollama;
+/** Todos os computadores com Ollama: o principal primeiro. */
+export const enderecosOllama = () => [config().ollama.url, ...(config().ollama.extras ?? [])];
 export const chaveDe = (p: "openai" | "gemini") => lerSegredo(CHAVE[p]);
 export const precoDe = (p: "openai" | "gemini") => config()[p];
 
@@ -233,6 +236,7 @@ export async function estadoProvedores(): Promise<EstadoProvedores> {
       online: ol.status === "fulfilled",
       versao: ol.status === "fulfilled" ? ol.value.versao : null,
       contexto: c.ollama.contexto,
+      extras: c.ollama.extras ?? [],
       modelos: modelosOl,
       erro: ol.status === "rejected" ? `Ollama não respondeu em ${c.ollama.url}. Abra o app do Ollama (ou rode "ollama serve").` : null,
       recomendados: recomendados(m.memoriaGb, new Set(modelosOl.map((x) => x.nome))),
@@ -254,6 +258,12 @@ export async function configurarProvedores(corpo: Record<string, unknown>): Prom
     c.ollama.url = url;
   }
   c.ollama.contexto = numero(ol.contexto, 4096, 262_144) ?? c.ollama.contexto;
+  if (Array.isArray(ol.extras)) {
+    const extras = ol.extras.map((u) => String(u).trim().replace(/\/$/, "")).filter(Boolean);
+    const invalido = extras.find((u) => !/^https?:\/\/[\w.-]+(:\d+)?$/.test(u));
+    if (invalido) throw new ErroCard(`Endereço de Ollama inválido: ${invalido} (ex.: http://192.168.0.20:11434).`);
+    c.ollama.extras = [...new Set(extras)].filter((u) => u !== c.ollama.url).slice(0, 8);
+  }
   for (const p of ["openai", "gemini"] as const) {
     const d = (corpo[p] ?? {}) as Record<string, unknown>;
     if (typeof d.chave === "string" && d.chave.trim()) {

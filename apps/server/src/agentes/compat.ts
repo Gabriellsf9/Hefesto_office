@@ -1,4 +1,5 @@
 import type { ProvedorIa } from "@empresa/shared";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { ferramentasDeWebLocal } from "./webLocal.ts";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -316,15 +317,24 @@ function postarSemLimiteDeTempo(url: string, corpo: string, sinal?: AbortSignal)
 
 // Um pedido por vez ao Ollama: numa máquina de 16 GB, dois modelos (ou dois contextos grandes)
 // ao mesmo tempo estouram a memória. Os agentes locais esperam a vez.
-let filaOllama: Promise<unknown> = Promise.resolve();
-function naFilaDoOllama<T>(fn: () => Promise<T>): Promise<T> {
-  const vez = filaOllama.then(fn, fn);
-  filaOllama = vez.catch(() => undefined);
+// Uma fila por computador (com vários computadores com Ollama, cada um atende o seu trabalho em paralelo).
+const filasOllama = new Map<string, Promise<unknown>>();
+function naFilaDoOllama<T>(url: string, fn: () => Promise<T>): Promise<T> {
+  const vez = (filasOllama.get(url) ?? Promise.resolve()).then(fn, fn);
+  filasOllama.set(url, vez.catch(() => undefined));
   return vez;
 }
 
+/** Computador com Ollama deste trabalho (o motor escolhe um livre); subagentes e compactação herdam. */
+export const computadorOllama = new AsyncLocalStorage<{ url: string }>();
+/** Computador extra que não respondeu: fica fora por 5 min e o trabalho segue no principal. */
+const extrasForaAte = new Map<string, number>();
+export const computadorExtraNoAr = (url: string) => (extrasForaAte.get(url) ?? 0) < Date.now();
+
 async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esforco: OpcoesAgente["esforco"], sinal: AbortSignal | undefined, onTexto: (t: string) => void, contexto = configOllama().contexto): Promise<Resposta> {
-  const { url } = configOllama();
+  const principal = configOllama().url;
+  const escolhido = computadorOllama.getStore()?.url;
+  const url = escolhido && escolhido !== principal && computadorExtraNoAr(escolhido) ? escolhido : principal;
   const caps = await capacidadesOllama(modelo);
   const visao = caps?.includes("vision") ?? false;
   if (tools.length && caps && !caps.includes("tools")) {
@@ -340,7 +350,7 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
       ...(m.role === "tool" && m.name ? { tool_name: m.name } : {}),
     };
   });
-  return naFilaDoOllama(async () => {
+  return naFilaDoOllama(url, async () => {
     if (sinal?.aborted) throw new ErroInterrompido(String(sinal.reason ?? "interrompido"));
     let res: Response;
     try {
@@ -363,6 +373,11 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
       );
     } catch (e) {
       if (sinal?.aborted) throw e;
+      // Computador extra fora do ar: fica de lado por 5 min e esta chamada segue no principal (não derruba o local todo).
+      if (url !== principal) {
+        extrasForaAte.set(url, Date.now() + 5 * 60_000);
+        return computadorOllama.run({ url: principal }, () => chamarOllama(modelo, msgs, tools, esforco, sinal, onTexto, contexto));
+      }
       throw new ErroProvedor(`O Ollama não está respondendo em ${url}. Abra o app do Ollama (ou rode "ollama serve").`, 0, true);
     }
     if (res.status === 404) throw new ErroProvedor(`O modelo ${modelo} não está instalado no Ollama. Rode no terminal: ollama pull ${modelo}`, 404, false);

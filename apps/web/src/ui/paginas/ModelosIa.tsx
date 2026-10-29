@@ -3,7 +3,7 @@ import { Copy, FlaskConical } from "lucide-react";
 import type { EstadoProvedores, ModeloDisponivel } from "@empresa/shared";
 import { agentesDe, salasDe, escritorioAtivo } from "@empresa/org";
 import { api } from "../../api.ts";
-import { Botao, Campo, CampoSegredo, Etiqueta, Seletor, avisar, avisarErro, confirmar } from "../kit/index.ts";
+import { AreaTexto, Botao, Campo, CampoSegredo, Etiqueta, Seletor, avisar, avisarErro, confirmar } from "../kit/index.ts";
 import { Bloco } from "./Configuracoes.tsx";
 
 // Configurações → Modelos de IA: Ollama na máquina, OpenAI e Gemini como alternativas ao
@@ -92,15 +92,27 @@ function LinhaModelo({ m, testes, testar }: { m: ModeloDisponivel; testes: Props
 function Ollama({ e, salvar, testes, testar }: PropsComuns) {
   const o = e.ollama;
   const [url, setUrl] = useState(o.url);
+  const [extras, setExtras] = useState((o.extras ?? []).join("\n"));
+  const listaExtras = extras.split(/\s+/).map((x) => x.trim()).filter(Boolean);
   return (
     <Bloco
       titulo={<span className="flex items-center gap-2">Ollama (nesta máquina) <Etiqueta tom={o.online ? "sucesso" : "perigo"}>{o.online ? `rodando${o.versao ? ` · v${o.versao}` : ""}` : "desligado"}</Etiqueta></span>}
-      descricao="Grátis e nada sai do Mac. Um pedido por vez: os agentes locais esperam a vez para não estourar a memória."
+      descricao="Grátis e nada sai da sua rede. Um pedido por vez em cada computador: os agentes locais esperam a vez para não estourar a memória."
     >
       {o.erro && <p className="rounded-ctl bg-warning-soft px-3 py-2 text-pequeno text-warning-fg">{o.erro} Sem ele: baixe em ollama.com.</p>}
       <div className="grid grid-cols-[1fr_auto] items-end gap-3">
         <Campo rotulo="Endereço" value={url} onChange={(ev) => setUrl(ev.target.value)} />
         <Botao disabled={url === o.url} onClick={() => void salvar({ ollama: { url } }, "Endereço salvo")}>Salvar</Botao>
+      </div>
+      <div className="grid grid-cols-[1fr_auto] items-end gap-3">
+        <AreaTexto
+          rotulo="Outros computadores com Ollama"
+          ajuda="Um endereço por linha (ex.: http://192.168.0.20:11434). Cada computador roda um agente local ao mesmo tempo; se um sair do ar, o trabalho segue neste."
+          rows={2}
+          value={extras}
+          onChange={(ev) => setExtras(ev.target.value)}
+        />
+        <Botao disabled={listaExtras.join(" ") === (o.extras ?? []).join(" ")} onClick={() => void salvar({ ollama: { extras: listaExtras } }, "Computadores salvos")}>Salvar</Botao>
       </div>
       <Seletor
         rotulo="Tamanho do contexto"

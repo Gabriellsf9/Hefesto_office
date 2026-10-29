@@ -145,3 +145,14 @@ test("vez do modelo local: vale o provedor com que o trabalho começou, não o q
   assert.equal(localOcupado([{ cardId: 11, agenteId: "dev-frontend", tipo: "executar", desde: 0, provedor: "ollama" }]), true);
   assert.equal(localOcupado([{ cardId: 11, agenteId: "dev-frontend", tipo: "executar", desde: 0, provedor: "claude" }]), false);
 });
+
+test("vários computadores com Ollama: um trabalho local por computador; o trabalho novo vai para o livre", async () => {
+  const { localOcupado, computadorLivre } = await import("./motor.ts");
+  const pcs = ["http://principal:11434", "http://notebook:11434"];
+  const um = [{ cardId: 1, agenteId: "dev-backend", tipo: "executar" as const, desde: 0, provedor: "ollama" as const, computador: pcs[0] }];
+  assert.equal(localOcupado(um, pcs), false, "com dois computadores, cabe mais um");
+  assert.equal(computadorLivre(um, pcs), "http://notebook:11434");
+  const dois = [...um, { cardId: 2, agenteId: "dev-frontend", tipo: "executar" as const, desde: 0, provedor: "ollama" as const, computador: pcs[1] }];
+  assert.equal(localOcupado(dois, pcs), true);
+  assert.equal(localOcupado(um, [pcs[0]!]), true, "só o principal: um por vez, como antes");
+});
