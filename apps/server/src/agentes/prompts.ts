@@ -217,6 +217,7 @@ export function mensagemAdvogado(card: Card): string {
   const anterior = (atual?.versao ?? 1) > 1 ? debateRecente(card, true) : "";
   return [
     descreverCard(card),
+    decisoesDoCeo(card),
     contextoExtra(card),
     blocoMetas(),
     anterior && `## Questionamentos e devoluções das versões anteriores\n${anterior}`,
@@ -374,6 +375,19 @@ Obrigatório antes de propor ou mudar qualquer coisa: entenda como o projeto fun
 Interface e design: antes de desenhar ou mudar uma tela, VEJA como o produto é hoje. Procure prints da interface no projeto (public/, docs/, e2e/, pastas de screenshots) com listar_arquivos e abra com ver_imagem; depois leia o tema (cores, fontes, espaçamentos: tailwind.config, variáveis CSS, tokens), o layout principal e os componentes das telas parecidas. Siga esse padrão à risca: mesma navegação, mesmos componentes, mesmas cores e fonte. Uma tela nova precisa parecer parte do mesmo produto, não um app diferente. Na entrega, diga em que telas e arquivos você se baseou.`;
 
 /** Debate desde a última entrega: devoluções e comentários do validador e do CEO. */
+/**
+ * O que o CEO decidiu no card, sempre presente (o debate traz só os últimos comentários): o PM devolveu o EMP-3
+ * pedindo a tela de Integrações que o CEO tinha cortado, porque o comentário do corte já tinha saído da janela.
+ * Avisos do Hefesto (ferramenta) não são decisões.
+ */
+export function decisoesDoCeo(card: Card): string {
+  const ds = listarComentarios(card.id).filter((c) => c.autor === "voce" && c.tipo === "comentario" && !c.texto.startsWith("Aviso do Hefesto"));
+  if (!ds.length) return "";
+  return `## Decisões do CEO neste card
+Valem acima da descrição e dos critérios originais: o que o CEO cortou ou mudou não é para fazer nem é motivo para devolver.
+${ds.slice(-5).map((c) => `- ${c.texto.length > 800 ? `${c.texto.slice(0, 800)}…` : c.texto}`).join("\n")}`;
+}
+
 function debateRecente(card: Card, paraValidador = false, local = false): string {
   // O validador não vê a autocrítica do autor: julga a entrega, não a defesa dela.
   const coms = listarComentarios(card.id).filter((c) => c.tipo !== "movimento" && !(paraValidador && c.tipo === "autocritica"));
@@ -451,6 +465,7 @@ export function mensagemExecutar(card: Card, o: { local?: boolean; podeDividir?:
     o.podeDividir ? DIVIDIR_NO_LOCAL : "",
     o.local ? LER_POUCO_NO_LOCAL : "",
     descreverCard(card),
+    decisoesDoCeo(card),
     contextoExtra(card),
     instrucoesDoProjeto(fichaDoProjeto(card.projetoId)?.caminho, o.local ? 4000 : 12_000),
     resultadoDosPedidos(card, o.local),
@@ -474,6 +489,7 @@ export function mensagemValidar(card: Card, mudancas = ""): string {
   const debate = debateRecente(card, true);
   return [
     descreverCard(card),
+    decisoesDoCeo(card),
     contextoExtra(card),
     instrucoesDoProjeto(fichaDoProjeto(card.projetoId)?.caminho),
     blocoMetas(),
