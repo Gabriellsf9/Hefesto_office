@@ -255,23 +255,31 @@ function encurtarArgumentos(m: Msg): boolean {
 }
 
 const SO_LEITURA = new Set(["listar_arquivos", "ler_arquivo", "ver_imagem", "mapa_do_codigo", "buscar_no_indice", "historico_git", "buscar_no_codigo", "buscar_na_memoria", "ler_card", "ver_diff"]);
-/** Leituras seguidas, sem escrever nem decidir, antes do lembrete de avançar. */
+/** Leituras seguidas, sem escrever nem decidir, antes do lembrete de avançar; no dobro, a leitura trava. */
 export const LEITURAS_SEGUIDAS = 20;
 
 /**
- * Leituras e buscas da execução: o modelo local, com só os 2 últimos resultados na conversa, buscava "Get(" três vezes
- * seguidas e relia os mesmos arquivos depois de cada resumo (card 14: 2 horas e o handler pedido ainda não existia).
- * Repetir a mesma leitura, ou ler 20 vezes seguidas sem agir, ganha um lembrete no resultado.
+ * Leituras e buscas do agente no card: o modelo local, com só os 2 últimos resultados na conversa, buscava "Get(" três
+ * vezes seguidas e relia os mesmos arquivos depois de cada resumo (card 14: 2 horas e o handler pedido ainda não
+ * existia). Repetir a mesma leitura, ou ler 20 vezes seguidas sem agir, ganha um lembrete no resultado; com 40, as
+ * leituras recusam até ele agir (o gpt-oss ignorou o lembrete e leu mais 40 vezes).
  */
 export class Leituras {
   private vezes = new Map<string, number>();
   private seguidas = 0;
+  /** Motivo para recusar esta leitura agora (ou null). */
+  travada(nome: string): string | null {
+    if (!SO_LEITURA.has(nome) || this.seguidas < LEITURAS_SEGUIDAS * 2) return null;
+    return `Leitura recusada: você já fez ${this.seguidas} leituras e buscas seguidas sem agir. Com o que já leu, faça agora: escreva o código (escrever_arquivo/editar_arquivo), entregue (registrando como "Premissa:" o que não confirmou) ou use perguntar_ao_ceo. As leituras voltam depois que você agir.`;
+  }
   /** Conta a chamada e devolve o lembrete para acrescentar ao resultado (ou ""). */
   registrar(nome: string, argumentos: string): string {
     if (!SO_LEITURA.has(nome)) {
       this.seguidas = 0;
+      this.vezes.clear(); // depois de mudar algo, reler é legítimo
       return "";
     }
+    if (this.seguidas >= LEITURAS_SEGUIDAS * 2) return "";
     this.seguidas++;
     const chave = `${nome} ${argumentos.replace(/\s+/g, "")}`;
     const n = (this.vezes.get(chave) ?? 0) + 1;
@@ -282,6 +290,16 @@ export class Leituras {
       return `\n\n(Você já fez ${this.seguidas} leituras e buscas seguidas sem escrever nem decidir nada. Já tem o bastante: avance agora (escreva o código, entregue ou decida) e registre como "Premissa:" o que não conseguiu confirmar.)`;
     return "";
   }
+}
+
+// Por card e agente, para valer entre as continuações (cada vez tem 40 rodadas e recomeçava a contagem do zero).
+const leiturasPorCard = new Map<string, Leituras>();
+function leiturasDe(cardId: number | undefined, agenteId: string | undefined): Leituras {
+  if (cardId == null) return new Leituras();
+  const chave = `${cardId}:${agenteId ?? ""}`;
+  let l = leiturasPorCard.get(chave);
+  if (!l) leiturasPorCard.set(chave, (l = new Leituras()));
+  return l;
 }
 
 /** Fração mínima da conversa que o resumo precisa substituir para valer a chamada. */
@@ -646,7 +664,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   const maxRodadas = o.maxRodadas ?? (provedor === "ollama" ? RODADAS_LOCAIS : 16);
   let malformadas = 0;
   let cortesSeguidos = 0;
-  const leituras = new Leituras();
+  const leituras = leiturasDe(o.cardId, o.agenteId);
   for (let rodada = 0; rodada < maxRodadas; rodada++) {
     if (o.sinal?.aborted) throw interrompido();
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
@@ -826,9 +844,12 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
     for (const c of r.chamadas) {
       const entrada = argumentos(c.function.arguments);
       const t1 = Date.now();
-      const res = entrada
-        ? await executarFerramenta(porNome, c.function.name, entrada)
-        : { texto: `Os argumentos de ${c.function.name} não são um JSON válido. Chame de novo com um objeto JSON.`, erro: true };
+      const travada = leituras.travada(c.function.name);
+      const res = travada
+        ? { texto: travada, erro: true }
+        : entrada
+          ? await executarFerramenta(porNome, c.function.name, entrada)
+          : { texto: `Os argumentos de ${c.function.name} não são um JSON válido. Chame de novo com um objeto JSON.`, erro: true };
       registrarPasso(replay, { rodada, tipo: "ferramenta", nome: c.function.name, entrada: entrada ?? c.function.arguments, saida: res.texto, erro: res.erro, ms: Date.now() - t1 });
       if (res.fim && !res.erro) fim = true;
       const aviso = leituras.registrar(c.function.name, c.function.arguments);
