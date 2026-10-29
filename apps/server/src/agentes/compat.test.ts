@@ -626,3 +626,31 @@ test("chamada de ferramenta escrita como texto: vira a chamada de verdade (só p
     setSetting("provedores", "{}");
   }
 });
+
+test("conversa local cheia pelos textos que o próprio agente mandou (arquivos gravados): encurta as chamadas já executadas e segue, sem 'não cabe'", async () => {
+  let n = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    req.resume();
+    req.on("end", () => {
+      const chamada = n++ < 6 ? { name: "gravar", arguments: { caminho: `parte${n}.html`, conteudo: `<div>${"bloco grande ".repeat(1700)}</div>` } } : { name: "entregar", arguments: { conteudo: "ok" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 32_768 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "s", mensagem: "m", lembrete: "Entregue.", maxRodadas: 12,
+      ferramentas: [
+        ferramenta("gravar", "Grava.", { caminho: { type: "string" }, conteudo: { type: "string" } }, ["caminho", "conteudo"], () => ({ texto: "Gravado." })),
+        ferramenta("entregar", "E.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true);
+  } finally {
+    servidor.closeAllConnections();
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
