@@ -692,4 +692,11 @@ test("leituras: a mesma busca repetida e muitas leituras seguidas ganham um lemb
   for (let i = 0; i < LEITURAS_SEGUIDAS; i++) ultimo = l.registrar("ler_arquivo", JSON.stringify({ caminho: `f${i}.go` }));
   assert.match(ultimo, /20 leituras e buscas seguidas/);
   assert.equal(l.registrar("ler_arquivo", '{"caminho": "outro.go"}'), "");
+  // Com o dobro, as leituras travam até ele agir.
+  for (let i = 0; i < LEITURAS_SEGUIDAS - 1; i++) l.registrar("buscar_no_codigo", JSON.stringify({ texto: "x" + i }));
+  assert.match(l.travada("ler_arquivo") ?? "", /Leitura recusada: você já fez 40/);
+  assert.equal(l.travada("escrever_arquivo"), null, "escrever nunca trava");
+  l.registrar("escrever_arquivo", '{}');
+  assert.equal(l.travada("ler_arquivo"), null, "depois de agir, volta a ler");
+  assert.equal(l.registrar("buscar_no_codigo", JSON.stringify({ texto: "x0" })), "", "e reler o que leu antes não conta como repetição");
 });
