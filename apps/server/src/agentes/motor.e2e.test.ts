@@ -289,7 +289,7 @@ test("ao dar a vez, a vez vai para outro agente (não para a parte irmã do mesm
     req.on("end", () => {
       const pedido = JSON.parse(corpo) as { messages: { content: string }[]; tools?: { function: { name: string } }[] };
       const texto = pedido.messages.map((m) => String(m.content)).join(" ");
-      const deQuem = texto.includes("Irmã A") ? "A" : texto.includes("Irmã B") ? "B" : "outro";
+      const deQuem = texto.includes("Irmã A") ? "A" : texto.includes("Irmã B") ? "B" : texto.includes("Card de outro agente") ? "outro" : "sobra";
       if (ordem.at(-1) !== deQuem) ordem.push(deQuem);
       const nomes = new Set((pedido.tools ?? []).map((t) => t.function.name));
       const chamada = deQuem === "outro" && nomes.has("entregar")
@@ -313,6 +313,8 @@ ${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
     db.prepare("UPDATE cards SET criado_em = ? WHERE id = ?").run(1, a.id);
     db.prepare("UPDATE cards SET criado_em = ? WHERE id = ?").run(2, b.id);
     db.prepare("UPDATE cards SET criado_em = ? WHERE id = ?").run(3, outro.id); // as irmãs são as mais antigas
+    // Cards que sobraram dos testes anteriores deste arquivo ficam fora da fila.
+    db.prepare("UPDATE cards SET bloqueado = 1 WHERE id NOT IN (?, ?, ?)").run(a.id, b.id, outro.id);
     iniciarMotor();
     for (let i = 0; i < 400 && !ordem.includes("outro"); i++) await esperar(100);
     assert.deepEqual(ordem.slice(0, 2), ["A", "outro"], `ordem: ${ordem.join(" → ")}`);
