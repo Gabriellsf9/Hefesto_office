@@ -276,7 +276,7 @@ test("modelo local que para sem ferramenta, volta a trabalhar e para de novo nã
   }
 });
 
-test("conversa longa no modelo local: a parte antiga vira um resumo (compactação) e o agente segue com as últimas rodadas inteiras", async () => {
+test("conversa longa no modelo local (o próprio texto do agente cresce, limpar resultados não basta): a parte antiga vira um resumo e o agente segue com as últimas rodadas inteiras", async () => {
   const recebidos: { messages: { role: string; content: string }[]; tools?: unknown[] }[] = [];
   let leituras = 0;
   const servidor = createServer((req, res) => {
@@ -291,7 +291,9 @@ test("conversa longa no modelo local: a parte antiga vira um resumo (compactaç�
       if (!pedido.tools) return void res.end(JSON.stringify({ message: { content: "- Li os arquivos a0 a a5 de backend/; a função criarTicket fica em tickets.go.\n- Falta escrever o handler e entregar." } }) + fim);
       const compactada = pedido.messages.some((m: { content: string }) => String(m.content).includes("Resumo do que você já fez"));
       const chamada = compactada || leituras >= 12 ? { name: "entregar", arguments: { conteudo: "ok" } } : { name: "ler", arguments: { caminho: `a${leituras++}.go` } };
-      res.end(JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } }) + fim);
+      // O raciocínio escrito pelo agente é o que enche a conversa (limpar resultados de ferramenta não resolve).
+      const pensou = chamada.name === "ler" ? `Analisando ${chamada.arguments.caminho}: ${"raciocínio detalhado ".repeat(250)}` : "";
+      res.end(JSON.stringify({ message: { content: pensou, tool_calls: [{ function: chamada }] } }) + fim);
     });
   });
   await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
@@ -300,7 +302,7 @@ test("conversa longa no modelo local: a parte antiga vira um resumo (compactaç�
     const r = await rodarAgente({
       modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", maxRodadas: 20,
       ferramentas: [
-        ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], (e) => ({ texto: `conteúdo de ${String(e.caminho)}: ${"x".repeat(5000)}` })),
+        ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], (e) => ({ texto: `conteúdo de ${String(e.caminho)}: ${"x".repeat(200)}` })),
         ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
       ],
     });
@@ -438,4 +440,60 @@ test("pedido grande no modelo local: as seções maiores encolhem primeiro e nen
   for (const titulo of ["# EMP-11", "## Descrição", "## Entrega para validar", "## Código desta entrega", "## Critérios\nCurto."]) assert.ok(menor.includes(titulo), titulo);
   assert.match(menor, /cortado para caber no modelo local; leia o resto com ler_card/);
   assert.ok(menor.includes("d".repeat(1500)), "a seção pequena ficou inteira");
+});
+
+test("limpar resultados antigos: os últimos ficam inteiros, os antigos grandes viram aviso, os curtos ficam", async () => {
+  const { limparResultadosAntigos } = await import("./compat.ts");
+  const msgs = [
+    { role: "system", content: "s" },
+    { role: "user", content: "pedido" },
+    ...[1, 2, 3, 4, 5, 6].flatMap((n) => [
+      { role: "assistant", content: "", tool_calls: [{ id: `c${n}`, type: "function", function: { name: "ler_arquivo", arguments: "{}" } }] },
+      { role: "tool", tool_call_id: `c${n}`, name: "ler_arquivo", content: n === 2 ? "curto" : `arquivo ${n} `.repeat(200) },
+    ]),
+  ] as Parameters<typeof limparResultadosAntigos>[0];
+  assert.equal(limparResultadosAntigos(msgs, 4), true);
+  const tools = msgs.filter((m) => m.role === "tool").map((m) => String(m.content));
+  assert.match(tools[0]!, /Resultado antigo limpo/);
+  assert.equal(tools[1], "curto", "resultado curto fica");
+  for (const t of tools.slice(2)) assert.match(t, /^arquivo \d /, "os 4 últimos ficam inteiros");
+  assert.equal(limparResultadosAntigos(msgs, 4), false, "nada mais para limpar");
+});
+
+test("conversa local cheia de resultados de ferramenta: limpar os antigos resolve, sem gastar uma chamada de resumo", async () => {
+  const recebidos: { tools?: unknown[]; messages: { role: string; content: string }[] }[] = [];
+  let leituras = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const pedido = JSON.parse(corpo);
+      recebidos.push(pedido);
+      const fim = `
+${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
+`;
+      const chamada = leituras >= 12 ? { name: "entregar", arguments: { conteudo: "ok" } } : { name: "ler", arguments: { caminho: `a${leituras++}.go` } };
+      res.end(JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } }) + fim);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "regras", mensagem: "faça", lembrete: "Entregue.", maxRodadas: 20,
+      ferramentas: [
+        ferramenta("ler", "Lê.", { caminho: { type: "string" } }, ["caminho"], (e) => ({ texto: `conteúdo de ${String(e.caminho)}: ${"x".repeat(5000)}` })),
+        ferramenta("entregar", "Entrega.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true })),
+      ],
+    });
+    assert.equal(r.terminou, true);
+    assert.ok(!recebidos.some((p) => !p.tools), "não pediu resumo");
+    const ultimo = recebidos.at(-1)!.messages.filter((m) => m.role === "tool").map((m) => String(m.content));
+    assert.ok(ultimo.some((t) => t.includes("Resultado antigo limpo")), "limpou os antigos");
+    assert.ok(ultimo.slice(-4).every((t) => t.startsWith("conteúdo de")), "os 4 últimos inteiros");
+  } finally {
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
 });

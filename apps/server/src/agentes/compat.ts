@@ -171,6 +171,23 @@ const CORTE_RECENTE = 3000;
  * deixava ~4 mil tokens de folga antes de compactar, e a compactação não reduzia abaixo dele.
  */
 const TETO_PEDIDO_LOCAL = 0.4;
+/** Resultados de ferramenta mais recentes que ficam inteiros quando os antigos são limpos. */
+const RESULTADOS_MANTIDOS = 4;
+const LIMPO = "[Resultado antigo limpo para economizar contexto. Rode a ferramenta de novo se precisar dele.]";
+
+/** Troca o conteúdo dos resultados de ferramenta antigos (menos os `manter` últimos) por um aviso. Diz se limpou algo. */
+export function limparResultadosAntigos(msgs: Msg[], manter: number): boolean {
+  const ferramentas = msgs.flatMap((m, i) => (m.role === "tool" ? [i] : []));
+  let limpou = false;
+  for (const i of ferramentas.slice(0, Math.max(0, ferramentas.length - manter))) {
+    if (textoDe(msgs[i]!.content).length > 300) {
+      msgs[i]!.content = LIMPO;
+      limpou = true;
+    }
+  }
+  return limpou;
+}
+
 /** Fração mínima da conversa que o resumo precisa substituir para valer a chamada. */
 const MEIO_MINIMO_PARA_RESUMIR = 0.2;
 const AVISO_CORTE = "\n…(cortado para caber no modelo local; leia o resto com ler_card, se precisar)";
@@ -534,6 +551,15 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
     if (doCeo.length) {
       msgs.push({ role: "user", content: blocoDeOrientacao(doCeo) });
       registrarPasso(replay, { rodada, tipo: "texto", saida: `(Mensagem do CEO recebida: ${doCeo.join(" | ").slice(0, 300)})` });
+    }
+    // Modelo local perto do limite: primeiro limpa resultados antigos de ferramentas (instantâneo, como a edição de
+    // contexto do Claude), e só resume se ainda precisar. Resumir custava ~35 s a cada duas leituras de arquivo:
+    // quase metade do tempo de um card ia nisso.
+    if (provedor === "ollama" && tokensDe(msgs, porToken) > limiteTokens * LIMIAR_COMPACTAR) {
+      const antes = Math.round(tokensDe(msgs, porToken));
+      if (limparResultadosAntigos(msgs, RESULTADOS_MANTIDOS)) {
+        registrarPasso(replay, { rodada, tipo: "texto", saida: `(Resultados antigos de ferramentas limpos: ~${antes} → ~${Math.round(tokensDe(msgs, porToken))} tokens.)` });
+      }
     }
     // Perto do limite: a parte antiga da conversa vira um resumo (antes de cortar resultados), como o Claude Code faz.
     // Só de novo quando a conversa crescer outros 30% do limite: se as últimas rodadas sozinhas já são grandes,
