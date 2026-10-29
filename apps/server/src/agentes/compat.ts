@@ -166,6 +166,29 @@ function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
 }
 const CORTE_RECENTE = 3000;
 
+/** Fração do limite do modelo local que o pedido inicial pode ocupar. */
+const TETO_PEDIDO_LOCAL = 0.55;
+const AVISO_CORTE = "\n…(cortado para caber no modelo local; leia o resto com ler_card, se precisar)";
+
+/**
+ * Encolhe o pedido até `max` caracteres cortando as seções "## " maiores primeiro (a maior vai à metade, de novo e
+ * de novo), para que nenhuma parte importante suma inteira.
+ */
+export function encolherPedido(texto: string, max: number): string {
+  if (texto.length <= max) return texto;
+  const secoes = texto.split(/\n(?=## )/);
+  const total = () => secoes.reduce((n, s) => n + s.length + 1, 0);
+  while (total() > max) {
+    let i = 0;
+    for (let j = 1; j < secoes.length; j++) if (secoes[j]!.length > secoes[i]!.length) i = j;
+    const s = secoes[i]!;
+    if (s.length <= 1200) break; // nada mais para cortar com proveito
+    const base = s.endsWith(AVISO_CORTE) ? s.slice(0, -AVISO_CORTE.length) : s;
+    secoes[i] = base.slice(0, Math.max(800, Math.floor(base.length / 2))) + AVISO_CORTE;
+  }
+  return secoes.join("\n");
+}
+
 /* ---------- Compactação: a parte antiga da conversa vira um resumo ---------- */
 
 /** A partir desta fração do limite, resume a parte antiga da conversa. */
@@ -470,9 +493,12 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   const anexos = await partesDosAnexos([...(o.imagens?.length ? blocosDeImagem(o.imagens) : []), ...(o.arquivos?.length ? await blocosDeArquivo(o.arquivos) : [])], provedor === "ollama");
   // Retomada (queda, reinício, pausa): a conversa salva pelo laço local continua de onde parou, sem reler tudo.
   const salva = o.retomar?.length && ehConversaLocal(o.retomar) ? (o.retomar as unknown as Msg[]) : null;
+  // No modelo local o pedido inicial tem teto (~55% do que cabe): o começo da conversa nunca é compactado, e um
+  // pedido grande demais (card + entrega + diff + regras + críticas) fazia a conversa não caber mesmo compactada.
+  const mensagem = provedor === "ollama" ? encolherPedido(o.mensagem, Math.floor((o.contexto ?? configOllama().contexto) * 0.75 * TETO_PEDIDO_LOCAL * 3)) : o.mensagem;
   const novas = (): Msg[] => [
     { role: "system", content: `${o.sistema}${semWeb ? "\n\n(Neste modelo não há pesquisa na web: trabalhe com as ferramentas disponíveis e com o que você sabe, e diga quando faltar informação atual.)" : ""}` },
-    { role: "user", content: anexos.length ? [...anexos, { type: "text", text: o.mensagem }] : o.mensagem },
+    { role: "user", content: anexos.length ? [...anexos, { type: "text", text: mensagem }] : mensagem },
   ];
   const msgs: Msg[] = salva
     ? [...salva, { role: "user", content: "Você foi pausado (reinício do sistema, limite ou espera de um modelo) e agora pode continuar. Siga exatamente de onde parou: não refaça leituras nem o trabalho que já fez." }]
