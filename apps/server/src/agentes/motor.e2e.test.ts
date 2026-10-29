@@ -152,3 +152,50 @@ test("reinício entre a entrega e a revisão: o motor segue da verificação, se
     setSetting("modelos_agentes", "{}");
   }
 });
+
+test("validação esperando um modelo com espaço não ocupa a vez do modelo local: os outros cards andam", async () => {
+  const { marcarValidacao, registrarEntrega } = await import("../tarefas.ts");
+  const validacoes: string[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const nomes = new Set(((JSON.parse(corpo) as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name));
+      const chamada = nomes.has("entregar")
+        ? { name: "entregar", arguments: { resumo: "Pronto", conteudo: `# Entrega\n${"Critérios atendidos. ".repeat(30)}`, autocritica: "Conferi." } }
+        : nomes.has("aprovar") ? { name: "aprovar", arguments: { parecer: "Ok." } } : null;
+      if (chamada?.name === "aprovar") validacoes.push(corpo.slice(0, 4000));
+      res.end(`${JSON.stringify({ message: chamada ? { content: "", tool_calls: [{ function: chamada }] } : { content: "ok" } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  setSetting("modelos_agentes", JSON.stringify(Object.fromEntries(agents.map((a) => [a.id, "ollama:modelo-teste"]))));
+  try {
+    const fluxo = fluxoPadrao("produto");
+    // Card em validação que "não cabe" agora: espera 1 minuto.
+    const parado = criarCard({ titulo: "Validação grande demais", sala: "produto", dono: "pm", nivel: "N0", coluna: colunaDeEntrada(fluxo) });
+    registrarEntrega(parado.id, "pm", "Grande", "# Entrega enorme");
+    marcarValidacao(parado.id, true);
+    repassadosEm.set(parado.id, Date.now() + 60_000);
+    const normal = criarCard({ titulo: "Card normal", sala: "produto", dono: "pm", nivel: "N0", criterios: "Gherkin", coluna: colunaDeEntrada(fluxo) });
+    iniciarMotor();
+    let atual = lerCard(normal.id);
+    for (let i = 0; i < 300 && colunaDe(atual.fluxo, atual.coluna)?.tipo !== "feito"; i++) {
+      for (const id of [...repassadosEm.keys()]) if (id !== parado.id) repassadosEm.delete(id);
+      await esperar(100);
+      atual = lerCard(normal.id);
+    }
+    assert.equal(colunaDe(atual.fluxo, atual.coluna)?.tipo, "feito", `o card normal ficou em ${atual.coluna}`);
+    assert.equal(lerCard(parado.id).emValidacao, true, "o que espera continua esperando");
+    assert.ok(!validacoes.some((v) => v.includes("Validação grande demais")), "a validação que espera não rodou");
+    assert.match(estadoMotor().esperas?.[parado.id] ?? "", /Validação esperando até/);
+  } finally {
+    await encerrarMotor(5000);
+    repassadosEm.delete(-1);
+    servidor.close();
+    setSetting("provedores", "{}");
+    setSetting("modelos_agentes", "{}");
+  }
+});
