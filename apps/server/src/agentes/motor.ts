@@ -36,7 +36,7 @@ import {
 } from "../tarefas.ts";
 import { NO_MAC } from "../plataforma.ts";
 import { podeVerificar } from "../fabrica/nuvem.ts";
-import { ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
+import { ErroContinua, ErroEntrada, ErroInterrompido, ErroLimiteCard, ErroOrcamentoProjeto, ErroSemEntrega, ErroSemOrcamento, ferramenta, ferramentasDeProjeto, ferramentasWeb, rodarAgente, texto, type Ferramenta } from "./loop.ts";
 import { diferencaDeTexto, semelhanca } from "./diferenca.ts";
 import { comandoDeTestes, testarCard, verificarCopia } from "../fabrica/testes.ts";
 import { fecharSessao } from "../fabrica/navegador.ts";
@@ -64,6 +64,9 @@ const MAX_PEDIDOS_POR_VEZ = 3;
 const MAX_PEDIDOS_POR_CARD = 6;
 const MAX_PROFUNDIDADE = 2;
 const MAX_PARTES = 4;
+/** Vezes seguidas que um card pode usar todas as rodadas sem entregar antes de contar como falha (~100 passos). */
+const MAX_CONTINUACOES = 6;
+const continuacoes = new Map<number, number>();
 
 const emAndamento = new Map<number, TrabalhoEmAndamento>();
 const controles = new Map<number, AbortController>();
@@ -674,7 +677,9 @@ async function rodar(client: Anthropic | null, card: Card, tipo: "executar" | "v
     apagarRetomada(card.id);
     limparPosEntrega(card.id);
   } catch (err) {
-    if (controle.signal.aborted || err instanceof ErroInterrompido) avisarInterrupcao(card.id, agenteId, String(controle.signal.reason ?? "interrompido"));
+    if (err instanceof ErroContinua) {
+      // A conversa salva fica (o sucesso apagaria): a próxima vez continua dela.
+    } else if (controle.signal.aborted || err instanceof ErroInterrompido) avisarInterrupcao(card.id, agenteId, String(controle.signal.reason ?? "interrompido"));
     else tratarFalha(card, agenteId, err);
   } finally {
     controles.delete(card.id);
@@ -1124,6 +1129,17 @@ ${texto_}`);
     marcarEntregue(card.id);
     entregou = true;
   }
+  // Acabaram as rodadas desta vez, com o agente trabalhando (subir banco, migrar, testar): continua na próxima vez
+  // da conversa salva, sem contar como falha. Antes virava "parou sem entregar" e, na segunda, o card bloqueava.
+  if (!entregou && r.semRodadas && !lerCard(card.id).bloqueado) {
+    const n = (continuacoes.get(card.id) ?? 0) + 1;
+    if (n <= MAX_CONTINUACOES) {
+      continuacoes.set(card.id, n);
+      postFeed(card.sala, agente.id, `${card.chave}: ${agente.nome} usou os passos desta vez e continua de onde parou (${n}/${MAX_CONTINUACOES})`);
+      throw new ErroContinua(`continua (${n}/${MAX_CONTINUACOES})`);
+    }
+    continuacoes.delete(card.id);
+  }
   // Sem chamar entregar, mas com um texto de verdade: o texto vira a entrega, para não perder trabalho.
   // Uma frase solta ("Vou começar lendo…") não é entrega: tenta de novo (e bloqueia na segunda vez).
   if (!entregou && !lerCard(card.id).bloqueado) {
@@ -1134,6 +1150,7 @@ ${texto_}`);
     entregou = true;
   }
   if (!entregou) return;
+  continuacoes.delete(card.id);
 
   card = lerCard(card.id);
   const abertos = filhosAbertos(card.id, listarCards());

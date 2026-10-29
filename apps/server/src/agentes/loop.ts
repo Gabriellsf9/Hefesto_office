@@ -41,6 +41,8 @@ export class ErroLimiteCard extends Error {}
 export class ErroOrcamentoProjeto extends Error {}
 /** O agente parou sem entregar nada que se aproveite (vale uma nova tentativa antes de bloquear). */
 export class ErroSemEntrega extends Error {}
+/** O agente usou todas as rodadas desta vez, trabalhando: continua na próxima, da conversa salva (não é falha). */
+export class ErroContinua extends Error {}
 
 /** Como a mensagem do CEO chega ao agente no meio do trabalho. */
 export const blocoDeOrientacao = (textos: string[]) =>
@@ -98,6 +100,8 @@ export interface OpcoesAgente {
 
 export interface ResultadoAgente {
   terminou: boolean;
+  /** Parou porque acabaram as rodadas desta vez (não por travar): a conversa salva continua de onde parou. */
+  semRodadas?: boolean;
   /** Texto escrito na última resposta (útil quando o agente não chamou a ferramenta final). */
   texto: string;
   custoUsd: number;
@@ -409,5 +413,5 @@ export async function rodarAgente(o: OpcoesAgente): Promise<ResultadoAgente> {
     mensagens.push({ role: "user", content: novas.length ? [...resultados, { type: "text", text: blocoDeOrientacao(novas) }] : resultados });
     o.aoRodada?.(mensagens);
   }
-  return { terminou: false, texto: ultimoTexto, custoUsd };
+  return { terminou: false, semRodadas: true, texto: ultimoTexto, custoUsd };
 }

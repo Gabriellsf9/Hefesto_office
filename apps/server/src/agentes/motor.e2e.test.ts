@@ -199,3 +199,35 @@ test("validação esperando um modelo com espaço não ocupa a vez do modelo loc
     setSetting("modelos_agentes", "{}");
   }
 });
+
+test("acabaram os passos sem entregar, trabalhando: continua na próxima vez, sem contar como falha nem bloquear", async () => {
+  const { db } = await import("../db.ts");
+  let chamadas = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    req.resume();
+    req.on("end", () => {
+      chamadas++;
+      // Sempre trabalhando (uma ferramenta de leitura), nunca entrega.
+      const chamada = { name: "buscar_na_memoria", arguments: { consulta: "migrações do banco" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  setSetting("modelos_agentes", JSON.stringify(Object.fromEntries(agents.map((a) => [a.id, "ollama:modelo-teste"]))));
+  try {
+    const card = criarCard({ titulo: "Subir o banco e migrar", sala: "produto", dono: "pm", nivel: "N0", coluna: colunaDeEntrada(fluxoPadrao("produto")) });
+    iniciarMotor();
+    const continuou = () => (db.prepare("SELECT COUNT(*) AS n FROM feed WHERE texto LIKE ?").get(`%${card.chave}: %continua de onde parou%`) as { n: number }).n;
+    for (let i = 0; i < 200 && continuou() < 2; i++) await esperar(100);
+    assert.ok(continuou() >= 2, `continuou ${continuou()} vez(es) (${chamadas} chamadas)`);
+    assert.equal(lerCard(card.id).bloqueado, false, "não bloqueou");
+    assert.ok(!listarComentarios(card.id).some((c) => /Não consegui concluir|Bloqueei o card/.test(c.texto)), "sem comentário de falha");
+  } finally {
+    await encerrarMotor(5000);
+    servidor.close();
+    setSetting("provedores", "{}");
+    setSetting("modelos_agentes", "{}");
+  }
+});
