@@ -1100,7 +1100,10 @@ ${texto_}`);
   // Card sem código num projeto: a cópia de referência (o projeto como está hoje) para subir o app no ambiente,
   // criar dados de teste e tirar prints das telas reais. Um ambiente por projeto, compartilhado entre os cards.
   let referencia: Worktree | null = null;
-  if (!wt && !wtDoPai && projeto && projetoId !== null && ambienteAtivo()) {
+  // Coordenação (diretoria, replanejamento) só lê o projeto: com escrita e terminal, a Helena passou a implementar o
+  // código que o replanejamento do EMP-33 propunha, em vez de entregar o plano.
+  const coordenacao = card.sala === "diretoria" || card.etiquetas.includes(ETIQUETA_REPLANEJAR);
+  if (!wt && !wtDoPai && projeto && projetoId !== null && ambienteAtivo() && !coordenacao) {
     try {
       referencia = await garantirCopiaDeReferencia(card, projeto.caminho, projetoId);
       // Ler e escrever na mesma raiz (a do repositório): com a pasta vinculada para ler e a cópia para escrever, os
