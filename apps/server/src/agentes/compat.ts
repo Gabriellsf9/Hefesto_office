@@ -443,7 +443,11 @@ async function chamarOllama(modelo: string, msgs: Msg[], tools: unknown[], esfor
           // Raciocínio deixa o modelo local mais certeiro, mas bem mais lento: só fora das conversas rápidas e só no
           // contexto curto. Com contexto grande o modelo escreve a ~5 tok/s, e ele chegou a "pensar" 7 mil tokens
           // (25 minutos) antes de agir.
-          ...(caps?.includes("thinking") ? { think: esforco !== "low" && contexto <= CONTEXTO_COM_RACIOCINIO } : {}),
+          // O gpt-oss não desliga o raciocínio (só aceita "low", "medium" e "high"): com false, o esforço ia todo para
+          // o pensamento e a resposta saía vazia (três resumos seguidos sem texto no card 14).
+          ...(caps?.includes("thinking")
+            ? { think: /gpt-oss/i.test(modelo) ? (esforco === "low" || contexto > CONTEXTO_COM_RACIOCINIO ? "low" : "medium") : esforco !== "low" && contexto <= CONTEXTO_COM_RACIOCINIO }
+            : {}),
           ...(tools.length ? { tools } : {}),
         }),
         sinal,
@@ -615,6 +619,10 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
             tamanhoAposCompactar = tokensDe(msgs, porToken);
             registrarPasso(replay, { rodada, tipo: "texto", saida: `(Conversa compactada: ~${antes} → ~${Math.round(tokensDe(msgs, porToken))} tokens.)` });
             salvarRodada();
+          } else {
+            // Resumo vazio: não tenta de novo a cada passo (o aparar segura o tamanho) até a conversa crescer bastante.
+            tamanhoAposCompactar = tokensDe(msgs, porToken);
+            registrarPasso(replay, { rodada, tipo: "texto", saida: "(O resumo da conversa veio vazio: sigo limpando resultados antigos.)" });
           }
         } catch (e) {
           if (o.sinal?.aborted) throw interrompido();
