@@ -35,3 +35,14 @@ test("escrever_arquivo com anexar: escreve um arquivo grande em partes (cria na 
   await f.executar!({ caminho: "proto/index.html", conteudo: "novo\n" });
   assert.equal(readFileSync(join(raiz, "proto/index.html"), "utf8"), "novo\n");
 });
+
+test("escrever_arquivo sem anexar que encolhe muito um arquivo existente avisa (quase sempre era para anexar)", async () => {
+  const raiz = mkdtempSync(join(tmpdir(), "copia-"));
+  const f = ferramentasDeEscrita({ cardId: 1, repo: raiz, caminho: raiz, branch: "x", base: "x", status: "ativo" }).find((t) => "name" in t.def && t.def.name === "escrever_arquivo")!;
+  await f.executar!({ caminho: "p.html", conteudo: "<html>\n".repeat(89) });
+  const r = await f.executar!({ caminho: "p.html", conteudo: "<script>\n".repeat(30) });
+  assert.match(r.texto, /ATENÇÃO: o arquivo tinha 90 linhas e foi substituído inteiro/);
+  // Reescrever do mesmo tamanho (uma nova versão do arquivo) não avisa.
+  const r2 = await f.executar!({ caminho: "p.html", conteudo: "<div>\n".repeat(30) });
+  assert.doesNotMatch(r2.texto, /ATENÇÃO/);
+});
