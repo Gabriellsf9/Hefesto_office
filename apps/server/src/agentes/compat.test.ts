@@ -654,3 +654,29 @@ test("conversa local cheia pelos textos que o próprio agente mandou (arquivos g
     setSetting("provedores", "{}");
   }
 });
+
+test("três respostas cortadas seguidas no modelo local: libera a vez e espera um modelo maior (não queima o local)", async () => {
+  const { ErroNaoCabe } = await import("./compat.ts");
+  let n = 0;
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    req.resume();
+    req.on("end", () => {
+      n++;
+      res.end(`${JSON.stringify({ message: { content: "Vou recriar o protótipo inteiro: <html>..." } })}\n${JSON.stringify({ done: true, done_reason: "length", prompt_eval_count: 100, eval_count: 6144 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    await assert.rejects(
+      rodarAgente({ modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "s", mensagem: "m", lembrete: "Entregue.", maxRodadas: 12, ferramentas: [ferramenta("entregar", "E.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))] }),
+      (e: unknown) => e instanceof ErroNaoCabe && /três vezes seguidas/.test((e as Error).message),
+    );
+    assert.equal(n, 3, "parou no terceiro corte");
+  } finally {
+    servidor.closeAllConnections();
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});

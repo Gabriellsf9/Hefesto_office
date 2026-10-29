@@ -615,6 +615,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   // nova a cada meio minuto, e cada uma começava resumindo a conversa retomada.
   const maxRodadas = o.maxRodadas ?? (provedor === "ollama" ? RODADAS_LOCAIS : 16);
   let malformadas = 0;
+  let cortesSeguidos = 0;
   for (let rodada = 0; rodada < maxRodadas; rodada++) {
     if (o.sinal?.aborted) throw interrompido();
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
@@ -742,6 +743,11 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
     // Passou do tamanho máximo de resposta: nada dela é executado (chamada pela metade) e o agente refaz em pedaços.
     // Antes virava erro e, na segunda vez, card bloqueado; no card 11 foram 18 minutos escrevendo um arquivo inteiro.
     if (r.cortada) {
+      // Três cortes seguidos no modelo local: ele não está conseguindo escrever em partes (o 4b do card 20 tentou
+      // o protótipo inteiro seis vezes, ~1,5 min cada). Libera a vez e espera um modelo maior por alguns minutos.
+      if (provedor === "ollama" && ++cortesSeguidos >= 3) {
+        throw new ErroNaoCabe("As respostas do modelo local foram cortadas no tamanho máximo três vezes seguidas (ele não está conseguindo escrever em partes): espero um modelo maior.");
+      }
       registrarPasso(replay, { rodada, tipo: "texto", saida: `(Resposta cortada no tamanho máximo, ~${r.saida} tokens: peço para refazer em pedaços.)` });
       msgs.push({ role: "assistant", content: `${r.texto.slice(0, 1500)}\n[…resposta cortada no tamanho máximo]` });
       msgs.push({
@@ -752,6 +758,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
       continue;
     }
 
+    cortesSeguidos = 0;
     // O modelo escreveu a chamada de ferramenta como texto (um JSON {"name", "arguments"} num bloco de código) em vez
     // de chamar: vira a chamada de verdade. Antes contava como "parou sem usar ferramentas" e, na segunda, o card
     // bloqueava (card 14, gpt-oss).
