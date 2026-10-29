@@ -7,7 +7,7 @@ import { configOllama, escolhas, escolherModelo, modelosOllamaInstalados } from 
 // o computador sem memória. Duas defesas:
 // 1. Reação (vale sempre, inclusive no Docker): o Ollama recusou carregar por falta de memória → o agente passa
 //    para o próximo modelo menor instalado e o trabalho continua.
-// 2. Prevenção: abaixo do limite em duas leituras seguidas → os agentes do maior modelo carregado passam para o
+// 2. Prevenção: abaixo do limite em três leituras seguidas → os agentes do maior modelo carregado passam para o
 //    menor e ele é descarregado. A leitura vem deste processo (fora do Docker) ou, no Docker, do próprio computador
 //    (scripts/memoria-do-computador.mjs): a memória que o contêiner vê é a da máquina virtual, não a do computador.
 // Toda troca fica registrada; a vigia de saúde abre um alerta e avisa no chat.
@@ -24,16 +24,23 @@ try {
 
 export const ERRO_DE_MEMORIA = /system memory|out of memory|insufficient memory|not enough memory|cudaMalloc|failed to allocate|unable to allocate|memory layout cannot be allocated/i;
 export const LIMITE_GB = Number(process.env.HEFESTO_RAM_MIN_GB ?? 1.5);
+export const LEITURAS_BAIXAS = 3;
 
 type Local = { nome: string; tamanhoGb?: number; ferramentas?: boolean | null };
 
-/** O próximo modelo menor que chama ferramentas (o maior entre os menores), ou null. */
-export function modeloMenor(nome: string, instalados: Local[]): string | null {
+/**
+ * O próximo modelo menor que chama ferramentas: entre os menores, de preferência um que algum agente já usa (testado
+ * neste trabalho), o maior deles; senão, o maior instalado. Antes ia para o maior instalado e o Rafael caiu num
+ * qwen2.5:14b antigo que ninguém usava (e maior que o 9b em uso).
+ */
+export function modeloMenor(nome: string, instalados: Local[], emUso: Set<string> = new Set()): string | null {
   const atual = instalados.find((m) => m.nome === nome)?.tamanhoGb;
   if (atual == null) return null;
   const menores = instalados.filter((m) => m.ferramentas !== false && m.tamanhoGb != null && m.tamanhoGb < atual).sort((a, b) => b.tamanhoGb! - a.tamanhoGb!);
-  return menores[0]?.nome ?? null;
+  return (menores.find((m) => emUso.has(m.nome)) ?? menores[0])?.nome ?? null;
 }
+/** Modelos locais que algum agente usa agora (sem o prefixo "ollama:"). */
+const modelosEmUso = () => new Set(Object.values(escolhas()).filter((m) => m.startsWith("ollama:")).map((m) => m.slice(7)));
 
 /** Passa os agentes de um modelo local para outro e registra. `agentes` vazio: todos os que escolheram `de`. */
 export function rebaixar(de: string, para: string, motivo: string, agentes: string[] = []): string[] {
@@ -51,7 +58,7 @@ export function rebaixamentosRecentes(desde: number): { id: number; ts: number; 
 
 /** Reação: o Ollama disse que falta memória para `nome`. Devolve o modelo menor que o agente passa a usar, ou null. */
 export async function semMemoriaPara(nome: string, agente: string | undefined, erro: string): Promise<string | null> {
-  const menor = modeloMenor(nome, await modelosOllamaInstalados());
+  const menor = modeloMenor(nome, await modelosOllamaInstalados(), modelosEmUso());
   if (!menor) return null;
   rebaixar(nome, menor, `o Ollama não conseguiu carregar ${nome} (${erro.slice(0, 160)})`, agente ? [agente] : []);
   return menor;
@@ -110,7 +117,9 @@ export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb, ag
   baixas = livreGb < LIMITE_GB ? baixas + 1 : 0;
   if (baixas === 0) return talvezVoltar(livreGb, agora);
   folgaDesde = null;
-  if (baixas < 2) return null;
+  // Três leituras seguidas (~90 s): um pico passageiro (o build de uma atualização do Docker) trocava modelos à toa.
+  // Falta de memória de verdade ao carregar um modelo continua tratada na hora (semMemoriaPara).
+  if (baixas < LEITURAS_BAIXAS) return null;
   baixas = 0;
   const url = configOllama().url;
   const carregados = await fetch(`${url}/api/ps`, { signal: AbortSignal.timeout(5000) })
@@ -118,10 +127,11 @@ export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb, ag
     .then((j) => (j.models ?? []).sort((a, b) => b.size - a.size))
     .catch(() => []);
   const instalados = await modelosOllamaInstalados();
+  const emUso = modelosEmUso();
   for (const m of carregados) {
-    const menor = modeloMenor(m.name, instalados);
+    const menor = modeloMenor(m.name, instalados, new Set([...emUso].filter((x) => x !== m.name)));
     if (!menor) continue;
-    rebaixar(m.name, menor, `memória livre abaixo de ${LIMITE_GB} GB (${livreGb.toFixed(1)} GB) em duas leituras seguidas`);
+    rebaixar(m.name, menor, `memória livre abaixo de ${LIMITE_GB} GB (${livreGb.toFixed(1)} GB) em ${LEITURAS_BAIXAS} leituras seguidas`);
     // Descarrega o grande já (keep_alive 0), em vez de esperar os 15 minutos.
     await fetch(`${url}/api/generate`, { method: "POST", body: JSON.stringify({ model: m.name, keep_alive: 0 }), signal: AbortSignal.timeout(15_000) }).catch(() => null);
     return menor;
