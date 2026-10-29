@@ -67,6 +67,7 @@ import { configurarProvedores, estadoProvedores, foraDoArAte, marcarNoAr } from 
 import { iniciarVigia, listarAlertas, resolverAlerta } from "./vigia.ts";
 import { criarRaioX, vincularPasta } from "./projetoNovo.ts";
 import { arquivoDaCopia, lerArquivoDaCopia, pedidoLocal } from "./copiaHttp.ts";
+import { COOKIE, PAGINA_ENTRAR, configurarAcessoRemoto, criarChaveDeAcesso, decidirAcesso, entrar, estadoAcessoRemoto, lerCookie, revogar, sair } from "./acessoRemoto.ts";
 import { limparEstacoes } from "./fabrica/estacao.ts";
 import { lerTarefasDoAgente } from "./agentes/tarefasDoAgente.ts";
 import { registrarPrDoCard, sincronizarGithub } from "./fabrica/cicloGithub.ts";
@@ -100,20 +101,53 @@ carregarEscritorios();
 // e o contêiner reiniciava na primeira tentativa.
 const app = Fastify({ logger: { level: "warn" }, pluginTimeout: 120_000 });
 
-// Só o próprio Mac fala com a API (achado do QA em 27/10/2026): sem isso, qualquer site aberto no navegador
-// poderia mandar pedidos para 127.0.0.1 (CSRF), apontar um domínio para o Mac (DNS rebinding) ou abrir o
-// WebSocket e ler o chat. Regras: Host local; Origin, se houver, local; nada entre sites, exceto a navegação
-// normal (o retorno do login OAuth chega assim).
-const HOST_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
-const ORIGEM_LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+// Só o próprio computador fala com a API (achado do QA em 27/10/2026): sem isso, qualquer site aberto no navegador
+// poderia mandar pedidos para 127.0.0.1 (CSRF), apontar um domínio para cá (DNS rebinding) ou abrir o WebSocket e
+// ler o chat. De outro aparelho, só pelos endereços liberados no acesso remoto e com senha (acessoRemoto.ts).
+app.decorateRequest("remoto", false);
 app.addHook("onRequest", async (req, reply) => {
-  if (!HOST_LOCAL.test(req.headers.host ?? "")) return reply.code(403).send({ erro: "Acesso só pelo próprio Mac (localhost)." });
-  const origem = req.headers.origin;
-  if (origem !== undefined && !ORIGEM_LOCAL.test(origem)) return reply.code(403).send({ erro: "Origem não permitida." });
-  const site = req.headers["sec-fetch-site"];
-  const navegacao = req.method === "GET" && req.headers["sec-fetch-mode"] === "navigate";
-  if (site === "cross-site" && !navegacao) return reply.code(403).send({ erro: "Pedido entre sites bloqueado." });
+  const h = req.headers;
+  const d = decidirAcesso({
+    host: h.host ?? "", origin: h.origin, secFetchSite: h["sec-fetch-site"] as string | undefined, secFetchMode: h["sec-fetch-mode"] as string | undefined,
+    method: req.method, url: req.url, cookie: h.cookie, authorization: h.authorization,
+    encaminhado: !!(h["x-forwarded-for"] || h.forwarded || h["x-real-ip"]), hostEncaminhado: h["x-forwarded-host"] as string | undefined,
+  });
+  if (d.ok) {
+    (req as unknown as { remoto: boolean }).remoto = d.remoto;
+    return;
+  }
+  if (d.entrar) return reply.redirect("/entrar");
+  return reply.code(d.status).send({ erro: d.erro });
 });
+const pedidoRemoto = (req: unknown) => (req as { remoto: boolean }).remoto;
+app.get("/entrar", async (_req, reply) => reply.type("text/html; charset=utf-8").header("cache-control", "no-store").send(PAGINA_ENTRAR));
+app.post<{ Body: { senha?: string } }>("/api/entrar", async (req, reply) => {
+  // Pelo proxy, o IP que chega é o dele: o limite de tentativas usa o do aparelho, que o proxy informa.
+  const ip = String(req.headers["x-forwarded-for"] ?? "").split(",")[0]!.trim() || req.ip;
+  const token = entrar(req.body?.senha, ip, req.headers["user-agent"] ?? "");
+  const seguro = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https" ? "; Secure" : "";
+  reply.header("set-cookie", `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${30 * 86_400}${seguro}`);
+  return { ok: true };
+});
+app.post("/api/sair", async (req, reply) => {
+  sair(lerCookie(req.headers.cookie, COOKIE));
+  reply.header("set-cookie", `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+  return { ok: true };
+});
+app.get("/api/acesso-remoto", async (req) => ({ ...estadoAcessoRemoto(), remoto: pedidoRemoto(req) }));
+// Ligar, trocar a senha, liberar endereços e criar chaves: só pelo próprio computador (uma sessão roubada não abre mais portas).
+const soLocal = (req: unknown) => {
+  if (pedidoRemoto(req)) throw new ErroCard("Mude o acesso remoto pelo próprio computador.", 403);
+};
+app.put<{ Body: { senha?: string | null; enderecos?: unknown } }>("/api/acesso-remoto", async (req) => {
+  soLocal(req);
+  return configurarAcessoRemoto(req.body ?? {});
+});
+app.post<{ Body: { nome?: string } }>("/api/acesso-remoto/chave", async (req) => {
+  soLocal(req);
+  return { chave: criarChaveDeAcesso(req.body?.nome ?? "App") };
+});
+app.delete<{ Params: { id: string } }>("/api/acesso-remoto/sessoes/:id", async (req) => revogar(req.params.id));
 // Auditoria: toda ação que muda algo pela API entra na corrente de hashes (sem segredos).
 app.addHook("onResponse", async (req, reply) => {
   if (req.url.startsWith("/api/")) auditarRequisicao(req.method, req.url, reply.statusCode, req.body);

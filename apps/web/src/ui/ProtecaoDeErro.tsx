@@ -12,6 +12,20 @@ export class ProtecaoDeErro extends Component<{ children: ReactNode; onde: strin
     return { erro };
   }
 
+  // Aba aberta antes de uma atualização: os arquivos da versão antiga sumiram. Recarrega uma vez (no máximo a cada
+  // minuto, para não entrar em loop se o servidor estiver fora).
+  componentDidCatch(erro: Error) {
+    if (!/dynamically imported module|Importing a module script failed|error loading dynamically/i.test(erro.message)) return;
+    try {
+      const ultima = Number(sessionStorage.getItem("recarregou-versao") ?? 0);
+      if (Date.now() - ultima < 60_000) return;
+      sessionStorage.setItem("recarregou-versao", String(Date.now()));
+    } catch {
+      return;
+    }
+    location.reload();
+  }
+
   render() {
     const { erro } = this.state;
     if (!erro) return this.props.children;
