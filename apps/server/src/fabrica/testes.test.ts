@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { comandoDeTestes, verificacoesDaPasta } from "./testes.ts";
+import { NADA_A_TESTAR, comandoDeTestes, verificacoesDaPasta, verificarPasta } from "./testes.ts";
 
 const pasta = (arquivos: Record<string, string>) => {
   const p = mkdtempSync(join(tmpdir(), "stack-"));
@@ -30,4 +30,10 @@ test("verificações de qualquer stack, cada uma com a imagem oficial para rodar
 test("monorepo de stacks diferentes: cada subprojeto com a sua verificação", () => {
   const subs = comandoDeTestes(pasta({ "api/requirements.txt": "", "api/test_api.py": "", "web/package.json": JSON.stringify({ scripts: { test: "vitest" } }) }))!;
   assert.deepEqual(subs.map((s) => [s.dir, s.imagem]).sort(), [["api", "python:3.13-slim"], ["web", "node:22"]]);
+});
+
+test("monorepo: mudança só em docs/ não roda os testes de nenhum subprojeto", async () => {
+  const p = pasta({ "api/requirements.txt": "", "api/test_api.py": "", "web/package.json": JSON.stringify({ scripts: { test: "vitest" } }), "docs/prototipos/a.html": "<p>" });
+  const r = await verificarPasta(p, ["docs/prototipos/a.html", "docs/notas.md"]);
+  assert.deepEqual(r, { comando: NADA_A_TESTAR, passou: true, saida: "", ms: 0, pulados: [] });
 });
