@@ -41,6 +41,7 @@ const PAGINAS = [
   "config/voz",
   "config/escritorio",
   "config/permissoes",
+  "config/acesso",
   "config/conectores",
   "config/whatsapp",
   "config/celular",

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bot, Building2, Cable, Copy, Cpu, DatabaseBackup, ExternalLink, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
+import { Bot, Building2, Cable, Copy, Cpu, DatabaseBackup, ExternalLink, Globe, Info, KeyRound, MessageCircle, Plug, ShieldCheck, Smartphone, Volume2 } from "lucide-react";
 import type { EstadoTelegram, EstadoWhatsapp, RoomId, StatusResponse } from "@empresa/shared";
 import { rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -18,10 +18,11 @@ import { definirTema, useTema, type Tema } from "../shell/tema.ts";
 import { SandboxNuvem } from "./SandboxNuvem.tsx";
 import ModelosIa from "./ModelosIa.tsx";
 import { Integracoes } from "./Integracoes.tsx";
+import { AcessoRemoto } from "./AcessoRemoto.tsx";
 
 // Configurações (DESIGN-INTERFACE.md §6.9): tudo o que estava no menu ⋯, organizado por seção.
 
-type Secao = "geral" | "integracoes" | "modelos" | "voz" | "escritorio" | "permissoes" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
+type Secao = "geral" | "integracoes" | "modelos" | "voz" | "escritorio" | "permissoes" | "acesso" | "conectores" | "whatsapp" | "celular" | "backup" | "sobre";
 const SECOES: { id: Secao; rotulo: string; icone: typeof Info }[] = [
   { id: "geral", rotulo: "Geral", icone: KeyRound },
   { id: "integracoes", rotulo: "Integrações", icone: Cable },
@@ -29,6 +30,7 @@ const SECOES: { id: Secao; rotulo: string; icone: typeof Info }[] = [
   { id: "voz", rotulo: "Voz e sons", icone: Volume2 },
   { id: "escritorio", rotulo: "Escritório e aparência", icone: Building2 },
   { id: "permissoes", rotulo: "Permissões dos agentes", icone: ShieldCheck },
+  { id: "acesso", rotulo: "Acesso remoto", icone: Globe },
   { id: "conectores", rotulo: "Conectores", icone: Plug },
   { id: "whatsapp", rotulo: "WhatsApp", icone: MessageCircle },
   { id: "celular", rotulo: "Celular (Telegram)", icone: Smartphone },
@@ -55,6 +57,7 @@ export default function PaginaConfiguracoes() {
           {secao === "voz" && <VozESons />}
           {secao === "escritorio" && <Escritorio />}
           {secao === "permissoes" && <><Permissoes /><SandboxNuvem /></>}
+          {secao === "acesso" && <AcessoRemoto />}
           {secao === "conectores" && <ConteudoConectores />}
           {secao === "whatsapp" && <ConfigWhatsapp />}
           {secao === "celular" && <ConfigTelegram />}
