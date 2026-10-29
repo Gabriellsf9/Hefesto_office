@@ -729,7 +729,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
       msgs.push({ role: "assistant", content: `${r.texto.slice(0, 1500)}\n[…resposta cortada no tamanho máximo]` });
       msgs.push({
         role: "user",
-        content: "Sua última resposta passou do tamanho máximo e foi cortada: nada dela foi executado. Faça em pedaços menores: para um arquivo grande, crie com o começo (escrever_arquivo) e complete com editar_arquivo em trechos; não repita o arquivo inteiro no texto.",
+        content: "Sua última resposta passou do tamanho máximo e foi cortada: nada dela foi executado. Faça em pedaços menores: para um arquivo grande, crie com o começo (escrever_arquivo, até ~200 linhas) e complete com escrever_arquivo e anexar: true, uma parte de até ~200 linhas por chamada; não repita o arquivo inteiro no texto.",
       });
       salvarRodada();
       continue;
