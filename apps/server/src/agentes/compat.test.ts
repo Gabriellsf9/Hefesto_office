@@ -519,3 +519,37 @@ test("limpar resultados antigos também encurta o arquivo inteiro mandado em esc
   const recente = JSON.parse(msgs.at(-2)!.tool_calls![0]!.function.arguments) as { conteudo: string };
   assert.equal(recente.conteudo, arquivo, "as chamadas recentes ficam inteiras");
 });
+
+test("chamada de ferramenta malformada (Ollama 500 'error parsing tool call'): o agente repete, o trabalho termina e o Ollama não fica fora do ar", async () => {
+  const { provedorForaDoAr } = await import("../provedores.ts");
+  const recebidos: { messages: { role: string; content: string }[] }[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      recebidos.push(JSON.parse(corpo));
+      if (recebidos.length === 1) {
+        res.statusCode = 500;
+        return void res.end(JSON.stringify({ error: "error parsing tool call: raw='The project likely hasn't'" }));
+      }
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: { name: "entregar", arguments: { conteudo: "ok" } } }] } })}\n${JSON.stringify({ done: true, prompt_eval_count: 10, eval_count: 5 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  try {
+    const r = await rodarAgente({
+      modelo: "ollama:modelo-teste", agenteId: "dev-backend", sistema: "s", mensagem: "m", lembrete: "Entregue.",
+      ferramentas: [ferramenta("entregar", "E.", { conteudo: { type: "string" } }, ["conteudo"], () => ({ texto: "ok", fim: true }))],
+    });
+    assert.equal(r.terminou, true);
+    assert.equal(recebidos.length, 2);
+    assert.match(recebidos[1]!.messages.at(-1)!.content, /veio malformada/);
+    assert.equal(provedorForaDoAr("ollama"), false, "o Ollama não foi marcado fora do ar");
+  } finally {
+    servidor.closeAllConnections();
+    servidor.close();
+    setSetting("provedores", "{}");
+  }
+});
