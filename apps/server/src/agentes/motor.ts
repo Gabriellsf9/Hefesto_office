@@ -564,6 +564,8 @@ const nomeProvedor: Record<ProvedorIa, string> = { claude: "Claude", gemini: "Ge
 /** Motivo de um card em coluna de trabalho que não entrou na fila (bloqueio, dependência, partes, espera). */
 export function porQueNaoAnda(card: Card, porId: Map<number, Card>, rodando: Iterable<TrabalhoEmAndamento>): string | null {
   const tipo = tipoColuna(card);
+  const espera = repassadosEm.get(card.id);
+  if (card.emValidacao && !card.bloqueado && espera && espera > Date.now()) return `Validação esperando até ${hhmm(espera)} (repasse ou espera por um modelo com espaço).`;
   if (card.demo || !card.dono || card.emValidacao || !["fila", "trabalho", "bug"].includes(tipo ?? "") || !antesDoCeo(card)) return null;
   if (card.bloqueado) return card.etiquetas.includes(ETIQUETA_LIMITE) ? "Parado no limite de gasto: clique em Liberar mais." : "Bloqueado: esperando você responder no card.";
   const deps = [...(card.dependeDe ? [card.dependeDe] : []), ...(card.dependencias ?? [])].map((id) => porId.get(id)).filter((d): d is Card => !!d && tipoColuna(d) !== "feito");
@@ -585,7 +587,9 @@ async function ciclo() {
   if (destravarCardsNoTeto(cards)) cards = listarCards();
   const porId = new Map(cards.map((c) => [c.id, c]));
   const trabalhos = [
-    ...cards.filter(prontoParaValidar).map((card) => ({ card, tipo: "validar" as const, agente: card.validador! })),
+    // A validação também respeita a espera (repasse ou "não cabe em nenhum modelo agora"): sem isso, uma validação
+    // que não cabia no modelo local voltava a cada 3 s, ocupava a vez e travava todo o trabalho local.
+    ...cards.filter((c) => prontoParaValidar(c) && !esperandoEntrega(c.id)).map((card) => ({ card, tipo: "validar" as const, agente: card.validador! })),
     ...cards
       .filter((c) => prontoParaExecutar(c, porId) && !esperandoEntrega(c.id) && !esperaParente(c, porId, emAndamento.values()))
       .map((card) => ({ card, tipo: "executar" as const, agente: card.dono! })),
