@@ -677,7 +677,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
     if (imagens.length) msgs.push({ role: "user", content: [{ type: "text", text: "Imagens devolvidas pelas ferramentas acima:" }, ...imagens] });
     salvarRodada();
   }
-  return { terminou: false, texto: ultimoTexto, custoUsd };
+  return { terminou: false, semRodadas: true, texto: ultimoTexto, custoUsd };
 }
 
 /**
