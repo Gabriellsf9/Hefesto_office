@@ -172,6 +172,31 @@ const CORTE_RECENTE = 3000;
  * deixava ~4 mil tokens de folga antes de compactar, e a compactação não reduzia abaixo dele.
  */
 const TETO_PEDIDO_LOCAL = 0.4;
+/**
+ * Chamadas de ferramenta que o modelo escreveu no texto em vez de chamar: objetos JSON com "name" de uma ferramenta
+ * que ele tem e "arguments" (ou "parameters"), soltos ou num bloco de código.
+ */
+export function chamadasNoTexto(texto: string, ferramentas: Set<string>): Chamada[] {
+  const candidatos = [...texto.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map((m) => m[1]!.trim());
+  if (!candidatos.length) candidatos.push(texto.trim());
+  const chamadas: Chamada[] = [];
+  for (const c of candidatos) {
+    let v: unknown;
+    try {
+      v = JSON.parse(c);
+    } catch {
+      continue;
+    }
+    for (const item of Array.isArray(v) ? v : [v]) {
+      const o = item as { name?: unknown; arguments?: unknown; parameters?: unknown };
+      if (typeof o?.name !== "string" || !ferramentas.has(o.name)) continue;
+      const args = o.arguments ?? o.parameters ?? {};
+      chamadas.push({ id: `texto_${chamadas.length}_${Date.now()}`, type: "function", function: { name: o.name, arguments: typeof args === "string" ? args : JSON.stringify(args) } });
+    }
+  }
+  return chamadas;
+}
+
 /** Erro do Ollama quando o modelo escreve uma chamada de ferramenta ilegível (não é queda do servidor). */
 const CHAMADA_MALFORMADA = /error parsing tool call|XML syntax error|failed to parse (tool|function)|invalid tool call/i;
 /** Rodadas por execução no modelo local quando quem chama não define (no Claude e nas APIs, 16). */
@@ -710,6 +735,16 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
       continue;
     }
 
+    // O modelo escreveu a chamada de ferramenta como texto (um JSON {"name", "arguments"} num bloco de código) em vez
+    // de chamar: vira a chamada de verdade. Antes contava como "parou sem usar ferramentas" e, na segunda, o card
+    // bloqueava (card 14, gpt-oss).
+    if (!r.chamadas.length && r.texto) {
+      const doTexto = chamadasNoTexto(r.texto, new Set(porNome.keys()));
+      if (doTexto.length) {
+        r.chamadas = doTexto;
+        registrarPasso(replay, { rodada, tipo: "texto", saida: `(Chamada escrita como texto, executada: ${doTexto.map((c) => c.function.name).join(", ")})` });
+      }
+    }
     // Modelos com raciocínio às vezes deixam o pensamento no texto; não vai para o CEO.
     const texto = r.texto.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
     if (texto) registrarPasso(replay, { rodada, tipo: "texto", saida: texto });
