@@ -299,3 +299,27 @@ export async function migrarCopiasParaWorkspace(): Promise<number> {
   }
   return movidas;
 }
+
+/** O commit de uma entrega de código (a linha "**Código:** branch `…`, commit abc123" que comCodigo acrescenta). */
+export const commitDaEntrega = (conteudo: string) => /\*\*Código:\*\* branch `[^`]+`, commit ([0-9a-f]{6,40})/.exec(conteudo)?.[1] ?? null;
+
+/**
+ * Volta a cópia do card para o código de uma versão entregue (como o "rewind" do Claude Code): reset para o commit
+ * daquela entrega, ou da anterior mais próxima que mexeu no código; sem nenhuma, volta para o ponto de partida.
+ * O que veio depois fica no histórico do git (reflog), não some de vez.
+ */
+export async function voltarParaVersao(cardId: number, versao: number, entregas: { versao: number; conteudo: string }[]): Promise<{ commit: string }> {
+  const card = lerCard(cardId);
+  const wt = worktreeDoCard(card);
+  if (!wt || wt.cardId !== card.id) throw new ErroCard("Este card não tem cópia isolada ativa.");
+  if (!entregas.some((e) => e.versao === versao)) throw new ErroCard(`Não existe a versão ${versao}.`);
+  const alvo = entregas
+    .filter((e) => e.versao <= versao)
+    .sort((a, b) => b.versao - a.versao)
+    .map((e) => commitDaEntrega(e.conteudo))
+    .find((c): c is string => !!c) ?? wt.base;
+  await g(wt.caminho, "reset", "--hard", alvo);
+  // Arquivos novos (não versionados) das rodadas depois daquela versão também saem; os ignorados (node_modules) ficam.
+  await g(wt.caminho, "clean", "-fd");
+  return { commit: await g(wt.caminho, "rev-parse", "--short", "HEAD") };
+}

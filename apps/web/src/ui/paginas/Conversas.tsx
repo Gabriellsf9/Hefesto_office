@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquareText, Plus, Send, Square, Trash2 } from "lucide-react";
+import { MessageSquareText, Paperclip, Plus, Send, Square, Trash2 } from "lucide-react";
 import type { Conversa, EstadoProvedores, MensagemConversa } from "@empresa/shared";
 import { agentById, agents } from "@empresa/org";
 import { api } from "../../api.ts";
 import { useStore } from "../../store.ts";
 import { navegar, useNav } from "../../nav.ts";
 import { Markdown } from "../Markdown.tsx";
+import { enviarDocumento, enviarImagem } from "../anexos.ts";
 import { AreaTexto, Botao, BotaoIcone, EstadoVazio, Seletor, avisarErro, cx } from "../kit/index.ts";
 
 // Conversas (como no app do Claude): você conversa com qualquer agente, no modelo que escolher (Claude, Gemini ou
@@ -123,14 +124,40 @@ function Chat({ conversa, aoMudar, aoApagar }: { conversa: Conversa; aoMudar: (c
       avisarErro(e);
     }
   };
+  const [anexos, setAnexos] = useState<{ imagens: string[]; arquivos: { url: string; nome: string }[] }>({ imagens: [], arquivos: [] });
+  const [enviandoAnexo, setEnviandoAnexo] = useState(false);
+  const entradaArquivo = useRef<HTMLInputElement>(null);
+  // Imagens vão reduzidas (até 1600 px); documentos (PDF, Word, planilhas, texto) como estão.
+  const anexar = async (lista: FileList | File[] | null) => {
+    if (!lista?.length) return;
+    setEnviandoAnexo(true);
+    try {
+      for (const f of Array.from(lista)) {
+        if (f.type.startsWith("image/")) {
+          const url = await enviarImagem(f);
+          setAnexos((a) => ({ ...a, imagens: [...a.imagens, url] }));
+        } else {
+          const doc = await enviarDocumento(f);
+          setAnexos((a) => ({ ...a, arquivos: [...a.arquivos, doc] }));
+        }
+      }
+    } catch (e) {
+      avisarErro(e);
+    } finally {
+      setEnviandoAnexo(false);
+    }
+  };
   const enviar = async () => {
     const t = texto.trim();
     if (!t) return;
+    const comAnexos = anexos;
     setTexto("");
+    setAnexos({ imagens: [], arquivos: [] });
     try {
-      await api(`/api/conversas/${conversa.id}/mensagens`, "POST", { texto: t });
+      await api(`/api/conversas/${conversa.id}/mensagens`, "POST", { texto: t, ...comAnexos });
     } catch (e) {
       setTexto(t);
+      setAnexos(comAnexos);
       avisarErro(e);
     }
   };
@@ -173,7 +200,17 @@ function Chat({ conversa, aoMudar, aoApagar }: { conversa: Conversa; aoMudar: (c
         {msgs.length === 0 && <p className="text-pequeno text-fg-3">Comece a conversa. {agente ? `${agente.nome} responde` : "O agente responde"} com o modelo escolhido.</p>}
         {msgs.map((m) => (
           <div key={m.id} className={cx("max-w-[820px] rounded-card px-3.5 py-2.5", m.papel === "voce" ? "ml-auto bg-ink text-on-ink" : "bg-sunken")}>
-            {m.papel === "voce" ? <p className="whitespace-pre-wrap text-pequeno">{m.texto}</p> : <Markdown texto={m.texto} className="text-pequeno text-fg" />}
+            {m.papel === "voce" ? <p className="whitespace-pre-wrap text-pequeno">{m.texto}</p> : <ComArtifacts texto={m.texto} />}
+            {(m.imagens?.length || m.arquivos?.length) ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {m.imagens?.map((u) => <img key={u} src={u} alt="" className="h-20 rounded-ctl object-cover ring-1 ring-line" />)}
+                {m.arquivos?.map((a) => (
+                  <a key={a.url} href={a.url} target="_blank" rel="noreferrer" className="rounded-ctl bg-surface px-2 py-1 text-legenda text-fg underline ring-1 ring-line">
+                    {a.nome}
+                  </a>
+                ))}
+              </div>
+            ) : null}
             {m.papel === "agente" && m.modelo && (
               <p className="mt-1 text-legenda text-fg-3">
                 {m.modelo}
@@ -189,8 +226,25 @@ function Chat({ conversa, aoMudar, aoApagar }: { conversa: Conversa; aoMudar: (c
         )}
         <div ref={fim} />
       </div>
+      {(anexos.imagens.length > 0 || anexos.arquivos.length > 0 || enviandoAnexo) && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 pt-2 text-legenda text-fg-2">
+          {anexos.imagens.map((u) => <img key={u} src={u} alt="" className="h-10 rounded-ctl object-cover ring-1 ring-line" />)}
+          {anexos.arquivos.map((a) => <span key={a.url} className="rounded-ctl bg-sunken px-2 py-1">{a.nome}</span>)}
+          {enviandoAnexo && <span>Enviando anexo…</span>}
+          {!enviandoAnexo && <button className="underline" onClick={() => setAnexos({ imagens: [], arquivos: [] })}>tirar anexos</button>}
+        </div>
+      )}
       <div className="flex items-end gap-2 border-t border-line px-4 py-3">
+        <input ref={entradaArquivo} type="file" multiple hidden accept="image/*,.pdf,.docx,.doc,.rtf,.xlsx,.pptx,.csv,.txt,.md,.json" onChange={(e) => void anexar(e.target.files).then(() => (e.target.value = ""))} />
+        <BotaoIcone icone={Paperclip} rotulo="Anexar imagem ou documento" onClick={() => entradaArquivo.current?.click()} />
         <AreaTexto
+          onPaste={(e) => {
+            const imgs = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+            if (imgs.length) {
+              e.preventDefault();
+              void anexar(imgs);
+            }
+          }}
           className="flex-1"
           rows={2}
           value={texto}
@@ -207,5 +261,27 @@ function Chat({ conversa, aoMudar, aoApagar }: { conversa: Conversa; aoMudar: (c
         <BotaoIcone icone={Send} rotulo="Enviar" onClick={() => void enviar()} disabled={!texto.trim()} />
       </div>
     </div>
+  );
+}
+
+/** Texto do agente com os artifacts ([[artifact:url|título]]) trocados por quadros interativos isolados. */
+function ComArtifacts({ texto }: { texto: string }) {
+  const partes = texto.split(/(\[\[artifact:[^|\]]+\|[^\]]*\]\])/g);
+  return (
+    <>
+      {partes.map((p, i) => {
+        const m = /^\[\[artifact:([^|\]]+)\|([^\]]*)\]\]$/.exec(p);
+        if (!m) return p.trim() ? <Markdown key={i} texto={p} className="text-pequeno text-fg" /> : null;
+        return (
+          <div key={i} className="my-2 overflow-hidden rounded-card ring-1 ring-line">
+            <div className="flex items-center gap-2 bg-surface px-3 py-1.5 text-legenda text-fg-2">
+              <span className="flex-1 font-semibold text-fg">{m[2] || "Artifact"}</span>
+              <a href={m[1]} target="_blank" rel="noreferrer" className="underline">abrir em outra aba</a>
+            </div>
+            <iframe src={m[1]} title={m[2] || "Artifact"} sandbox="allow-scripts allow-forms" className="h-[480px] w-full bg-white" />
+          </div>
+        );
+      })}
+    </>
   );
 }

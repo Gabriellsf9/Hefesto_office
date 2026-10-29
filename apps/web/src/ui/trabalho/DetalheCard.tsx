@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2, Wallet } from "lucide-react";
+import { Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2, Undo2, Wallet } from "lucide-react";
 import { baseDoFluxo, colunaDe, ehCardDeCodigo, fluxos, niveis, prioridades, severidades, tiposCard, type Card, type CardEditavel, type Comentario, type Entrega, type ItemTarefaAgente } from "@empresa/shared";
 import { agentById, agents, rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -317,6 +317,31 @@ function Entregas({ entregas }: { entregas: Entrega[] }) {
             <Segmentado tamanho="p" valor={String(e.versao)} onChange={(v) => setEscolhida(Number(v))} opcoes={entregas.map((x) => ({ id: String(x.versao), rotulo: `v${x.versao}` }))} />
           )}
           <Botao tamanho="p" variante="discreto" icone={Copy} onClick={() => void navigator.clipboard.writeText(e.conteudo).then(() => avisar("Entrega copiada"))}>Copiar</Botao>
+          {/* Só em entrega de código que não é a última: volta a cópia do card para o commit desta versão. */}
+          {e.conteudo.includes("**Código:** branch") && e.versao !== entregas.at(-1)!.versao && (
+            <Botao
+              tamanho="p"
+              variante="discreto"
+              icone={Undo2}
+              onClick={() =>
+                void confirmar({
+                  titulo: `Voltar o código para a v${e.versao}?`,
+                  texto: "A cópia do card volta para o código desta versão e o agente recomeça a partir dela. O que veio depois fica no histórico do git.",
+                  confirmar: "Voltar",
+                }).then(async (ok) => {
+                  if (!ok) return;
+                  try {
+                    const r = await api<{ commit: string }>(`/api/cards/${e.cardId}/voltar`, "POST", { versao: e.versao });
+                    avisar(`Código na v${e.versao} (commit ${r.commit})`);
+                  } catch (err) {
+                    avisarErro(err);
+                  }
+                })
+              }
+            >
+              Voltar para esta versão
+            </Botao>
+          )}
         </div>
       }
     >
