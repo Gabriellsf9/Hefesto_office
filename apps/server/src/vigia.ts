@@ -217,7 +217,7 @@ function fotografar(agora: number): Fotografia {
       .prepare(
         `SELECT e.card_id AS cardId, COUNT(*) AS entregas, m.ts AS desde FROM entregas e
          JOIN (SELECT card_id, MAX(ts) AS ts FROM comentarios WHERE tipo = 'movimento' GROUP BY card_id) m ON m.card_id = e.card_id
-         WHERE e.ts > m.ts GROUP BY e.card_id HAVING COUNT(*) >= ?`,
+         WHERE e.ts >= m.ts GROUP BY e.card_id HAVING COUNT(*) >= ?`,
       )
       .all(GIRANDO_ENTREGAS) as { cardId: number; entregas: number; desde: number }[],
   };
