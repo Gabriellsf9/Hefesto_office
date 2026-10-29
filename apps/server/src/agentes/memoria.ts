@@ -28,15 +28,21 @@ export const LEITURAS_BAIXAS = 3;
 
 type Local = { nome: string; tamanhoGb?: number; ferramentas?: boolean | null };
 
+/** Um modelo só conta como menor com até 60% do tamanho: acima disso quase não libera memória. */
+export const FATOR_MENOR = 0.6;
+
 /**
- * O próximo modelo menor que chama ferramentas: entre os menores, de preferência um que algum agente já usa (testado
- * neste trabalho), o maior deles; senão, o maior instalado. Antes ia para o maior instalado e o Rafael caiu num
- * qwen2.5:14b antigo que ninguém usava (e maior que o 9b em uso).
+ * O próximo modelo menor que chama ferramentas: entre os que têm até 60% do tamanho, de preferência um que algum agente
+ * já usa (testado neste trabalho), o maior deles; senão, o maior (no empate, a versão -hefesto, ajustada para o
+ * Hefesto). Antes valia qualquer menor: com todos no gpt-oss (14 GB), a troca foi para um qwen2.5:14b de 12,7 GB
+ * carregado, que liberou 1,4 GB e deixou as chamadas de 5 s em 4 minutos.
  */
 export function modeloMenor(nome: string, instalados: Local[], emUso: Set<string> = new Set()): string | null {
   const atual = instalados.find((m) => m.nome === nome)?.tamanhoGb;
   if (atual == null) return null;
-  const menores = instalados.filter((m) => m.ferramentas !== false && m.tamanhoGb != null && m.tamanhoGb < atual).sort((a, b) => b.tamanhoGb! - a.tamanhoGb!);
+  const menores = instalados
+    .filter((m) => m.ferramentas !== false && m.tamanhoGb != null && m.tamanhoGb <= atual * FATOR_MENOR)
+    .sort((a, b) => b.tamanhoGb! - a.tamanhoGb! || Number(b.nome.includes("hefesto")) - Number(a.nome.includes("hefesto")));
   return (menores.find((m) => emUso.has(m.nome)) ?? menores[0])?.nome ?? null;
 }
 /** Modelos locais que algum agente usa agora (sem o prefixo "ollama:"). */
@@ -66,7 +72,15 @@ export async function semMemoriaPara(nome: string, agente: string | undefined, e
 
 /* ---------- Prevenção ---------- */
 
-const emConteiner = () => existsSync("/.dockerenv") || process.env.HEFESTO_SANDBOX === "linux";
+/** Modelos carregados agora no Ollama, do maior para o menor (vazio se ele não responder). */
+async function carregadosNoOllama(): Promise<{ name: string; size: number }[]> {
+  return fetch(`${configOllama().url}/api/ps`, { signal: AbortSignal.timeout(5000) })
+    .then((r) => r.json() as Promise<{ models?: { name: string; size: number }[] }>)
+    .then((j) => (j.models ?? []).sort((a, b) => b.size - a.size))
+    .catch(() => []);
+}
+
+const emConteiner =() => existsSync("/.dockerenv") || process.env.HEFESTO_SANDBOX === "linux";
 let baixas = 0;
 
 // No Docker, quem sabe a memória de verdade é o próprio computador: o script scripts/memoria-do-computador.mjs
@@ -96,9 +110,15 @@ async function talvezVoltar(livreGb: number, agora: number): Promise<string | nu
   for (const id of [...folgaDesde.keys()]) if (!pendentes.some((r) => r.id === id)) folgaDesde.delete(id);
   if (!pendentes.length) return null;
   const instalados = await modelosOllamaInstalados();
+  const carregados = await carregadosNoOllama();
   for (const r of pendentes) {
+    // Quanto a volta custa: nada se o original já está carregado (outros agentes o usam); senão, o tamanho dele menos o
+    // que o menor devolve ao descarregar. Antes contava o original inteiro com o menor ainda na memória: com o gpt-oss
+    // (14 GB) trocado por um 14b de 12,7 GB carregado, pedia 16,5 GB livres e a volta nunca acontecia.
     const tamanho = instalados.find((m) => m.nome === r.de)?.tamanhoGb ?? 8;
-    if (livreGb < tamanho + LIMITE_GB + 1) {
+    const devolve = (carregados.find((m) => m.name === r.para)?.size ?? 0) / 1e9;
+    const custo = carregados.some((m) => m.name === r.de) ? 0 : Math.max(0, tamanho - devolve);
+    if (livreGb < custo + LIMITE_GB + 1) {
       folgaDesde.delete(r.id);
       continue;
     }
@@ -125,10 +145,7 @@ export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb, ag
   if (baixas < LEITURAS_BAIXAS) return null;
   baixas = 0;
   const url = configOllama().url;
-  const carregados = await fetch(`${url}/api/ps`, { signal: AbortSignal.timeout(5000) })
-    .then((r) => r.json() as Promise<{ models?: { name: string; size: number }[] }>)
-    .then((j) => (j.models ?? []).sort((a, b) => b.size - a.size))
-    .catch(() => []);
+  const carregados = await carregadosNoOllama();
   const instalados = await modelosOllamaInstalados();
   const emUso = modelosEmUso();
   for (const m of carregados) {
