@@ -44,3 +44,18 @@ test("histórico: as mensagens mais recentes primeiro até caber no limite", () 
   const h = historicoEmTexto([m(1, "voce", "a".repeat(30_000)), m(2, "agente", "oi"), m(3, "voce", "tudo bem?")], "Rafael");
   assert.equal(h, "[Rafael]: oi\n\n[CEO]: tudo bem?", "a mensagem gigante e antiga fica de fora");
 });
+
+test("conversa: artifact salvo vira marcador e arquivo servível; anexos só do próprio Hefesto", async () => {
+  const { salvarArtifact, caminhoDoArtifact, criarConversa, listarMensagens, enviarMensagem, pararConversa } = await import("./conversas.ts");
+  const c = criarConversa({ agente: "pm" });
+  const marcador = salvarArtifact(c.id, "Gráfico | vendas", "<html><body>oi</body></html>");
+  assert.match(marcador, /^\[\[artifact:\/api\/conversas\/\d+\/artifacts\/1\.html\|Gráfico {3}vendas\]\]$/);
+  assert.ok(caminhoDoArtifact(c.id, "1.html"));
+  assert.equal(caminhoDoArtifact(c.id, "../../segredo.html"), null);
+  // Sem provedor configurado a resposta falha, mas a mensagem do CEO fica com os anexos válidos.
+  enviarMensagem(c.id, "veja", { imagens: ["/api/midia/x.png", "https://fora.com/y.png"], arquivos: [{ url: "/api/midia/arquivos/a.pdf", nome: "a.pdf" }, { url: "file:///etc/passwd", nome: "p" }] });
+  pararConversa(c.id);
+  const m = listarMensagens(c.id)[0]!;
+  assert.deepEqual(m.imagens, ["/api/midia/x.png"]);
+  assert.deepEqual(m.arquivos?.map((a) => a.nome), ["a.pdf"]);
+});

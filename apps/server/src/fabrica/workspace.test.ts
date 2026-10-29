@@ -97,3 +97,29 @@ describe("pasta do projeto que guarda o repositório numa subpasta", () => {
     assert.doesNotMatch(git(repo, "branch", "--list"), /empresa\//, "não cria branch");
   });
 });
+
+describe("voltar para uma versão", () => {
+  test("o código volta para o commit da versão escolhida; arquivos das rodadas seguintes saem", async () => {
+    const { commitar, voltarParaVersao } = await import("./workspace.ts");
+    const repo = repoNovo();
+    const c = novoCard("Voltar atrás");
+    const wt = await garantirWorktree(c, repo, 1);
+    writeFileSync(join(wt.caminho, "a.txt"), "versao 1\n");
+    const v1 = await commitar(wt, "dev-frontend", "v1");
+    writeFileSync(join(wt.caminho, "a.txt"), "versao 2\n");
+    const v2 = await commitar(wt, "dev-frontend", "v2");
+    writeFileSync(join(wt.caminho, "solto.txt"), "rodada 3 sem entrega\n");
+    const entregas = [
+      { versao: 1, conteudo: `ok\n**Código:** branch \`${wt.branch}\`, commit ${v1}` },
+      { versao: 2, conteudo: `ok\n**Código:** branch \`${wt.branch}\`, commit ${v2}` },
+      { versao: 3, conteudo: "sem código nesta versão" },
+    ];
+    const r = await voltarParaVersao(c.id, 1, entregas);
+    assert.equal(r.commit, v1);
+    assert.equal(git(wt.caminho, "show", "HEAD:a.txt"), "versao 1");
+    assert.ok(!existsSync(join(wt.caminho, "solto.txt")), "arquivo novo das rodadas seguintes saiu");
+    // Versão sem commit próprio: usa a anterior mais próxima que mexeu no código.
+    assert.equal((await voltarParaVersao(c.id, 3, entregas)).commit, v2);
+    await assert.rejects(voltarParaVersao(c.id, 9, entregas), /Não existe a versão 9/);
+  });
+});

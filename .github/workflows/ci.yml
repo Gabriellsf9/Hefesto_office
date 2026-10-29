@@ -31,3 +31,16 @@ jobs:
         run: pnpm --filter @empresa/server test
       - name: Build da interface
         run: pnpm --filter @empresa/web build
+      # Fumaça: o servidor de verdade sobe e responde. Os testes de unidade não pegam erro de inicialização
+      # (uma rota registrada depois do listen derrubou o Hefesto em produção por 5 minutos).
+      - name: Servidor sobe e responde
+        working-directory: apps/server
+        run: |
+          D=$(mktemp -d)
+          EMPRESA_DATA_DIR="$D" EMPRESA_WORKSPACE_DIR="$D/ws" API_PORT=4399 node --import tsx src/index.ts > "$D/srv.log" 2>&1 &
+          for i in $(seq 1 45); do
+            if curl -sf -o /dev/null http://127.0.0.1:4399/api/motor; then echo "subiu em ~$((i*2)) s"; exit 0; fi
+            sleep 2
+          done
+          cat "$D/srv.log"
+          exit 1

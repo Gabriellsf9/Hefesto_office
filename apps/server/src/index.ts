@@ -10,7 +10,7 @@ import { configurarMotor, encerrarMotor, estadoMotor, iniciarMotor, interromper,
 import { pedirParaHelena } from "./agentes/helena.ts";
 import { custoHoje } from "./custo.ts";
 import { configurarGatilho, listarGatilhos, type GatilhoId } from "./gatilhos.ts";
-import { codigoDoCard, descartar, mesclar, raizDaCopiaDoCard } from "./fabrica/workspace.ts";
+import { codigoDoCard, descartar, mesclar, raizDaCopiaDoCard, voltarParaVersao } from "./fabrica/workspace.ts";
 import { iniciarPrevia, lerPrevia, pararPrevia, pararTodasPrevias } from "./fabrica/previa.ts";
 import { editarPeca, iniciarLembretesDeMarketing, listarPecas, marcarPublicado } from "./marketing.ts";
 import { configurarConexao, conexaoDoProjeto, removerConexao } from "./areas/dados.ts";
@@ -57,7 +57,7 @@ import { mimeDe, nomeArquivoValido, nomeOriginal, PASTA_ARQUIVOS, salvarArquivo 
 import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  abrirBug, aprovar, aprovarLote, comentarComoCeo, criarCard, devolver, editarCard, ErroCard, lerCard, liberarGasto, listarCards, listarComentarios, listarEntregas, mover,
+  abrirBug, aprovar, aprovarLote, comentar, comentarComoCeo, criarCard, devolver, editarCard, ErroCard, lerCard, liberarGasto, listarCards, listarComentarios, listarEntregas, mover,
   removerCard, removerCardsDemo, type NovoCard,
 } from "./tarefas.ts";
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
@@ -68,7 +68,8 @@ import { criarRaioX, vincularPasta } from "./projetoNovo.ts";
 import { arquivoDaCopia, lerArquivoDaCopia, pedidoLocal } from "./copiaHttp.ts";
 import { limparEstacoes } from "./fabrica/estacao.ts";
 import { lerTarefasDoAgente } from "./agentes/tarefasDoAgente.ts";
-import { apagarConversa, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa } from "./conversas.ts";
+import { registrarPrDoCard, sincronizarGithub } from "./fabrica/cicloGithub.ts";
+import { apagarConversa, caminhoDoArtifact, criarConversa, editarConversa, enviarMensagem, listarConversas, listarMensagens as listarMensagensDaConversa, pararConversa, pastaDaConversa } from "./conversas.ts";
 import { listarIntegracoes } from "./integracoes.ts";
 import { configAutonomia, configurarAutonomia, desfazerDecisao, iniciarAutonomia, listarDecisoes, resumoDoDia } from "./autonomia.ts";
 import { montarPainel, configRelatorio, definirRelatorio, mandarRelatorio, iniciarRelatorioDiario } from "./painel.ts";
@@ -77,7 +78,7 @@ import { MODELOS_DE_PROJETO, criarProjetoDoModelo } from "./modelosDeProjeto.ts"
 import { relatorioParaCliente } from "./relatorioCliente.ts";
 import { limparCopiasAntigas, migrarCopiasParaWorkspace } from "./fabrica/workspace.ts";
 import { testarCard } from "./fabrica/testes.ts";
-import { abrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
+import { abrirPullRequest, aoAbrirPullRequest, configurarGithub, estadoGithub } from "./fabrica/github.ts";
 import { listarEvals, rodarEvals, tarefasDeEval, apagarCaso, importarCasos, listarCasos } from "./evals.ts";
 import { testarModelo } from "./agentes/compat.ts";
 import { conferirMetricas, conferirSentry, configurarProducao, definirMetrica, estadoProducao, iniciarProducao, metricaDoCard, previaPublicadaDo, publicarPrevia, registrarResultadoDaMetrica, vigiarDepoisDoMerge, vincularProjeto, vinculoDoProjeto } from "./fabrica/producao.ts";
@@ -228,6 +229,8 @@ app.post<{ Params: { id: string } }>("/api/autonomia/decisoes/:id/desfazer", asy
   }
 });
 app.get("/api/github", async () => estadoGithub());
+// Sincronizar o ciclo do GitHub agora (issues, revisões e CI), sem esperar os 5 minutos.
+app.post("/api/github/sincronizar", async () => sincronizarGithub());
 app.put<{ Body: { token?: string | null } }>("/api/github", async (req) => configurarGithub(typeof req.body?.token === "string" ? req.body.token : null));
 app.get("/api/evals", async () => listarEvals());
 app.get("/api/evals/tarefas", async () => tarefasDeEval());
@@ -258,10 +261,26 @@ app.delete<{ Params: { id: string } }>("/api/conversas/:id", async (req) => {
   return listarConversas();
 });
 app.get<{ Params: { id: string } }>("/api/conversas/:id/mensagens", async (req) => listarMensagensDaConversa(idDe(req.params.id)));
-app.post<{ Params: { id: string }; Body: { texto?: string } }>("/api/conversas/:id/mensagens", async (req) => {
+app.post<{ Params: { id: string }; Body: { texto?: string; imagens?: string[]; arquivos?: { url: string; nome: string }[] } }>("/api/conversas/:id/mensagens", async (req) => {
   const texto = req.body?.texto?.trim();
   if (!texto) throw new ErroCard("Escreva a mensagem.");
-  return enviarMensagem(idDe(req.params.id), texto.slice(0, 20_000));
+  return enviarMensagem(idDe(req.params.id), texto.slice(0, 20_000), { imagens: req.body?.imagens, arquivos: req.body?.arquivos });
+});
+// Artifact da conversa: a página roda isolada (CSP sandbox: sem acesso ao Hefesto, aos cookies ou à rede).
+app.get<{ Params: { id: string; nome: string } }>("/api/conversas/:id/artifacts/:nome", async (req, reply) => {
+  const c = caminhoDoArtifact(idDe(req.params.id), req.params.nome);
+  if (!c) return reply.code(404).send("Artifact não encontrado.");
+  return reply
+    .header("content-type", "text/html; charset=utf-8")
+    .header("content-security-policy", "sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:")
+    .header("x-content-type-options", "nosniff")
+    .send(createReadStream(c));
+});
+// Arquivos que a sandbox de código da conversa gerou (gráficos, planilhas), para a tela mostrar e baixar.
+app.get<{ Params: { id: string; "*": string } }>("/api/conversas/:id/arquivos/*", async (req, reply) => {
+  const arq = await arquivoDaCopia(pastaDaConversa(idDe(req.params.id)), req.params["*"]);
+  if (!arq) return reply.code(404).send("Não encontrado.");
+  return reply.header("content-type", arq.tipo).header("x-content-type-options", "nosniff").send(lerArquivoDaCopia(arq.caminho));
 });
 app.post<{ Params: { id: string } }>("/api/conversas/:id/parar", async (req) => {
   pararConversa(idDe(req.params.id));
@@ -374,6 +393,16 @@ app.post<{ Params: { id: string }; Body: { cliente?: string } }>("/api/projetos/
 );
 app.get<{ Params: { id: string } }>("/api/cards/:id/comentarios", async (req) => listarComentarios(idDe(req.params.id)));
 app.get<{ Params: { id: string } }>("/api/cards/:id/tarefas-agente", async (req) => lerTarefasDoAgente(idDe(req.params.id)));
+// Voltar o código do card para uma versão entregue: para o agente, faz o reset da cópia e descarta a conversa salva.
+app.post<{ Params: { id: string }; Body: { versao?: number } }>("/api/cards/:id/voltar", async (req) => {
+  const id = idDe(req.params.id);
+  const versao = Number(req.body?.versao);
+  if (!Number.isInteger(versao) || versao < 1) throw new ErroCard("Informe a versão.");
+  interromper(id, "o CEO voltou o código para uma versão anterior");
+  const { commit } = await voltarParaVersao(id, versao, listarEntregas(id));
+  comentar(id, "voce", "comentario", `↩️ Voltei o código para a versão ${versao} (commit ${commit}). Continue a partir dela.`);
+  return { commit };
+});
 app.get<{ Params: { id: string } }>("/api/cards/:id/entregas", async (req) => listarEntregas(idDe(req.params.id)));
 app.post<{ Params: { id: string }; Body: { texto: string } }>("/api/cards/:id/comentarios", async (req) => {
   const texto = req.body?.texto?.trim();
@@ -823,6 +852,9 @@ void migrarCopiasParaWorkspace().then((n) => n && console.log(`${n} cópia(s) de
 setInterval(() => void limparCopiasAntigas().catch((e) => console.error("Limpeza de cópias:", e)), 3600_000);
 // Estações de trabalho paradas há horas saem do Docker dos agentes (a cópia do card continua).
 setInterval(() => void limparEstacoes().catch((e) => console.error("Limpeza de estações:", e)), 3600_000);
+// Ciclo com o GitHub (com o token cadastrado): issues com a etiqueta hefesto viram cards; revisão e CI vermelho voltam ao card.
+aoAbrirPullRequest.push((id, pr) => pr && registrarPrDoCard(id, pr.dono, pr.nome, pr.numero));
+setInterval(() => void sincronizarGithub().catch((e) => console.error("Ciclo do GitHub:", e)), 5 * 60_000).unref();
 iniciarLembretesDeMarketing();
 iniciarMonitoramento();
 iniciarVigia();

@@ -195,6 +195,8 @@ export interface MensagemConversa {
   ts: number;
   modelo?: string | null;
   custoUsd?: number;
+  imagens?: string[];
+  arquivos?: { url: string; nome: string }[];
 }
 
 /** Um passo da lista de tarefas que o agente mantém no card (como o TodoWrite do Claude Code). */

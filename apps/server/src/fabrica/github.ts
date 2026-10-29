@@ -87,9 +87,9 @@ export async function abrirPullRequest(cardId: number): Promise<{ url: string; n
     body: `${e?.resumo ?? ""}\n\n## Critérios de aceite\n${card.criterios || "(nenhum)"}\n\n---\nAberto pelo Hefesto (${card.chave}), aprovado pelo CEO.`,
   });
   comentar(card.id, "voce", "comentario", `Pull request #${pr.number} aberto no GitHub: ${pr.html_url}`);
-  for (const f of aoAbrirPullRequest) f(card.id);
+  for (const f of aoAbrirPullRequest) f(card.id, { dono: gh.dono, nome: gh.nome, numero: pr.number });
   return { url: pr.html_url, numero: pr.number };
 }
 
 /** Quem quer saber quando um PR foi aberto (o monitoramento de produção começa a vigiar). */
-export const aoAbrirPullRequest: ((cardId: number) => void)[] = [];
+export const aoAbrirPullRequest: ((cardId: number, pr?: { dono: string; nome: string; numero: number }) => void)[] = [];
