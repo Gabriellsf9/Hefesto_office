@@ -156,6 +156,13 @@ function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
     const t = textoDe(msgs[i]!.content);
     if (t.length > CORTE_RECENTE) msgs[i]!.content = `${t.slice(0, CORTE_RECENTE)}\n[…cortado para caber no contexto. Rode a ferramenta de novo se precisar do resto.]`;
   }
+  // Ainda não coube: os textos longos que o próprio agente mandou nas chamadas já executadas (um arquivo inteiro,
+  // um trecho grande de editar_arquivo) encurtam, da mais antiga para a mais recente. No card 20 eram eles que
+  // deixavam a conversa acima do limite mesmo depois do resumo, e o card ficava "esperando um modelo com espaço".
+  for (const m of msgs) {
+    if (tokensDe(msgs, porToken) <= limiteTokens) return;
+    encurtarArgumentos(m);
+  }
   // Nem assim: o último resultado (ex.: o mapa do projeto inteiro) fica só com o que cabe. Sem isso o card esperava
   // "um modelo com espaço", recomeçava, pedia o mesmo mapa e travava de novo.
   const ultimo = ferramentas.at(-1);
@@ -221,20 +228,26 @@ export function limparResultadosAntigos(msgs: Msg[], manter: number): boolean {
     }
   }
   for (let i = 0; i < ate; i++) {
-    const m = msgs[i]!;
-    if (m.role !== "assistant" || !m.tool_calls) continue;
-    for (const c of m.tool_calls) {
-      if (c.function.arguments.length <= 1500) continue;
-      const args = argumentos(c.function.arguments);
-      if (!args) continue;
-      for (const [k, v] of Object.entries(args)) {
-        if (typeof v === "string" && v.length > 500) args[k] = `[${v.length} caracteres já enviados nesta chamada; o resultado está gravado. Leia de novo se precisar.]`;
-      }
-      c.function.arguments = JSON.stringify(args);
-      limpou = true;
-    }
+    if (encurtarArgumentos(msgs[i]!)) limpou = true;
   }
   return limpou;
+}
+
+/** Encurta os textos longos que o agente mandou nas chamadas de uma resposta já executada. Diz se mudou algo. */
+function encurtarArgumentos(m: Msg): boolean {
+  if (m.role !== "assistant" || !m.tool_calls) return false;
+  let mudou = false;
+  for (const c of m.tool_calls) {
+    if (c.function.arguments.length <= 1500) continue;
+    const args = argumentos(c.function.arguments);
+    if (!args) continue;
+    for (const [k, v] of Object.entries(args)) {
+      if (typeof v === "string" && v.length > 500) args[k] = `[${v.length} caracteres já enviados nesta chamada; o resultado está gravado. Leia de novo se precisar.]`;
+    }
+    c.function.arguments = JSON.stringify(args);
+    mudou = true;
+  }
+  return mudou;
 }
 
 /** Fração mínima da conversa que o resumo precisa substituir para valer a chamada. */
