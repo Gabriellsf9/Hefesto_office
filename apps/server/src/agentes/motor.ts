@@ -44,7 +44,7 @@ import { modeloEscalonado, modeloMaisBarato, registrarResultadoAB, registrarSomb
 import { arquivosDoDiff, relatorioVarredura, varrerSegredos, verificarLicencas } from "../confianca/varredura.ts";
 import { atacar, escolherAtacante, jaAtacado, precisaDeAtaque } from "../confianca/atacante.ts";
 import { auditar } from "../confianca/auditoria.ts";
-import { ETIQUETA_ORCAMENTO_PROJETO, projetoSemOrcamento } from "../planejamento.ts";
+import { ETIQUETA_ORCAMENTO_PROJETO, ETIQUETA_REPLANEJAR, projetoSemOrcamento } from "../planejamento.ts";
 import { ferramentaDeDelegar, ferramentaDePesquisa } from "./pesquisa.ts";
 import { ferramentaDeTarefas } from "./tarefasDoAgente.ts";
 import { ferramentasDeEstacao } from "../fabrica/estacao.ts";
@@ -878,8 +878,11 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
   const modeloAutor = esc.modelo;
   // No modelo local (contexto curto) o card grande pode virar partes pequenas, uma vez só e nunca numa parte.
   const local = provedorDe(modeloAutor).provedor === "ollama";
+  // Coordenação (diretoria, replanejamento) não se divide: a Helena partiu o replanejamento do EMP-33 em três cards
+  // (duas "auditorias" e o plano) para o que é um documento só.
   const podeDividir =
-    local && !card.etiquetas.includes(ETIQUETA_PARTE) && profundidade(card) < MAX_PROFUNDIDADE &&
+    local && card.sala !== "diretoria" && !card.etiquetas.includes(ETIQUETA_REPLANEJAR) &&
+    !card.etiquetas.includes(ETIQUETA_PARTE) && profundidade(card) < MAX_PROFUNDIDADE &&
     !listarCards().some((c) => c.paiId === card.id && c.etiquetas.includes(ETIQUETA_PARTE));
 
   const plano = estadoDoPlano(card);
