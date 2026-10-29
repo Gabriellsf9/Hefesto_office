@@ -166,8 +166,13 @@ function aparar(msgs: Msg[], limiteTokens: number, porToken = 3) {
 }
 const CORTE_RECENTE = 3000;
 
-/** Fração do limite do modelo local que o pedido inicial pode ocupar. */
-const TETO_PEDIDO_LOCAL = 0.55;
+/**
+ * Fração do limite do modelo local que o pedido inicial pode ocupar. Com 55%, o começo fixo (instruções + pedido)
+ * deixava ~4 mil tokens de folga antes de compactar, e a compactação não reduzia abaixo dele.
+ */
+const TETO_PEDIDO_LOCAL = 0.4;
+/** Fração mínima da conversa que o resumo precisa substituir para valer a chamada. */
+const MEIO_MINIMO_PARA_RESUMIR = 0.2;
 const AVISO_CORTE = "\n…(cortado para caber no modelo local; leia o resto com ler_card, se precisar)";
 
 /**
@@ -535,7 +540,10 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
     // resumir a cada passo não ajuda (no card 11 compactou duas vezes em 30 s); aí o aparar resolve.
     if (tokensDe(msgs, porToken) > Math.max(limiteTokens * LIMIAR_COMPACTAR, tamanhoAposCompactar + limiteTokens * 0.3)) {
       const corte = pontoDeCorte(msgs);
-      if (corte) {
+      // Só resume se o meio (o que o resumo substitui) pesa: com o começo fixo grande, resumir um meio pequeno gastava
+      // 20-30 s para tirar 3% da conversa (15% do tempo do modelo local ia nisso). Aí o aparar resolve sozinho.
+      const meio = corte ? tokensDe(msgs.slice(2, corte), porToken) : 0;
+      if (corte && meio >= tokensDe(msgs, porToken) * MEIO_MINIMO_PARA_RESUMIR) {
         const t0 = Date.now();
         const pedido = pedidoDeResumo(msgs.slice(2, corte), Math.floor(limiteTokens * 0.6 * porToken));
         try {
