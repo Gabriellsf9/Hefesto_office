@@ -64,7 +64,11 @@ Pelo próprio computador nunca pede senha. Esqueceu a senha? Troque ou desligue 
 - **Operação → Hoje:** o que está rodando, a fila e os alertas.
 - **Operação → Medição:** entregas por dia, % sem você precisar entrar (meta: 90%), custo por card e comparação de modelos.
 - **Operação → Chamadas de IA:** cada chamada, com tokens, tempo e custo.
-- **Alertas:** card parado, erro repetido, loop, chamada lenta, gasto do dia, fila parada e pouca memória. Também chegam no chat e no Telegram, se ligado.
+- **Alertas:** card parado, card girando (várias entregas sem andar), erro repetido, loop, chamada lenta, gasto do dia, fila parada e pouca memória. Também chegam no chat e no Telegram, se ligado.
+- **Operação → Piloto automático:**
+  - Com o Piloto ligado, um Diretor (CTO ou Helena) revisa e decide no seu lugar o que é interno.
+  - Com **Aprovar e liberar sem revisão**, uma regra sua, sem IA, aprova tudo o que chega para você e libera os cards parados no limite de gasto. Só os cards marcados `so-ceo` ficam com você.
+  - Toda decisão pode ser reaberta por 24 h.
 
 ## 8. Quando algo dá errado
 
@@ -80,7 +84,12 @@ Pelo próprio computador nunca pede senha. Esqueceu a senha? Troque ou desligue 
 **Memória:** a vigia tem duas defesas.
 
 - Quando o Ollama recusa carregar um modelo por falta de memória, o agente passa sozinho para o próximo modelo menor. Isso funciona sempre, inclusive no Docker.
-- Quando o Hefesto roda direto no computador (fora do Docker), ela também lê a memória livre a cada 30 s. Abaixo de 1,5 GB duas vezes seguidas, troca os agentes do maior modelo carregado e descarrega esse modelo. O limite muda com `HEFESTO_RAM_MIN_GB`.
+- Ela também lê a memória livre a cada 30 s. Abaixo de 1,5 GB duas vezes seguidas, troca os agentes do maior modelo carregado e descarrega esse modelo. O limite muda com `HEFESTO_RAM_MIN_GB`.
+- **No Docker**, o contêiner não enxerga a memória do computador. Deixe este script rodando no próprio computador (por exemplo, ao iniciar o Windows):
+
+  ```bash
+  node apps/server/scripts/memoria-do-computador.mjs
+  ```
 
 ## 9. Atualizar e fazer backup
 
