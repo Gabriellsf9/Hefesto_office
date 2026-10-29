@@ -1138,7 +1138,10 @@ ${texto_}`);
       continuacoes.set(card.id, n);
       // Dá a vez: o card mais antigo voltava à fila e pegava o modelo local na hora, segurando-o por até 6
       // continuações seguidas enquanto as outras partes esperavam. Com a pausa curta, quem está na fila entra antes.
-      repassadosEm.set(card.id, Date.now() + PAUSA_DEPOIS_DE_CONTINUAR_MS);
+      // Os outros cards do mesmo agente esperam junto: senão a vez ia para a parte irmã (o Rafael alternava entre os
+      // cards 14 e 15 a cada 3 minutos, relendo 20 mil tokens a cada troca) e os outros agentes continuavam na fila.
+      const ate = Date.now() + PAUSA_DEPOIS_DE_CONTINUAR_MS;
+      for (const c of listarCards()) if (c.id === card.id || (c.dono === card.dono && !emAndamento.has(c.id))) repassadosEm.set(c.id, Math.max(ate, repassadosEm.get(c.id) ?? 0));
       postFeed(card.sala, agente.id, `${card.chave}: ${agente.nome} usou os passos desta vez e continua de onde parou (${n}/${MAX_CONTINUACOES})`);
       throw new ErroContinua(`continua (${n}/${MAX_CONTINUACOES})`);
     }

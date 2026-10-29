@@ -279,3 +279,49 @@ ${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
     setSetting("modelos_agentes", "{}");
   }
 });
+
+test("ao dar a vez, a vez vai para outro agente (não para a parte irmã do mesmo agente)", async () => {
+  const ordem: string[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const pedido = JSON.parse(corpo) as { messages: { content: string }[]; tools?: { function: { name: string } }[] };
+      const texto = pedido.messages.map((m) => String(m.content)).join(" ");
+      const deQuem = texto.includes("Irmã A") ? "A" : texto.includes("Irmã B") ? "B" : texto.includes("Card de outro agente") ? "outro" : "sobra";
+      if (ordem.at(-1) !== deQuem) ordem.push(deQuem);
+      const nomes = new Set((pedido.tools ?? []).map((t) => t.function.name));
+      const chamada = deQuem === "outro" && nomes.has("entregar")
+        ? { name: "entregar", arguments: { resumo: "Pronto", conteudo: `# Entrega
+${"Critérios atendidos. ".repeat(30)}`, autocritica: "Conferi." } }
+        : nomes.has("aprovar") ? { name: "aprovar", arguments: { parecer: "Ok." } } : { name: "buscar_na_memoria", arguments: { consulta: "x" } };
+      res.end(`${JSON.stringify({ message: { content: "", tool_calls: [{ function: chamada }] } })}
+${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}
+`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  setSetting("modelos_agentes", JSON.stringify(Object.fromEntries(agents.map((a) => [a.id, "ollama:modelo-teste"]))));
+  try {
+    const { db } = await import("../db.ts");
+    const fluxo = fluxoPadrao("produto");
+    const a = criarCard({ titulo: "Irmã A", sala: "produto", dono: "pm", nivel: "N0", coluna: colunaDeEntrada(fluxo) });
+    const b = criarCard({ titulo: "Irmã B", sala: "produto", dono: "pm", nivel: "N0", coluna: colunaDeEntrada(fluxo) });
+    const outro = criarCard({ titulo: "Card de outro agente", sala: "produto", dono: "po", nivel: "N0", criterios: "Gherkin", coluna: colunaDeEntrada(fluxo) });
+    db.prepare("UPDATE cards SET criado_em = ? WHERE id = ?").run(1, a.id);
+    db.prepare("UPDATE cards SET criado_em = ? WHERE id = ?").run(2, b.id);
+    db.prepare("UPDATE cards SET criado_em = ? WHERE id = ?").run(3, outro.id); // as irmãs são as mais antigas
+    // Cards que sobraram dos testes anteriores deste arquivo ficam fora da fila.
+    db.prepare("UPDATE cards SET bloqueado = 1 WHERE id NOT IN (?, ?, ?)").run(a.id, b.id, outro.id);
+    iniciarMotor();
+    for (let i = 0; i < 400 && !ordem.includes("outro"); i++) await esperar(100);
+    assert.deepEqual(ordem.slice(0, 2), ["A", "outro"], `ordem: ${ordem.join(" → ")}`);
+  } finally {
+    await encerrarMotor(5000);
+    servidor.close();
+    setSetting("provedores", "{}");
+    setSetting("modelos_agentes", "{}");
+  }
+});
