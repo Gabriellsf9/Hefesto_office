@@ -1393,6 +1393,9 @@ async function validar(client: Anthropic | null, inicial: Card, validador: Agent
     const urlQa = projeto?.urlLocal ?? (ambienteAtivo() ? `http://${HOST_DO_AMBIENTE}` : null);
     if (urlQa && validador.id.startsWith("qa")) ferramentas.push(ferramentaDeNavegador(card.id, validador.id, urlQa));
     const c = await codigoDoCard(card);
+    // No modelo local o diff anexado é menor: com 20 mil caracteres a validação do card 11 (páginas HTML novas) não
+    // cabia no contexto e esperava o Claude, que estava fora do ar. O resto ele lê com ver_diff.
+    const tetoDiff = local ? 6_000 : 20_000;
     if (c) mensagem += `
 
 ## Código desta entrega (branch ${c.branch})
@@ -1401,8 +1404,8 @@ ${c.stat}
 \`\`\`
 
 \`\`\`diff
-${c.patch.slice(0, 20_000)}
-\`\`\`${podeVerificar() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
+${c.patch.slice(0, tetoDiff)}
+\`\`\`${c.patch.length > tetoDiff ? `\n(diff cortado em ${tetoDiff} de ${c.patch.length} caracteres: veja o resto com ver_diff)` : ""}${podeVerificar() && validador.ferramentas.includes("terminal") ? "\n\nRode os testes com rodar_comando antes de decidir." : ""}`;
   } else if (projeto) ferramentas.push(...ferramentasDeProjeto(projeto.caminho, { enxuto: local }));
 
   const modeloValidador = modeloDoAgente(validador, etapaDoCodigoDe(card) !== null ? "validador-codigo" : "validador");

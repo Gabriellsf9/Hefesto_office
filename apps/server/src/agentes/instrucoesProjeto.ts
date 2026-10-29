@@ -51,10 +51,19 @@ export function instrucoesDoProjeto(pasta: string | null | undefined, max = 12_0
   if (salvo?.chave === chave) return salvo.texto;
   let resto = max;
   const partes: string[] = [];
+  // Projetos costumam repetir as mesmas regras no AGENTS.md e no CLAUDE.md (no Parliamo, 71 de 123 linhas): a linha
+  // que já veio num arquivo anterior não entra de novo (economiza contexto, que no modelo local é curto).
+  const vistas = new Set<string>();
   for (const a of arquivos) {
     if (resto <= 200) break;
-    const trecho = a.texto.trim().slice(0, resto);
-    partes.push(`### ${a.nome}\n${trecho}${a.texto.length > resto ? `\n…(cortado: leia o arquivo inteiro com ler_arquivo ${a.nome})` : ""}`);
+    const linhas = a.texto.split("\n");
+    const novas = linhas.filter((l) => l.trim().length <= 20 || !vistas.has(l.trim()));
+    for (const l of linhas) if (l.trim().length > 20) vistas.add(l.trim());
+    const texto = novas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    if (!novas.some((l) => l.trim().length > 20)) continue; // só repetia o anterior (sobraram títulos)
+    const trecho = texto.slice(0, resto);
+    const repetidas = linhas.length - novas.length;
+    partes.push(`### ${a.nome}${repetidas ? ` (sem as ${repetidas} linhas iguais às de cima)` : ""}\n${trecho}${texto.length > resto ? `\n…(cortado: leia o arquivo inteiro com ler_arquivo ${a.nome})` : ""}`);
     resto -= trecho.length;
   }
   const texto = `## Instruções do próprio projeto para agentes (siga como regra do projeto)\n${partes.join("\n\n")}`;

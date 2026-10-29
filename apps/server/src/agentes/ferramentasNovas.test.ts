@@ -78,3 +78,19 @@ test("instruções do projeto: AGENTS.md e CLAUDE.md, também quando o repositó
   assert.ok(t.length < 3400);
   assert.equal(instrucoesDoProjeto(mkdtempSync(join(tmpdir(), "sem-"))), "");
 });
+
+test("instruções do projeto: a linha repetida no CLAUDE.md (igual ao AGENTS.md) não entra de novo", async () => {
+  const { instrucoesDoProjeto } = await import("./instrucoesProjeto.ts");
+  const pasta = mkdtempSync(join(tmpdir(), "instr-dup-"));
+  mkdirSync(join(pasta, ".git"), { recursive: true });
+  const regra = "1. **Backend é só Go.** Toda lógica de negócio fica no backend.";
+  writeFileSync(join(pasta, "AGENTS.md"), `# Regras\n\n${regra}\n2. Rode os testes antes de entregar sempre.`);
+  writeFileSync(join(pasta, "CLAUDE.md"), `# Regras\n\n${regra}\n3. Só no Claude: use o modo plano em mudanças grandes.`);
+  const t = instrucoesDoProjeto(pasta);
+  assert.equal(t.split(regra).length - 1, 1, "a regra aparece uma vez só");
+  assert.match(t, /### CLAUDE\.md \(sem as 1 linhas iguais às de cima\)/);
+  assert.match(t, /Só no Claude: use o modo plano/);
+  // Arquivo que só repete o anterior nem aparece.
+  writeFileSync(join(pasta, "CLAUDE.md"), `# Regras\n\n${regra}`);
+  assert.doesNotMatch(instrucoesDoProjeto(pasta), /### CLAUDE\.md/);
+});
