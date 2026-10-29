@@ -16,6 +16,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS memoria_rebaixamentos (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, agentes TEXT NOT NULL, de TEXT NOT NULL, para TEXT NOT NULL, motivo TEXT NOT NULL
 )`);
 
+try {
+  db.exec("ALTER TABLE memoria_rebaixamentos ADD COLUMN restaurado INTEGER NOT NULL DEFAULT 0");
+} catch {
+  /* já existe */
+}
+
 export const ERRO_DE_MEMORIA = /system memory|out of memory|insufficient memory|not enough memory|cudaMalloc|failed to allocate|unable to allocate|memory layout cannot be allocated/i;
 export const LIMITE_GB = Number(process.env.HEFESTO_RAM_MIN_GB ?? 1.5);
 
@@ -38,7 +44,7 @@ export function rebaixar(de: string, para: string, motivo: string, agentes: stri
 }
 
 export function rebaixamentosRecentes(desde: number): { id: number; ts: number; agentes: string[]; de: string; para: string; motivo: string }[] {
-  return (db.prepare("SELECT * FROM memoria_rebaixamentos WHERE ts >= ? ORDER BY id").all(desde) as { id: number; ts: number; agentes: string; de: string; para: string; motivo: string }[]).map(
+  return (db.prepare("SELECT * FROM memoria_rebaixamentos WHERE ts >= ? AND restaurado = 0 ORDER BY id").all(desde) as { id: number; ts: number; agentes: string; de: string; para: string; motivo: string }[]).map(
     (r) => ({ ...r, agentes: r.agentes.split(",") }),
   );
 }
@@ -70,10 +76,40 @@ export function leituraDeMemoria(): { livreGb: number; fonte: "computador" | "es
   return null;
 }
 
-/** Uma leitura. Exportada com a memória como parâmetro para o teste. */
-export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb): Promise<string | null> {
+// Volta sozinho: com a memória sobrando (o tamanho do modelo original + LIMITE_GB + 1 GB) por 30 minutos seguidos,
+// os agentes que ainda estão no menor voltam ao original. Antes ficavam no menor (mais fraco) até o CEO trocar à mão.
+export const FOLGA_PARA_VOLTAR_MS = 30 * 60_000;
+let folgaDesde: number | null = null;
+
+async function talvezVoltar(livreGb: number, agora: number): Promise<string | null> {
+  const r = db.prepare("SELECT * FROM memoria_rebaixamentos WHERE restaurado = 0 ORDER BY id DESC LIMIT 1").get() as
+    | { id: number; agentes: string; de: string; para: string }
+    | undefined;
+  if (!r) {
+    folgaDesde = null;
+    return null;
+  }
+  const tamanho = (await modelosOllamaInstalados()).find((m) => m.nome === r.de)?.tamanhoGb ?? 8;
+  if (livreGb < tamanho + LIMITE_GB + 1) {
+    folgaDesde = null;
+    return null;
+  }
+  folgaDesde ??= agora;
+  if (agora - folgaDesde < FOLGA_PARA_VOLTAR_MS) return null;
+  // Só quem continua no menor (se o CEO trocou à mão, fica como ele escolheu).
+  const atuais = escolhas();
+  for (const a of r.agentes.split(",")) if (atuais[a] === `ollama:${r.para}`) escolherModelo(a, `ollama:${r.de}`);
+  db.prepare("UPDATE memoria_rebaixamentos SET restaurado = 1 WHERE id = ?").run(r.id);
+  folgaDesde = null;
+  return r.de;
+}
+
+/** Uma leitura. Exportada com a memória e a hora como parâmetros para o teste. Devolve o modelo para onde trocou. */
+export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb, agora = Date.now()): Promise<string | null> {
   if (livreGb === undefined) return null;
   baixas = livreGb < LIMITE_GB ? baixas + 1 : 0;
+  if (baixas === 0) return talvezVoltar(livreGb, agora);
+  folgaDesde = null;
   if (baixas < 2) return null;
   baixas = 0;
   const url = configOllama().url;
