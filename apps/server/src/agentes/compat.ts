@@ -172,6 +172,8 @@ const CORTE_RECENTE = 3000;
  * deixava ~4 mil tokens de folga antes de compactar, e a compactação não reduzia abaixo dele.
  */
 const TETO_PEDIDO_LOCAL = 0.4;
+/** Erro do Ollama quando o modelo escreve uma chamada de ferramenta ilegível (não é queda do servidor). */
+const CHAMADA_MALFORMADA = /error parsing tool call|XML syntax error|failed to parse (tool|function)|invalid tool call/i;
 /** Rodadas por execução no modelo local quando quem chama não define (no Claude e nas APIs, 16). */
 const RODADAS_LOCAIS = 40;
 /** Resultados de ferramenta mais recentes que ficam inteiros quando os antigos são limpos. */
@@ -566,6 +568,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   // No modelo local cada passo não custa dinheiro e o 4b faz 16 em ~30 s: com 16, o card "continuava" numa execução
   // nova a cada meio minuto, e cada uma começava resumindo a conversa retomada.
   const maxRodadas = o.maxRodadas ?? (provedor === "ollama" ? RODADAS_LOCAIS : 16);
+  let malformadas = 0;
   for (let rodada = 0; rodada < maxRodadas; rodada++) {
     if (o.sinal?.aborted) throw interrompido();
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
@@ -653,8 +656,18 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
       r = provedor === "ollama" ? await chamarOllama(nome, msgs, tools, o.esforco, o.sinal, onTexto, contextoLocal) : await chamarCompat(provedor as "openai" | "gemini", nome, msgs, tools, o.sinal, onTexto);
     } catch (e) {
       if (o.sinal?.aborted) throw interrompido();
+      // O modelo escreveu uma chamada de ferramenta que o Ollama não conseguiu ler (500 "error parsing tool call"):
+      // é erro desta resposta, não do servidor. Antes marcava o Ollama inteiro fora do ar e parava todo o trabalho
+      // local; agora o agente é avisado e tenta de novo (3 seguidas viram falha deste card).
+      if (provedor === "ollama" && e instanceof ErroProvedor && CHAMADA_MALFORMADA.test(e.message) && ++malformadas <= 3) {
+        registrarPasso(replay, { rodada, tipo: "texto", saida: `(Chamada de ferramenta malformada, peço para repetir: ${e.message.slice(0, 160)})` });
+        msgs.push({ role: "user", content: "Sua última chamada de ferramenta veio malformada e não foi executada. Chame a ferramenta de novo, com os argumentos em JSON válido (sem texto solto dentro da chamada)." });
+        continue;
+      }
+      if (e instanceof ErroProvedor && CHAMADA_MALFORMADA.test(e.message)) throw new ErroProvedor(e.message, e.status, false);
       throw e;
     }
+    malformadas = 0;
     if (provedor === "ollama") porToken = calibrarCaracteresPorToken(caracteresEnviados, r.entrada, porToken);
     const usd = provedor === "ollama" ? 0 : registrarUsoTokens(r.entrada, r.saida, precoDe(provedor as "openai" | "gemini"));
     // Mesmo rastreamento do Claude (Operação → Chamadas), com os nomes de parada dele.
