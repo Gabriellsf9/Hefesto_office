@@ -680,3 +680,16 @@ test("três respostas cortadas seguidas no modelo local: libera a vez e espera u
     setSetting("provedores", "{}");
   }
 });
+
+test("leituras: a mesma busca repetida e muitas leituras seguidas ganham um lembrete de avançar", async () => {
+  const { Leituras, LEITURAS_SEGUIDAS } = await import("./compat.ts");
+  const l = new Leituras();
+  assert.equal(l.registrar("buscar_no_codigo", '{"texto": "Get("}'), "");
+  assert.match(l.registrar("buscar_no_codigo", '{ "texto":"Get(" }'), /2ª vez/, "espaços diferentes contam como a mesma chamada");
+  assert.equal(l.registrar("escrever_arquivo", '{"caminho": "a.go"}'), "", "escrever não conta");
+  // Depois de escrever, a contagem de seguidas recomeça.
+  let ultimo = "";
+  for (let i = 0; i < LEITURAS_SEGUIDAS; i++) ultimo = l.registrar("ler_arquivo", JSON.stringify({ caminho: `f${i}.go` }));
+  assert.match(ultimo, /20 leituras e buscas seguidas/);
+  assert.equal(l.registrar("ler_arquivo", '{"caminho": "outro.go"}'), "");
+});

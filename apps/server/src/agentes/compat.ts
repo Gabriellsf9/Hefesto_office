@@ -254,6 +254,36 @@ function encurtarArgumentos(m: Msg): boolean {
   return mudou;
 }
 
+const SO_LEITURA = new Set(["listar_arquivos", "ler_arquivo", "ver_imagem", "mapa_do_codigo", "buscar_no_indice", "historico_git", "buscar_no_codigo", "buscar_na_memoria", "ler_card", "ver_diff"]);
+/** Leituras seguidas, sem escrever nem decidir, antes do lembrete de avançar. */
+export const LEITURAS_SEGUIDAS = 20;
+
+/**
+ * Leituras e buscas da execução: o modelo local, com só os 2 últimos resultados na conversa, buscava "Get(" três vezes
+ * seguidas e relia os mesmos arquivos depois de cada resumo (card 14: 2 horas e o handler pedido ainda não existia).
+ * Repetir a mesma leitura, ou ler 20 vezes seguidas sem agir, ganha um lembrete no resultado.
+ */
+export class Leituras {
+  private vezes = new Map<string, number>();
+  private seguidas = 0;
+  /** Conta a chamada e devolve o lembrete para acrescentar ao resultado (ou ""). */
+  registrar(nome: string, argumentos: string): string {
+    if (!SO_LEITURA.has(nome)) {
+      this.seguidas = 0;
+      return "";
+    }
+    this.seguidas++;
+    const chave = `${nome} ${argumentos.replace(/\s+/g, "")}`;
+    const n = (this.vezes.get(chave) ?? 0) + 1;
+    this.vezes.set(chave, n);
+    if (n >= 2)
+      return `\n\n(Esta é a ${n}ª vez que você faz exatamente esta chamada. Anote na sua resposta, em uma linha, o que precisa deste resultado e avance com o que já sabe, sem buscar de novo.)`;
+    if (this.seguidas % LEITURAS_SEGUIDAS === 0)
+      return `\n\n(Você já fez ${this.seguidas} leituras e buscas seguidas sem escrever nem decidir nada. Já tem o bastante: avance agora (escreva o código, entregue ou decida) e registre como "Premissa:" o que não conseguiu confirmar.)`;
+    return "";
+  }
+}
+
 /** Fração mínima da conversa que o resumo precisa substituir para valer a chamada. */
 const MEIO_MINIMO_PARA_RESUMIR = 0.2;
 const AVISO_CORTE = "\n…(cortado para caber no modelo local; leia o resto com ler_card, se precisar)";
@@ -616,6 +646,7 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
   const maxRodadas = o.maxRodadas ?? (provedor === "ollama" ? RODADAS_LOCAIS : 16);
   let malformadas = 0;
   let cortesSeguidos = 0;
+  const leituras = new Leituras();
   for (let rodada = 0; rodada < maxRodadas; rodada++) {
     if (o.sinal?.aborted) throw interrompido();
     if (o.cardId && rodada > 0 && orcamentoEsgotado()) throw new ErroSemOrcamento("O orçamento de IA de hoje acabou.");
@@ -800,7 +831,8 @@ async function laçoCompat(o: OpcoesAgente): Promise<ResultadoAgente> {
         : { texto: `Os argumentos de ${c.function.name} não são um JSON válido. Chame de novo com um objeto JSON.`, erro: true };
       registrarPasso(replay, { rodada, tipo: "ferramenta", nome: c.function.name, entrada: entrada ?? c.function.arguments, saida: res.texto, erro: res.erro, ms: Date.now() - t1 });
       if (res.fim && !res.erro) fim = true;
-      msgs.push({ role: "tool", tool_call_id: c.id, name: c.function.name, content: res.erro ? `ERRO: ${res.texto}` : res.texto });
+      const aviso = leituras.registrar(c.function.name, c.function.arguments);
+      msgs.push({ role: "tool", tool_call_id: c.id, name: c.function.name, content: (res.erro ? `ERRO: ${res.texto}` : res.texto) + aviso });
       // Resultado de ferramenta só aceita texto: a imagem (print do navegador) vai numa mensagem logo depois.
       if (res.imagem) imagens.push({ type: "image_url", image_url: { url: `data:${res.imagem.media};base64,${res.imagem.base64}` } });
     }
