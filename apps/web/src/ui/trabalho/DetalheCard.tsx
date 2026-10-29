@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2, Undo2, Wallet } from "lucide-react";
+import { Ban, Bug, Check, Copy, Lock, Pencil, RotateCcw, Send, ShieldQuestion, Trash2, Undo2, Wallet } from "lucide-react";
 import { baseDoFluxo, colunaDe, ehCardDeCodigo, fluxos, niveis, prioridades, severidades, tiposCard, type Card, type CardEditavel, type Comentario, type Entrega, type ItemTarefaAgente } from "@empresa/shared";
 import { agentById, agents, rooms } from "@empresa/org";
 import { useStore } from "../../store.ts";
@@ -42,15 +42,30 @@ export function DetalheCard() {
       subtitulo={card && t ? <span className="flex items-center gap-1.5"><IconeTipo tipo={card.tipo} /> {t.nome} · <span className="tabular">{card.chave}</span>{card.demo && <Etiqueta>demo</Etiqueta>}</span> : null}
       titulo={card ? <TituloEditavel key={card.id} card={card} /> : null}
       acoes={card && (
-        <BotaoIcone
-          icone={Trash2}
-          rotulo="Excluir card"
-          tamanho="p"
-          onClick={async () => {
-            if (!(await confirmar({ titulo: `Excluir ${card.chave}?`, texto: "Isso não pode ser desfeito.", confirmar: "Excluir", perigo: true }))) return;
-            await api(`/api/cards/${card.id}`, "DELETE").then(() => avisar(`${card.chave} excluído`)).catch(avisarErro);
-          }}
-        />
+        <>
+          {!["feito", "perdido"].includes(colunaDe(card.fluxo, card.coluna)?.tipo ?? "") && fluxos[card.fluxo]?.colunas.some((c) => c.tipo === "perdido") && (
+            <BotaoIcone
+              icone={Ban}
+              rotulo="Cancelar card"
+              tamanho="p"
+              onClick={async () => {
+                if (!(await confirmar({ titulo: `Cancelar ${card.chave}?`, texto: "Para o trabalho e leva junto os pedidos e partes abertos dele. O histórico fica na coluna Cancelado.", confirmar: "Cancelar card", perigo: true }))) return;
+                await api<{ cancelados: number[] }>(`/api/cards/${card.id}/cancelar`, "POST", {})
+                  .then((r) => avisar(r.cancelados.length > 1 ? `${card.chave} e mais ${r.cancelados.length - 1} cancelados` : `${card.chave} cancelado`))
+                  .catch(avisarErro);
+              }}
+            />
+          )}
+          <BotaoIcone
+            icone={Trash2}
+            rotulo="Excluir card"
+            tamanho="p"
+            onClick={async () => {
+              if (!(await confirmar({ titulo: `Excluir ${card.chave}?`, texto: "Isso não pode ser desfeito.", confirmar: "Excluir", perigo: true }))) return;
+              await api(`/api/cards/${card.id}`, "DELETE").then(() => avisar(`${card.chave} excluído`)).catch(avisarErro);
+            }}
+          />
+        </>
       )}
     >
       {card && <Corpo key={card.id} card={card} />}

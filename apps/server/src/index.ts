@@ -59,7 +59,7 @@ import { mimeDe, nomeArquivoValido, nomeOriginal, PASTA_ARQUIVOS, salvarArquivo 
 import { createReadStream, existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  abrirBug, aprovar, aprovarLote, comentar, comentarComoCeo, criarCard, devolver, editarCard, ErroCard, lerCard, liberarGasto, listarCards, listarComentarios, listarEntregas, mover,
+  abrirBug, aprovar, aprovarLote, cancelarCard, comentar, comentarComoCeo, criarCard, devolver, editarCard, ErroCard, lerCard, liberarGasto, listarCards, listarComentarios, listarEntregas, mover,
   removerCard, removerCardsDemo, type NovoCard,
 } from "./tarefas.ts";
 import { apiKeyHint, clearApiKey, loadApiKey, saveApiKey, validateApiKey } from "./secrets.ts";
@@ -227,6 +227,12 @@ app.delete<{ Params: { id: string } }>("/api/cards/:id", async (req) => {
   interromper(idDe(req.params.id), "o card foi apagado");
   removerCard(idDe(req.params.id));
   return { ok: true };
+});
+// Cancelar guarda o histórico (coluna Cancelado) e leva junto os pedidos e partes ainda abertos do card.
+app.post<{ Params: { id: string }; Body: { motivo?: string } }>("/api/cards/:id/cancelar", async (req) => {
+  const ids = cancelarCard(idDe(req.params.id), "voce", req.body?.motivo?.trim().slice(0, 1000) || "fora do escopo, decisão do CEO.");
+  for (const id of ids) interromper(id, "o card foi cancelado");
+  return { cancelados: ids };
 });
 app.delete("/api/cards-demo", async () => {
   removerCardsDemo();

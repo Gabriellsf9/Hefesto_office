@@ -50,6 +50,7 @@ export const fluxos: Record<FluxoId, Fluxo> = {
       { id: "bug", nome: "Bug", tipo: "bug", sala: "desenvolvimento" },
       { id: "aguardando-ceo", nome: "Aguardando CEO", tipo: "ceo", sala: "diretoria" },
       { id: "concluido", nome: "Concluído", tipo: "feito" },
+      { id: "cancelado", nome: "Cancelado", tipo: "perdido" },
     ],
   },
   marketing: {
@@ -65,6 +66,7 @@ export const fluxos: Record<FluxoId, Fluxo> = {
       { id: "aguardando-ceo", nome: "Aguardando CEO", tipo: "ceo", sala: "diretoria" },
       { id: "agendado", nome: "Agendado", tipo: "feito" },
       { id: "publicado", nome: "Publicado", tipo: "feito" },
+      { id: "cancelado", nome: "Cancelado", tipo: "perdido" },
     ],
   },
   comercial: {
@@ -97,6 +99,7 @@ export const fluxos: Record<FluxoId, Fluxo> = {
       { id: "validacao", nome: "Validação", tipo: "validacao" },
       { id: "aguardando-ceo", nome: "Aguardando CEO", tipo: "ceo", sala: "diretoria" },
       { id: "aplicado", nome: "Aplicado", tipo: "feito" },
+      { id: "cancelado", nome: "Cancelado", tipo: "perdido" },
     ],
   },
   geral: {
@@ -111,6 +114,7 @@ export const fluxos: Record<FluxoId, Fluxo> = {
       { id: "validacao", nome: "Validação", tipo: "validacao" },
       { id: "aguardando-ceo", nome: "Aguardando CEO", tipo: "ceo", sala: "diretoria" },
       { id: "concluido", nome: "Concluído", tipo: "feito" },
+      { id: "cancelado", nome: "Cancelado", tipo: "perdido" },
     ],
   },
 };

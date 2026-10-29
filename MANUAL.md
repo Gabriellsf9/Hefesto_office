@@ -35,6 +35,8 @@ Em **Operação → Projetos → Escolher pasta**:
 - **Card:** botão **+** ou a barra de baixo ("crie um endpoint de sprints"). O dono executa, outro agente valida e, se pedir aprovação, o card para em "Aguardando CEO".
 - **Comentar num card rodando:** o agente recebe na próxima rodada, sem recomeçar.
 - **Voltar uma versão:** no detalhe do card, **Voltar para esta versão**.
+- **Cancelar:** no detalhe do card, o ícone de proibido. O card e os pedidos e partes abertos dele vão para a coluna **Cancelado**, com o histórico.
+- **Freio de escopo:** quando um agente pede trabalho a uma área que o objetivo ainda não envolvia, o pedido para com "esperando o seu OK". Comente no card para liberar ou cancele. Cada objetivo pode ter no máximo 8 cards derivados (pedidos e partes); passou disso, o agente entrega com o que tem ou pergunta a você.
 - **Conversa:** em **Conversas**, fale com qualquer agente. Dá para anexar arquivos e imagens. Ele roda código Python, cria páginas interativas (artifacts) e faz pesquisa profunda na web.
 - **GitHub:** issue com a etiqueta `hefesto` vira card. Pedido de mudança num PR ou CI vermelho devolvem o card ao agente (precisa do token em Configurações → Integrações).
 

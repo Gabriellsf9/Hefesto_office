@@ -4,7 +4,7 @@ import { ehCardDeCodigo, fluxos } from "@empresa/shared";
 import { db, getSetting, setSetting } from "./db.ts";
 import { emit } from "./bus.ts";
 import {
-  aprovar, comentar, devolver, ETIQUETA_LIMITE, exigeAprovacao, lerCard, liberarGasto, listarCards, listarComentarios, mover, PREFIXO_PILOTO, ultimaEntrega,
+  aprovar, comentar, devolver, ETIQUETA_AGUARDA_OK, ETIQUETA_LIMITE, exigeAprovacao, lerCard, liberarGasto, listarCards, listarComentarios, mover, PREFIXO_PILOTO, ultimaEntrega,
 } from "./tarefas.ts";
 import { ETIQUETA_ORCAMENTO_PROJETO } from "./planejamento.ts";
 import { auditar } from "./confianca/auditoria.ts";
@@ -388,7 +388,8 @@ export async function conferirAutonomia(): Promise<void> {
     const fila = [
       ...cards.filter((x) => exigeAprovacao(x) && !x.bloqueado).map((card) => ({ card, tipo: "aprovacao" as const })),
       ...cards
-        .filter((x) => x.bloqueado && !x.etiquetas.includes(ETIQUETA_LIMITE) && !x.etiquetas.includes(ETIQUETA_ORCAMENTO_PROJETO) && !pedidosPendentes.has(x.id))
+        // Pedido para uma área nova no objetivo é decisão de escopo: só o CEO libera.
+        .filter((x) => x.bloqueado && !x.etiquetas.includes(ETIQUETA_LIMITE) && !x.etiquetas.includes(ETIQUETA_ORCAMENTO_PROJETO) && !x.etiquetas.includes(ETIQUETA_AGUARDA_OK) && !pedidosPendentes.has(x.id))
         .map((card) => ({ card, tipo: "bloqueio" as const })),
     ].filter((t) => !pensando.has(t.card.id) && !jaEscalado(t.card));
     const t = fila[0];

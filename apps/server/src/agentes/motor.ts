@@ -31,7 +31,7 @@ import { ferramentasDeInfra } from "../areas/infra.ts";
 import { ferramentasDeFinancas } from "../areas/financas.ts";
 import { ferramentasDeAtendimento } from "../areas/atendimento.ts";
 import {
-  comentar, criarCard, decisaoDoCeo, destravarCardsNoTeto, PREFIXO_PILOTO, editarCard, ErroCard, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
+  comentar, criarCard, decisaoDoCeo, destravarCardsNoTeto, PREFIXO_PILOTO, editarCard, ErroCard, ETIQUETA_AGUARDA_OK, ETIQUETA_LIMITE, lerCard, listarCards, listarComentarios, listarEntregas, marcarValidacao, mover, registrarDevolucao, registrarEntrega, repassadosEm, tetoDoCard,
   ultimaEntrega,
 } from "../tarefas.ts";
 import { NO_MAC } from "../plataforma.ts";
@@ -64,6 +64,8 @@ const MAX_PEDIDOS_POR_VEZ = 3;
 const MAX_PEDIDOS_POR_CARD = 6;
 const MAX_PROFUNDIDADE = 2;
 const MAX_PARTES = 4;
+/** Cards que podem nascer de um objetivo (pedidos e partes, em qualquer nível) antes de o agente ter de entregar ou perguntar. */
+const MAX_DERIVADOS_POR_OBJETIVO = 8;
 /** Vezes seguidas que um card pode usar todas as rodadas sem entregar antes de contar como falha (~100 passos). */
 const MAX_CONTINUACOES = 6;
 const continuacoes = new Map<number, number>();
@@ -486,6 +488,29 @@ function antesDoCeo(card: Card) {
 /** Etiqueta dos cards abertos com pedir_para_outra_area (leads, chamados e bugs também têm pai, mas não são pedidos). */
 export const ETIQUETA_PEDIDO = "pedido";
 
+/**
+ * O objetivo (card raiz, sem pai) de um card, quantos cards abertos ou feitos nasceram dele (pedidos, partes, pedidos
+ * dos pedidos; cancelados não contam) e as áreas que ele já envolve: as dos cards da árvore e as das colunas do fluxo
+ * do objetivo (um card de software passa por design, dev e QA sem pedir nada).
+ */
+export function escopoDoObjetivo(card: Card, cards: Card[]): { raiz: Card; derivados: number; salas: Set<string> } {
+  const porId = new Map(cards.map((c) => [c.id, c]));
+  let raiz = card;
+  for (let n = 0; raiz.paiId && porId.has(raiz.paiId) && n < 10; n++) raiz = porId.get(raiz.paiId)!;
+  const arvore: Card[] = [];
+  const fila = [raiz.id];
+  while (fila.length) {
+    const id = fila.shift()!;
+    for (const f of cards.filter((c) => c.paiId === id && tipoColuna(c) !== "perdido")) {
+      arvore.push(f);
+      fila.push(f.id);
+    }
+  }
+  const salas = new Set<string>([raiz.sala, ...arvore.map((c) => c.sala)]);
+  for (const col of fluxos[raiz.fluxo]?.colunas ?? []) if (col.sala) salas.add(col.sala);
+  return { raiz, derivados: arvore.length, salas };
+}
+
 /** Pedidos deste card a outras áreas que ainda não terminaram (o que já foi validado e espera o CEO conta como pronto). */
 export function filhosAbertos(cardId: number, cards: Iterable<Card>): Card[] {
   return [...cards].filter(
@@ -601,7 +626,7 @@ export function porQueNaoAnda(card: Card, porId: Map<number, Card>, rodando: Ite
   const espera = repassadosEm.get(card.id);
   if (card.emValidacao && !card.bloqueado && espera && espera > Date.now()) return `Validação esperando até ${hhmm(espera)} (repasse ou espera por um modelo com espaço).`;
   if (card.demo || !card.dono || card.emValidacao || !["fila", "trabalho", "bug"].includes(tipo ?? "") || !antesDoCeo(card)) return null;
-  if (card.bloqueado) return card.etiquetas.includes(ETIQUETA_LIMITE) ? "Parado no limite de gasto: clique em Liberar mais." : "Bloqueado: esperando você responder no card.";
+  if (card.bloqueado) return card.etiquetas.includes(ETIQUETA_LIMITE) ? "Parado no limite de gasto: clique em Liberar mais." : card.etiquetas.includes(ETIQUETA_AGUARDA_OK) ? "Pedido para uma área nova: esperando o seu OK (comente para liberar ou cancele)." : "Bloqueado: esperando você responder no card.";
   const deps = [...(card.dependeDe ? [card.dependeDe] : []), ...(card.dependencias ?? [])].map((id) => porId.get(id)).filter((d): d is Card => !!d && tipoColuna(d) !== "feito");
   if (deps.length) return `Esperando ${deps.map((d) => d.chave).join(", ")} terminar.`;
   const filhos = filhosAbertos(card.id, porId.values());
@@ -951,6 +976,9 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
         if (listarCards().filter((c) => c.paiId === card.id && c.etiquetas.includes(ETIQUETA_PEDIDO)).length >= MAX_PEDIDOS_POR_CARD) return { texto: `Este card já abriu ${MAX_PEDIDOS_POR_CARD} pedidos. Siga com o que tem ou use perguntar_ao_ceo.`, erro: true };
         if (pedidos >= MAX_PEDIDOS_POR_VEZ) return { texto: `Você já abriu ${MAX_PEDIDOS_POR_VEZ} pedidos neste card. Junte o que falta num pedido só ou siga com o que tem.`, erro: true };
         if (profundidade(card) >= MAX_PROFUNDIDADE) return { texto: "Este card já nasceu de um pedido de outro pedido. Resolva com a sua equipe ou use perguntar_ao_ceo.", erro: true };
+        const escopo = escopoDoObjetivo(card, listarCards());
+        if (escopo.derivados >= MAX_DERIVADOS_POR_OBJETIVO) return { texto: `O objetivo ${escopo.raiz.chave} já tem ${escopo.derivados} cards derivados (o máximo é ${MAX_DERIVADOS_POR_OBJETIVO}). Entregue com o que tem, registrando o que ficou de fora, ou use perguntar_ao_ceo.`, erro: true };
+        const areaNova = !escopo.salas.has(sala);
         const dono = typeof e.dono === "string" && agentById[e.dono]?.sala === sala ? e.dono : liderDe(sala);
         const fluxo = fluxoPadrao(sala);
         const novo = criarCard(
@@ -958,13 +986,22 @@ async function executar(client: Anthropic | null, inicial: Card, agente: Agent, 
             titulo: texto(e, "titulo", 200), descricao: texto(e, "descricao", 20_000), sala, fluxo, coluna: colunaDeEntrada(fluxo),
             dono, nivel: card.nivel === "N0" ? "N0" : "N1", prioridade: card.prioridade, projetoId: card.projetoId, paiId: card.id,
             // Só os pedidos que seguram a entrega levam a etiqueta; atendimento nunca segura a resposta ao cliente.
-            etiquetas: (typeof e.esperar_resultado === "boolean" ? e.esperar_resultado : !card.etiquetas.includes("atendimento")) ? [ETIQUETA_PEDIDO] : [],
+            etiquetas: [
+              ...((typeof e.esperar_resultado === "boolean" ? e.esperar_resultado : !card.etiquetas.includes("atendimento")) ? [ETIQUETA_PEDIDO] : []),
+              ...(areaNova ? [ETIQUETA_AGUARDA_OK] : []),
+            ],
           },
           agente.id,
         );
         pedidos++;
         comentar(card.id, agente.id, "comentario", `Pedi para ${nomeDaSala(sala)}: ${novo.chave} — ${novo.titulo}`);
-        return { texto: `Card ${novo.chave} criado para ${nomeDaSala(sala)}.` };
+        if (!areaNova) return { texto: `Card ${novo.chave} criado para ${nomeDaSala(sala)}.` };
+        // Área que o objetivo ainda não envolvia: o CEO decide se entra. O protótipo do EMP-3 pediu ao DevOps um
+        // Supabase inteiro só para tirar prints, que virou mais 4 cards (EMP-13, 23 a 26) e travou o EMP-3.
+        editarCard(novo.id, { bloqueado: true });
+        comentar(novo.id, agente.id, "comentario", `❓ Pedido para uma área nova no objetivo ${escopo.raiz.chave}: precisa do seu OK. Comente no card para liberar; cancele se não for essencial.`);
+        postChat(agente.id, `Pedi ${novo.chave} (${novo.titulo}) para ${nomeDaSala(sala)}, área que o ${escopo.raiz.chave} ainda não envolvia. Comente no card para liberar ou cancele se não for essencial.`);
+        return { texto: `Card ${novo.chave} criado para ${nomeDaSala(sala)}, mas essa área é nova neste objetivo: ele espera o OK do CEO. Se der para entregar sem ele, siga e registre a limitação.` };
       },
     ),
   ];
