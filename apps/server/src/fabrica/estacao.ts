@@ -89,13 +89,15 @@ export function ferramentasDeEstacao(chave: string, pasta: string, o: { imagem?:
         auditar("agente", "terminal da estação", chave, comando.slice(0, 300));
         if (e.segundo_plano === true) {
           const log = `/tmp/hefesto-fundo-${++contadorFundo}.log`;
-          const r = await docker(["exec", "-d", nome, "sh", "-lc", `${comando} > ${log} 2>&1`], pasta, 60_000);
+          const r = await docker(["exec", "-d", nome, "sh", "-c", `${comando} > ${log} 2>&1`], pasta, 60_000);
           if (r.codigo !== 0) return { texto: `Não consegui iniciar: ${r.saida.slice(-1000)}`, erro: true };
           return { texto: `Rodando em segundo plano. Para ver a saída: terminal com "tail -n 60 ${log}".` };
         }
         const tempo = Math.min(TEMPO_MAX_S, Math.max(5, Number(e.tempo_s) || TEMPO_PADRAO_S)) * 1000;
         const t0 = Date.now();
-        const r = await docker(["exec", nome, "sh", "-lc", comando], pasta, tempo);
+        // sh -c, não -lc: o shell de login lê o /etc/profile do Debian, que troca o PATH pelo padrão e some com o que a
+        // imagem da linguagem pôs nele (/usr/local/go/bin, /usr/local/cargo/bin): o Rafael via "go: not found".
+        const r = await docker(["exec", nome, "sh", "-c", comando], pasta, tempo);
         const saida = r.saida.length > max ? `…(início cortado)\n${r.saida.slice(-max)}` : r.saida;
         return { texto: `código de saída: ${r.codigo ?? "interrompido (tempo máximo)"} · ${((Date.now() - t0) / 1000).toFixed(1)} s\n${saida || "(sem saída)"}`, erro: r.codigo !== 0 };
       },
