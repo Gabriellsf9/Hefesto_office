@@ -89,6 +89,9 @@ export function comandoDeTestes(pasta: string): Subprojeto[] | null {
   return subs.length ? subs : null;
 }
 
+/** Resultado de quando a mudança não toca código de nenhum subprojeto. */
+export const NADA_A_TESTAR = "nada a testar";
+
 export interface ResultadoTestes {
   comando: string;
   passou: boolean;
@@ -110,6 +113,9 @@ export async function verificarPasta(pasta: string, mudados?: string[], ignorar:
   if (!subs) return null;
   if (mudados && !(subs.length === 1 && subs[0]!.dir === ".")) {
     const tocados = subs.filter((sub) => mudados.some((m) => m.startsWith(`${sub.dir}/`)));
+    // A mudança não toca nenhum subprojeto (só docs/, protótipos, notas): não há o que testar. Antes rodava os
+    // testes de todos, e um teste instável do backend devolvia um card de protótipo.
+    if (!tocados.length && mudados.length) return { comando: NADA_A_TESTAR, passou: true, saida: "", ms: 0, pulados: [] };
     if (tocados.length) subs = tocados;
   }
   let ms = 0;
@@ -140,6 +146,15 @@ export async function verificarPasta(pasta: string, mudados?: string[], ignorar:
         }
         pulados.push(`${rotulo} (ferramenta não instalada aqui)`);
         break;
+      }
+      // Teste instável (tempo, banco, rede): repete uma vez antes de culpar o card, como os CIs fazem.
+      if (!/^(npm|pnpm|yarn|bun) (ci|install)|^(pip|poetry|bundle|composer|go mod) /.test(c)) {
+        const deNovo = await rodarComando(cwd, c);
+        ms += deNovo.ms;
+        if (deNovo.codigo === 0) {
+          pulados.push(`${rotulo} falhou e passou ao repetir (teste instável do projeto)`);
+          continue;
+        }
       }
       return { comando: rotulo, passou: false, saida: r.saida, ms, pulados };
     }
@@ -191,6 +206,10 @@ export async function testarCard(cardId: number, autor = "devops"): Promise<Resu
   const pulados =
     (r.pulados?.length ? `\n\nNão deu para verificar aqui: ${r.pulados.join("; ")}.` : "") +
     (preExistentes.size ? `\n\n⚠️ Já falhava antes desta mudança (problema do projeto, não deste card): ${[...preExistentes].map((c) => `\`${c}\``).join(", ")}.` : "");
+  if (r.comando === NADA_A_TESTAR) {
+    comentar(card.id, autor, "comentario", `✅ Verificações passaram: nada a testar, a mudança não toca código de nenhum subprojeto (${mudados.slice(0, 5).join(", ")}${mudados.length > 5 ? "…" : ""}).`);
+    return r;
+  }
   comentar(
     card.id,
     autor,
