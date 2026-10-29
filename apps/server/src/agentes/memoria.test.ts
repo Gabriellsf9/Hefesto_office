@@ -127,3 +127,23 @@ test("volta sozinho: com memória sobrando por 30 minutos seguidos, os agentes q
     setSetting("provedores", "{}");
   }
 });
+
+test("volta sozinho: cada troca pendente conta a sua folga; a que cabe volta mesmo com outra maior pendente", async () => {
+  const { FOLGA_PARA_VOLTAR_MS, rebaixar } = await import("./memoria.ts");
+  const o = await ollamaFalso();
+  setSetting("modelos_agentes", JSON.stringify({ copywriter: "ollama:medio:9b", "dev-backend": "ollama:grande:20b" }));
+  try {
+    rebaixar("medio:9b", "pequeno:2b", "teste antiga"); // copywriter: 9b → 2b (precisa de ~9,1 GB)
+    rebaixar("grande:20b", "medio:9b", "teste recente"); // dev-backend: 20b → 9b (precisa de ~16,5 GB)
+    const t0 = Date.now() + 10 * 60_000;
+    // 10 GB livres: cabe a volta do 9b, não a do 20b.
+    assert.equal(await verificarMemoria(10, t0), null);
+    assert.equal(await verificarMemoria(10, t0 + FOLGA_PARA_VOLTAR_MS), "medio:9b", "a mais antiga (que cabe) voltou");
+    assert.equal(escolhas().copywriter, "ollama:medio:9b");
+    assert.equal(escolhas()["dev-backend"], "ollama:medio:9b", "a do 20b continua pendente");
+  } finally {
+    await o.fechar();
+    setSetting("modelos_agentes", "{}");
+    setSetting("provedores", "{}");
+  }
+});
