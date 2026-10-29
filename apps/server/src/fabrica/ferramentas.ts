@@ -55,12 +55,20 @@ export function ferramentasDeEscrita(wt: Worktree, opcoes: { envDeTeste?: boolea
         const conteudo = typeof e.conteudo === "string" ? e.conteudo : "";
         // Anexar: um modelo pequeno que não consegue escrever um HTML inteiro numa resposta (cortada no tamanho
         // máximo três vezes no card 20) escreve em partes, sem precisar copiar trechos exatos para editar.
-        const antes = e.anexar === true ? await readFile(alvo, "utf8").catch(() => "") : "";
+        const existente = await readFile(alvo, "utf8").catch(() => "");
+        const antes = e.anexar === true ? existente : "";
         const final = antes && !antes.endsWith("\n") ? `${antes}\n${conteudo}` : `${antes}${conteudo}`;
         if (final.length > MAX_ARQUIVO) throw new ErroEntrada("Arquivo grande demais; divida em arquivos menores.");
         await mkdir(dirname(alvo), { recursive: true });
         await writeFile(alvo, final);
-        return { texto: `${e.anexar === true ? "Anexado" : "Gravado"}: ${e.caminho} (${final.split("\n").length} linhas no total).` };
+        const linhas = final.split("\n").length;
+        // Substituiu um arquivo que existia por algo bem menor: quase sempre era para anexar (no card 20, a segunda
+        // parte do HTML apagou a primeira e o agente nem soube). Avisa para ele refazer a parte perdida.
+        const linhasAntes = existente ? existente.split("\n").length : 0;
+        const aviso = e.anexar !== true && linhasAntes >= 20 && linhas < linhasAntes * 0.7
+          ? ` ATENÇÃO: o arquivo tinha ${linhasAntes} linhas e foi substituído inteiro. Se você queria acrescentar ao fim, use anexar: true e reescreva a parte que se perdeu.`
+          : "";
+        return { texto: `${e.anexar === true ? "Anexado" : "Gravado"}: ${e.caminho} (${linhas} linhas no total).${aviso}` };
       },
     ),
     ferramenta(
