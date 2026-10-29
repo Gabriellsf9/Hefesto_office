@@ -54,6 +54,15 @@ test("estação: escolhe a imagem da linguagem do projeto", () => {
   writeFileSync(join(raiz, "go.mod"), "module x\n");
   assert.equal(imagemDoProjeto(raiz), "golang:1.26");
   assert.equal(imagemDoProjeto(mkdtempSync(join(tmpdir(), "vazio-"))), "node:22");
+  // Monorepo: a imagem do subprojeto da área do agente (o dev-backend ganha Go, não o Node do frontend).
+  const mono = mkdtempSync(join(tmpdir(), "mono-"));
+  mkdirSync(join(mono, "frontend"), { recursive: true });
+  mkdirSync(join(mono, "backend"), { recursive: true });
+  writeFileSync(join(mono, "frontend", "package.json"), JSON.stringify({ scripts: { test: "vitest" } }));
+  writeFileSync(join(mono, "backend", "go.mod"), "module x\n");
+  assert.equal(imagemDoProjeto(mono, "dev-backend"), "golang:1.26");
+  assert.equal(imagemDoProjeto(mono, "dev-frontend"), "node:22");
+  assert.ok(["golang:1.26", "node:22"].includes(imagemDoProjeto(mono, "qa-lead")), "sem área que bate: a do primeiro");
 });
 
 test("lista de tarefas do agente: salva, volta na mensagem do card e aceita só status válidos", async () => {
