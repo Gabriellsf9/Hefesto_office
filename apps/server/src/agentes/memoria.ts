@@ -7,9 +7,9 @@ import { configOllama, escolhas, escolherModelo, modelosOllamaInstalados } from 
 // o computador sem memória. Duas defesas:
 // 1. Reação (vale sempre, inclusive no Docker): o Ollama recusou carregar por falta de memória → o agente passa
 //    para o próximo modelo menor instalado e o trabalho continua.
-// 2. Prevenção (quando o Hefesto roda direto no computador, fora de contêiner, onde a memória livre é a de verdade):
-//    abaixo do limite em duas leituras seguidas → os agentes do maior modelo carregado passam para o menor e ele
-//    é descarregado. No Docker a memória que o contêiner vê é a da máquina virtual, não a do computador.
+// 2. Prevenção: abaixo do limite em duas leituras seguidas → os agentes do maior modelo carregado passam para o
+//    menor e ele é descarregado. A leitura vem deste processo (fora do Docker) ou, no Docker, do próprio computador
+//    (scripts/memoria-do-computador.mjs): a memória que o contêiner vê é a da máquina virtual, não a do computador.
 // Toda troca fica registrada; a vigia de saúde abre um alerta e avisa no chat.
 
 db.exec(`CREATE TABLE IF NOT EXISTS memoria_rebaixamentos (
@@ -56,8 +56,23 @@ export async function semMemoriaPara(nome: string, agente: string | undefined, e
 const emConteiner = () => existsSync("/.dockerenv") || process.env.HEFESTO_SANDBOX === "linux";
 let baixas = 0;
 
+// No Docker, quem sabe a memória de verdade é o próprio computador: o script scripts/memoria-do-computador.mjs
+// manda a leitura a cada 20 s. Leitura com mais de 90 s não vale (o script parou).
+let externa: { gb: number; ts: number } | null = null;
+export function informarMemoriaLivre(gb: number) {
+  if (!Number.isFinite(gb) || gb < 0 || gb > 4096) throw new Error("Memória livre inválida.");
+  externa = { gb, ts: Date.now() };
+}
+/** De onde vem a leitura agora: do computador (script), deste processo (fora do Docker) ou de lugar nenhum. */
+export function leituraDeMemoria(): { livreGb: number; fonte: "computador" | "este-processo" } | null {
+  if (externa && Date.now() - externa.ts < 90_000) return { livreGb: externa.gb, fonte: "computador" };
+  if (!emConteiner()) return { livreGb: freemem() / 1024 ** 3, fonte: "este-processo" };
+  return null;
+}
+
 /** Uma leitura. Exportada com a memória como parâmetro para o teste. */
-export async function verificarMemoria(livreGb = freemem() / 1024 ** 3): Promise<string | null> {
+export async function verificarMemoria(livreGb = leituraDeMemoria()?.livreGb): Promise<string | null> {
+  if (livreGb === undefined) return null;
   baixas = livreGb < LIMITE_GB ? baixas + 1 : 0;
   if (baixas < 2) return null;
   baixas = 0;
@@ -79,6 +94,5 @@ export async function verificarMemoria(livreGb = freemem() / 1024 ** 3): Promise
 }
 
 export function iniciarVigiaDeMemoria() {
-  if (emConteiner()) return;
   setInterval(() => void verificarMemoria().catch((e) => console.error("Vigia de memória:", e)), 30_000).unref();
 }

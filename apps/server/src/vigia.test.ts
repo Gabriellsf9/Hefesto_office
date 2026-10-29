@@ -60,3 +60,22 @@ test("vigia: a verificação de verdade (lendo o banco) roda sem erro", async ()
   criarCard({ titulo: "Qualquer", sala: "produto", dono: "pm" });
   assert.doesNotThrow(() => verificarSaude());
 });
+
+test("card girando: três entregas sem sair da coluna abrem o alerta (lido do banco de verdade)", async () => {
+  const { criarCard, mover, registrarEntrega } = await import("./tarefas.ts");
+  const { verificarSaude, listarAlertas } = await import("./vigia.ts");
+  const card = criarCard({ titulo: "Card que gira", sala: "produto", fluxo: "geral", dono: "pm", coluna: "a-fazer" });
+  mover(card.id, "em-andamento", "pm");
+  registrarEntrega(card.id, "pm", "v1", "a");
+  registrarEntrega(card.id, "pm", "v2", "b");
+  assert.ok(!listarAlertas().some((a) => a.tipo === "card-girando" && a.cardId === card.id), "duas ainda não");
+  registrarEntrega(card.id, "pm", "v3", "c");
+  verificarSaude();
+  const alerta = listarAlertas().find((a) => a.tipo === "card-girando" && a.cardId === card.id);
+  assert.ok(alerta, "três abrem o alerta");
+  assert.match(alerta.texto, /entregou 3 versões sem sair da coluna/);
+  // Andou (foi para a revisão): o alerta fecha sozinho.
+  mover(card.id, "validacao", "pm");
+  verificarSaude();
+  assert.ok(!listarAlertas().some((a) => a.tipo === "card-girando" && a.cardId === card.id));
+});

@@ -47,7 +47,7 @@ import {
 } from "./conhecimento.ts";
 import { calcularIndicadores, listarMetas, removerMeta, salvarMeta, sugerirMetas } from "./metas.ts";
 import { calcularMedicao } from "./medicao.ts";
-import { iniciarVigiaDeMemoria } from "./agentes/memoria.ts";
+import { LIMITE_GB, iniciarVigiaDeMemoria, informarMemoriaLivre, leituraDeMemoria } from "./agentes/memoria.ts";
 import { configurarRitual, executarRitual, iniciarRituais, listarAtas, listarRituais } from "./rituais.ts";
 import { isDemoActive, setDemo } from "./demo.ts";
 import { ehSecao, lerLivro, marcarRevisada, salvarSecao } from "./livro.ts";
@@ -474,6 +474,13 @@ app.delete<{ Params: { id: string } }>("/api/metas/:id", async (req) => {
 app.post("/api/metas/sugerir", async () => sugerirMetas());
 app.get("/api/indicadores", async () => calcularIndicadores());
 app.get("/api/medicao", async () => calcularMedicao());
+// Memória livre do computador (o script scripts/memoria-do-computador.mjs manda; só do próprio computador).
+app.post<{ Body: { livreGb?: number } }>("/api/maquina/memoria", async (req) => {
+  if (pedidoRemoto(req)) throw new ErroCard("Só o próprio computador informa a memória.", 403);
+  informarMemoriaLivre(Number(req.body?.livreGb));
+  return { ok: true };
+});
+app.get("/api/maquina/memoria", async () => ({ ...leituraDeMemoria(), limiteGb: LIMITE_GB }));
 app.get("/api/rituais", async () => listarRituais());
 app.put<{ Params: { id: RitualId }; Body: { ativo?: boolean; hora?: string } }>("/api/rituais/:id", async (req) => {
   configurarRitual(req.params.id, req.body ?? {});

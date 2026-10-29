@@ -108,3 +108,47 @@ test("ensaio de falha: o Gemini do agente está sem cota e a reserva é o modelo
     setSetting("modelos_agentes", "{}");
   }
 });
+
+test("reinício entre a entrega e a revisão: o motor segue da verificação, sem o autor refazer o trabalho", async () => {
+  const { registrarEntrega } = await import("../tarefas.ts");
+  const { marcarEntregue } = await import("./motor.ts");
+  const chamadas: string[] = [];
+  const servidor = createServer((req, res) => {
+    if (req.url === "/api/show") return void res.end(JSON.stringify({ capabilities: ["completion", "tools"] }));
+    let corpo = "";
+    req.on("data", (c) => (corpo += c));
+    req.on("end", () => {
+      const nomes = new Set(((JSON.parse(corpo) as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name));
+      const chamada = nomes.has("entregar")
+        ? { name: "entregar", arguments: { resumo: "De novo", conteudo: `# Refeito\n${"Texto refeito. ".repeat(40)}`, autocritica: "Conferi." } }
+        : nomes.has("aprovar") ? { name: "aprovar", arguments: { parecer: "Confere." } } : null;
+      chamadas.push(chamada?.name ?? "texto");
+      res.end(`${JSON.stringify({ message: chamada ? { content: "", tool_calls: [{ function: chamada }] } : { content: "ok" } })}\n${JSON.stringify({ done: true, prompt_eval_count: 100, eval_count: 10 })}\n`);
+    });
+  });
+  await new Promise<void>((ok) => servidor.listen(0, "127.0.0.1", ok));
+  setSetting("provedores", JSON.stringify({ ollama: { url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`, contexto: 16_384 } }));
+  setSetting("modelos_agentes", JSON.stringify(Object.fromEntries(agents.map((a) => [a.id, "ollama:modelo-teste"]))));
+  try {
+    // O estado em que a queda deixou o card: entrega v1 gravada, ainda na coluna de trabalho, verificação pendente.
+    const fluxo = fluxoPadrao("produto");
+    const card = criarCard({ titulo: "Critérios do cadastro", sala: "produto", dono: "pm", nivel: "N0", criterios: "Gherkin", coluna: colunaDeEntrada(fluxo) });
+    registrarEntrega(card.id, "pm", "Critérios prontos", `# Critérios\n${"Dado, quando, então. ".repeat(30)}`);
+    marcarEntregue(card.id);
+    iniciarMotor();
+    let atual = lerCard(card.id);
+    for (let i = 0; i < 300 && colunaDe(atual.fluxo, atual.coluna)?.tipo !== "feito"; i++) {
+      repassadosEm.clear();
+      await esperar(100);
+      atual = lerCard(card.id);
+    }
+    assert.equal(colunaDe(atual.fluxo, atual.coluna)?.tipo, "feito", `terminou na coluna ${atual.coluna}; chamadas: ${chamadas.join(", ")}`);
+    assert.ok(!chamadas.includes("entregar"), `o autor não foi chamado de novo (chamadas: ${chamadas.join(", ")})`);
+    assert.equal(listarEntregas(card.id).length, 1, "nenhuma versão refeita");
+  } finally {
+    await encerrarMotor(5000);
+    servidor.close();
+    setSetting("provedores", "{}");
+    setSetting("modelos_agentes", "{}");
+  }
+});

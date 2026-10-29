@@ -6,7 +6,7 @@ import { setSetting } from "../db.ts";
 import { escolhas } from "../provedores.ts";
 import { examinar, type Fotografia } from "../vigia.ts";
 import { ferramenta, rodarAgente } from "./loop.ts";
-import { modeloMenor, rebaixamentosRecentes, verificarMemoria } from "./memoria.ts";
+import { informarMemoriaLivre, leituraDeMemoria, modeloMenor, rebaixamentosRecentes, verificarMemoria } from "./memoria.ts";
 
 const TAGS = { models: [
   { name: "grande:20b", size: 14e9, capabilities: ["completion", "tools"] },
@@ -92,4 +92,10 @@ test("prevenção: memória baixa em duas leituras seguidas troca os agentes do 
     setSetting("modelos_agentes", "{}");
     setSetting("provedores", "{}");
   }
+});
+
+test("leitura do computador: a informada pelo script vale por 90 s e tem prioridade", () => {
+  assert.throws(() => informarMemoriaLivre(Number.NaN), /inválida/);
+  informarMemoriaLivre(3.25);
+  assert.deepEqual(leituraDeMemoria(), { livreGb: 3.25, fonte: "computador" });
 });
