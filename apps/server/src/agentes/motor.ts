@@ -67,6 +67,7 @@ const MAX_PARTES = 4;
 /** Vezes seguidas que um card pode usar todas as rodadas sem entregar antes de contar como falha (~100 passos). */
 const MAX_CONTINUACOES = 6;
 const continuacoes = new Map<number, number>();
+const PAUSA_DEPOIS_DE_CONTINUAR_MS = 10_000;
 
 const emAndamento = new Map<number, TrabalhoEmAndamento>();
 const controles = new Map<number, AbortController>();
@@ -1135,6 +1136,9 @@ ${texto_}`);
     const n = (continuacoes.get(card.id) ?? 0) + 1;
     if (n <= MAX_CONTINUACOES) {
       continuacoes.set(card.id, n);
+      // Dá a vez: o card mais antigo voltava à fila e pegava o modelo local na hora, segurando-o por até 6
+      // continuações seguidas enquanto as outras partes esperavam. Com a pausa curta, quem está na fila entra antes.
+      repassadosEm.set(card.id, Date.now() + PAUSA_DEPOIS_DE_CONTINUAR_MS);
       postFeed(card.sala, agente.id, `${card.chave}: ${agente.nome} usou os passos desta vez e continua de onde parou (${n}/${MAX_CONTINUACOES})`);
       throw new ErroContinua(`continua (${n}/${MAX_CONTINUACOES})`);
     }
