@@ -392,6 +392,34 @@ export function somarCusto(cardId: number, usd: number) {
 
 /** Etiqueta do card parado pelo limite de gasto (aparece na Caixa de entrada com o botão Liberar). */
 export const ETIQUETA_LIMITE = "limite-de-gasto";
+/** Pedido de um agente para uma área nova no objetivo: espera o OK do CEO (o piloto automático não libera). */
+export const ETIQUETA_AGUARDA_OK = "aguarda-ok";
+
+/**
+ * Cancela o card e os cards que nasceram dele ainda abertos (pedidos e partes): vão para a coluna de perdido do fluxo
+ * (o histórico fica). Devolve os ids cancelados, para quem chamou interromper os agentes que estavam neles.
+ */
+export function cancelarCard(id: number, autor: string, motivo: string): number[] {
+  const todos = listarCards();
+  const aberto = (c: Card) => !["feito", "perdido"].includes(colunaDe(c.fluxo, c.coluna)?.tipo ?? "");
+  const alvo: Card[] = [];
+  const visitar = (c: Card) => {
+    if (!aberto(c) || alvo.includes(c)) return;
+    alvo.push(c);
+    for (const f of todos.filter((x) => x.paiId === c.id)) visitar(f);
+  };
+  visitar(lerCard(id));
+  for (const c of alvo) {
+    const coluna = fluxos[c.fluxo]?.colunas.find((k) => k.tipo === "perdido");
+    if (!coluna) throw new ErroCard(`O fluxo do ${c.chave} não tem coluna de cancelados.`);
+  }
+  for (const c of alvo) {
+    db.prepare("UPDATE cards SET bloqueado = 0, em_validacao = 0, atualizado_em = ? WHERE id = ?").run(Date.now(), c.id);
+    comentar(c.id, autor, "comentario", c.id === id ? `Cancelado: ${motivo}` : `Cancelado junto com o ${lerCard(id).chave}: ${motivo}`);
+    mover(c.id, fluxos[c.fluxo]!.colunas.find((k) => k.tipo === "perdido")!.id, autor);
+  }
+  return alvo.map((c) => c.id);
+}
 /** Comentários do piloto automático (decisões no lugar do CEO) começam assim. */
 export const PREFIXO_PILOTO = "🤖 Piloto automático";
 
@@ -462,7 +490,8 @@ export function comentarComoCeo(cardId: number, texto: string): Comentario {
     // Parado pelo limite de gasto: comentar também libera mais um limite (como o botão Liberar).
     if (card.etiquetas.includes(ETIQUETA_LIMITE) || cardPassouDoLimite(cardId)) liberarGasto(cardId);
     else {
-      db.prepare("UPDATE cards SET bloqueado = 0, atualizado_em = ? WHERE id = ?").run(Date.now(), cardId);
+      // Pedido que esperava o OK: comentar é o OK (para recusar, cancele o card).
+      db.prepare("UPDATE cards SET bloqueado = 0, etiquetas = ?, atualizado_em = ? WHERE id = ?").run(JSON.stringify(card.etiquetas.filter((e) => e !== ETIQUETA_AGUARDA_OK)), Date.now(), cardId);
       publicar(cardId);
     }
   }
