@@ -428,3 +428,14 @@ test("computador extra fora do ar: a chamada segue no principal (não derruba o 
     setSetting("provedores", "{}");
   }
 });
+
+test("pedido grande no modelo local: as seções maiores encolhem primeiro e nenhuma some", async () => {
+  const { encolherPedido } = await import("./compat.ts");
+  const pedido = ["# EMP-11 · Protótipo", `## Descrição\n${"d".repeat(1500)}`, `## Entrega para validar\n${"e".repeat(20_000)}`, `## Código desta entrega\n${"c".repeat(9000)}`, "## Critérios\nCurto."].join("\n\n");
+  assert.equal(encolherPedido(pedido, 100_000), pedido, "cabe: não muda");
+  const menor = encolherPedido(pedido, 15_000);
+  assert.ok(menor.length <= 15_000, `ficou com ${menor.length}`);
+  for (const titulo of ["# EMP-11", "## Descrição", "## Entrega para validar", "## Código desta entrega", "## Critérios\nCurto."]) assert.ok(menor.includes(titulo), titulo);
+  assert.match(menor, /cortado para caber no modelo local; leia o resto com ler_card/);
+  assert.ok(menor.includes("d".repeat(1500)), "a seção pequena ficou inteira");
+});
