@@ -64,3 +64,17 @@ test("cancelar um card de projeto refaz a linha de base (o replanejamento não r
   assert.equal(getSetting("projeto_4242_linha_base"), "");
   assert.equal(lerCard(card.id).coluna, "cancelado");
 });
+
+test("decisões do CEO: sempre na mensagem do autor e do validador, sem os avisos do Hefesto", async () => {
+  const { comentar } = await import("../tarefas.ts");
+  const { decisoesDoCeo, mensagemValidar } = await import("./prompts.ts");
+  const card = novo("Protótipo completo", "design");
+  comentar(card.id, "voce", "comentario", "Decisão do CEO: só a parte 1; Integrações ficou fora.");
+  comentar(card.id, "voce", "comentario", "Aviso do Hefesto (ferramenta, não decisão de produto): reiniciei a vez.");
+  for (let i = 0; i < 15; i++) comentar(card.id, "pm", "devolucao", `motivo ${i}`);
+  const d = decisoesDoCeo(lerCard(card.id));
+  assert.match(d, /só a parte 1; Integrações ficou fora/);
+  assert.doesNotMatch(d, /reiniciei a vez/);
+  assert.match(mensagemValidar(lerCard(card.id)), /Decisões do CEO neste card[\s\S]*só a parte 1/, "mesmo fora da janela do debate");
+  assert.equal(decisoesDoCeo(novo("Sem decisão", "design")), "");
+});
