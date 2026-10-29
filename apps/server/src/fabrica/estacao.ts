@@ -66,7 +66,7 @@ export function ferramentasDeEstacao(chave: string, pasta: string, o: { imagem?:
   return [
     ferramenta(
       "terminal",
-      `Terminal completo numa estação de trabalho só sua (contêiner ${imagem}, com o projeto montado na pasta atual): pipes, &&, variáveis, instalar pacotes (apt-get, npm, pip, go), rodar testes e scripts, node -e, curl. Com segundo_plano: true, o comando fica rodando (ex.: um servidor) e a saída vai para um log que você lê depois com outro comando (tail). Nada aqui toca a máquina do CEO.`,
+      `Terminal completo numa estação de trabalho só sua (contêiner ${imagem}, com o projeto montado na pasta atual): pipes, &&, variáveis, instalar pacotes (apt-get, npm, pip, go), rodar testes e scripts, node -e, curl. Com segundo_plano: true, o comando fica rodando (ex.: um servidor) e a saída vai para um log que você lê depois com outro comando (tail). Nada aqui toca a máquina do CEO. Não há docker nesta estação: para subir, consultar e ver os logs de contêineres (banco, serviços do compose), use ambiente_subir, ambiente_comando e ambiente_logs.`,
       {
         comando: { type: "string" },
         segundo_plano: { type: "boolean", description: "true para servidores e processos longos (devolve o caminho do log)" },
